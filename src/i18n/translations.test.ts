@@ -23,9 +23,6 @@ describe('getT', () => {
   })
 
   it('falls back to pt-BR when key is missing in en', () => {
-    const t = getT('en')
-    // app_loading exists in both; use a key that only exists in pt-BR if any
-    // All keys should exist in both, so test fallback via unknown lang
     const tUnknown = getT('fr' as 'en')
     expect(tUnknown('app_loading')).toBe('Carregando...')
   })
