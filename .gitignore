@@ -31,17 +31,10 @@ dist-ssr
 # Local Netlify folder
 .netlify
 
-# IDE / local tooling
-.cursor/
-
-# Deploy artifacts (MCP / local payloads — never commit)
-.deploy-*
-.mcp-deploy*
+# Deploy / MCP artifacts (never commit secrets)
+.deploy-*.json
+.deploy-*.txt
+.mcp-deploy*.json
 deploy-out.json
-.deploy-content-only.txt
 
-# Supabase CLI local state
-supabase/.temp/
-
-# TestSprite generated output (may contain local credentials)
-testsprite_tests/tmp/
+testsprite_tests\tmp\config.json

@@ -1,0 +1,9 @@
+[variables]
+NIXPACKS_NODE_VERSION = "20"
+NIXPACKS_SPA_OUTPUT_DIR = "dist"
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
