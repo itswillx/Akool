@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import {
   ChevronDown, ChevronRight, Plus, FileText, Pencil, Layers, Trash2, Star, Search,
   LogOut, X, LayoutDashboard, CheckSquare, Users, Settings, Share2, FileDown,
-  Wallet, HelpCircle, FolderKanban,
+  Wallet, HelpCircle, FolderKanban, MoreHorizontal, Database,
 } from 'lucide-react'
 import type { Page, PageType } from '../types'
 import { usePages } from '../contexts/PagesContext'
@@ -198,6 +198,91 @@ function SidebarAction({ onClick, children, active }: { onClick: () => void; chi
     </button>
   )
 }
+
+const FOOTER_EXPANDED_KEY = 'excalinotion_sidebar_footer_expanded'
+
+function getFooterExpanded(): boolean {
+  try { return localStorage.getItem(FOOTER_EXPANDED_KEY) === 'true' } catch { return false }
+}
+
+function setFooterExpanded(val: boolean): void {
+  localStorage.setItem(FOOTER_EXPANDED_KEY, String(val))
+}
+
+function SidebarFooterMenu({
+  isAdmin,
+  activePanel,
+  setActivePanel,
+  setShowSettings,
+  setShowExport,
+  signOut,
+  onNavigate,
+}: {
+  isAdmin: boolean
+  activePanel: string | null
+  setActivePanel: (panel: 'users' | 'finance' | 'projects' | 'help' | 'backup' | null) => void
+  setShowSettings: (v: boolean) => void
+  setShowExport: (v: boolean) => void
+  signOut: () => void
+  onNavigate?: () => void
+}) {
+  const { t } = useLanguage()
+  const [expanded, setExpanded] = useState(getFooterExpanded)
+  const [hov, setHov] = useState(false)
+
+  const toggle = () => {
+    const next = !expanded
+    setExpanded(next)
+    setFooterExpanded(next)
+  }
+
+  return (
+    <div style={sidebarStyles.footer}>
+      <div
+        style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 6, cursor: 'pointer', backgroundColor: hov ? 'var(--color-hover)' : 'transparent', transition: 'background-color 0.1s' }}
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        onClick={toggle}
+      >
+        <span style={{ color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', marginRight: 4 }}>
+          {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        </span>
+        <MoreHorizontal size={13} style={{ color: 'var(--color-text-muted)', marginRight: 6 }} />
+        <span style={{ fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 500 }}>{t('sidebar_more')}</span>
+      </div>
+      {expanded && (
+        <div style={{ paddingTop: 2 }}>
+          {isAdmin && (
+            <SidebarAction
+              onClick={() => { setActivePanel('users'); onNavigate?.() }}
+              active={activePanel === 'users'}
+            >
+              <Users size={13} /><span>{t('sidebar_users')}</span>
+            </SidebarAction>
+          )}
+          <SidebarAction onClick={() => setShowSettings(true)}>
+            <Settings size={13} /><span>{t('sidebar_settings_title')}</span>
+          </SidebarAction>
+          <SidebarAction onClick={() => setShowExport(true)}>
+            <FileDown size={13} /><span>{t('sidebar_export_pdf')}</span>
+          </SidebarAction>
+          <SidebarAction onClick={() => { setActivePanel('help'); onNavigate?.() }} active={activePanel === 'help'}>
+            <HelpCircle size={13} /><span>{t('sidebar_help')}</span>
+          </SidebarAction>
+          {isAdmin && (
+            <SidebarAction onClick={() => { setActivePanel('backup'); onNavigate?.() }} active={activePanel === 'backup'}>
+              <Database size={13} /><span>{t('sidebar_backup')}</span>
+            </SidebarAction>
+          )}
+          <SidebarAction onClick={signOut}>
+            <LogOut size={13} /><span>{t('sidebar_signout')}</span>
+          </SidebarAction>
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 const SECTION_STATE_KEY = 'excalinotion_sidebar_sections'
 
@@ -491,29 +576,15 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
 
       </div>
 
-      {/* Footer */}
-      <div style={S.footer}>
-        {isAdmin && (
-          <SidebarAction
-            onClick={() => { setActivePanel('users'); onNavigate?.() }}
-            active={activePanel === 'users'}
-          >
-            <Users size={13} /><span>{t('sidebar_users')}</span>
-          </SidebarAction>
-        )}
-        <SidebarAction onClick={() => setShowSettings(true)}>
-          <Settings size={13} /><span>{t('sidebar_settings_title')}</span>
-        </SidebarAction>
-        <SidebarAction onClick={() => setShowExport(true)}>
-          <FileDown size={13} /><span>{t('sidebar_export_pdf')}</span>
-        </SidebarAction>
-        <SidebarAction onClick={() => { setActivePanel('help'); onNavigate?.() }} active={activePanel === 'help'}>
-          <HelpCircle size={13} /><span>{t('sidebar_help')}</span>
-        </SidebarAction>
-        <SidebarAction onClick={signOut}>
-          <LogOut size={13} /><span>{t('sidebar_signout')}</span>
-        </SidebarAction>
-      </div>
+      <SidebarFooterMenu
+        isAdmin={isAdmin}
+        activePanel={activePanel}
+        setActivePanel={setActivePanel}
+        setShowSettings={setShowSettings}
+        setShowExport={setShowExport}
+        signOut={signOut}
+        onNavigate={onNavigate}
+      />
 
       <UserSettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
       <ExportPdfModal open={showExport} onClose={() => setShowExport(false)} />

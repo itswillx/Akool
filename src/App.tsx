@@ -3,6 +3,7 @@ import { Menu } from 'lucide-react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { PagesProvider } from './contexts/PagesContext'
 import { NotificationsProvider } from './contexts/NotificationsContext'
+import { OnboardingProvider } from './contexts/OnboardingContext'
 import { LanguageProvider } from './i18n/LanguageContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import AuthPage from './pages/AuthPage'
@@ -54,6 +55,7 @@ function AppInner() {
       <NotificationsProvider>
       <LanguageProvider>
       <ThemeProvider>
+      <OnboardingProvider>
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
         {/* Sidebar: overlay drawer on all devices */}
         {showSidebar && (
@@ -85,6 +87,7 @@ function AppInner() {
           <MainContent isMobile={isMobile} />
         </main>
       </div>
+      </OnboardingProvider>
       </ThemeProvider>
       </LanguageProvider>
       </NotificationsProvider>

@@ -1,20 +1,33 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Plus, X, Trash2, Pencil, Share2, FolderKanban, LayoutGrid, List as ListIcon,
-  BarChart3, ChevronDown, Link2, ExternalLink, Search, Calendar,
+  BarChart3, ChevronDown, ChevronLeft, ChevronRight, Link2, ExternalLink, Search,
+  Calendar, CheckSquare, Image, Download, Smartphone, Upload,
 } from 'lucide-react'
 import {
-  DndContext, DragOverlay, PointerSensor, useSensor, useSensors, closestCorners, useDroppable,
+  DndContext, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors, useDroppable,
+  pointerWithin, rectIntersection,
 } from '@dnd-kit/core'
-import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import type { CollisionDetection, DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { ProjectBoard, ProjectColumn, ProjectCard, ProjectShare, ProjectCardPriority, ProjectShareRole, Page } from '../types'
+import type { ProjectBoard, ProjectColumn, ProjectCard, ProjectCardChecklistItem, ProjectCardAttachment, ProjectShare, ProjectCardPriority, ProjectShareRole, Page } from '../types'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { usePages } from '../contexts/PagesContext'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
+import ImportCardsModal from './ImportCardsModal'
+import CardFilterBar from './CardFilterBar'
+import {
+  type ProjectCardFilters,
+  filterProjectCards,
+  loadCardFilters,
+  saveCardFilters,
+  collectBoardLabels,
+  hasActiveFilters,
+  defaultCardFilters,
+} from '../lib/projectCardFilters'
 
 // ─── Constants & helpers ──────────────────────────────────────────────────────
 
@@ -25,6 +38,10 @@ const BOARD_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#2
 const BOARD_ICONS = ['📋', '🚀', '🎯', '💡', '🛠️', '📦', '🎨', '🧩', '📈', '🏗️', '🔥', '⭐']
 const ACTIVE_BOARD_KEY = 'projects_active_board'
 const VIEW_KEY = 'projects_view'
+const COMPACT_COLUMN_KEY = 'projects_compact_column:'
+const CARD_DRAFT_PREFIX = 'projects_card_draft:'
+const CARD_MODAL_STATE_KEY = 'projects_card_modal_state'
+const AUTOSAVE_DEBOUNCE_MS = 800
 
 function todayStr() {
   const d = new Date()
@@ -49,10 +66,55 @@ const labelStyle: React.CSSProperties = {
 
 // ─── Modal wrapper ────────────────────────────────────────────────────────────
 
-function Modal({ title, onClose, children, width = 460 }: { title: string; onClose: () => void; children: React.ReactNode; width?: number }) {
+const CARD_IMAGES_BUCKET = 'project-card-images'
+
+function Modal({
+  title, onClose, children, width = 460, maxHeight = '90vh', closeOnBackdrop = true, isMobile = false,
+}: {
+  title: string; onClose: () => void; children: React.ReactNode; width?: number; maxHeight?: string;
+  closeOnBackdrop?: boolean; isMobile?: boolean;
+}) {
+  const handleBackdropClick = closeOnBackdrop ? onClose : undefined
+  const mobileMaxHeight = maxHeight === '90vh' ? '95vh' : maxHeight
+
+  if (isMobile) {
+    return (
+      <div
+        className="finance-sheet-overlay"
+        onClick={handleBackdropClick}
+        style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
+      >
+        <div
+          className="finance-sheet-panel finance-safe-bottom"
+          onClick={e => e.stopPropagation()}
+          style={{ backgroundColor: 'var(--color-bg)', borderTop: '1px solid var(--color-border)', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: '8px 20px 24px', maxHeight: mobileMaxHeight, overflowY: 'auto', boxShadow: '0 -8px 32px rgba(0,0,0,0.3)', WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'] }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 12px' }}>
+            <div style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: 'var(--color-border)' }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, position: 'sticky', top: 0, zIndex: 1, backgroundColor: 'var(--color-bg)', paddingBottom: 4 }}>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--color-text)' }}>{title}</h3>
+            <button onClick={onClose} style={{ border: 'none', background: 'var(--color-surface)', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, width: 36, height: 36, flexShrink: 0 }}>
+              <X size={18} />
+            </button>
+          </div>
+          {children}
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 24, width, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
+    <div
+      className="finance-sheet-overlay"
+      onClick={handleBackdropClick}
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 16 }}
+    >
+      <div
+        className="finance-modal-panel"
+        onClick={e => e.stopPropagation()}
+        style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 24, width, maxWidth: '95vw', maxHeight, overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>{title}</h3>
           <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', borderRadius: 6, padding: 4 }}>
@@ -109,6 +171,10 @@ function CardView({ card, priorityLabel, dragging, onClick }: { card: ProjectCar
   const overdue = due && !card.completed && due.getTime() < new Date(todayStr() + 'T00:00:00').getTime()
   const isToday = due && card.due_date === todayStr()
   const dueColor = overdue ? '#ef4444' : isToday ? '#f59e0b' : 'var(--color-text-muted)'
+  const checklist = card.checklist ?? []
+  const checklistDone = checklist.filter(i => i.completed).length
+  const checklistTotal = checklist.length
+  const attachmentCount = card.attachments?.length ?? 0
   return (
     <div
       onClick={onClick}
@@ -136,6 +202,18 @@ function CardView({ card, priorityLabel, dragging, onClick }: { card: ProjectCar
             {overdue ? t('projects_due_overdue') : isToday ? t('projects_due_today') : due.toLocaleDateString()}
           </span>
         )}
+        {checklistTotal > 0 && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: checklistDone === checklistTotal ? '#22c55e' : 'var(--color-text-muted)' }}>
+            <CheckSquare size={11} />
+            {t('projects_checklist_progress').replace('{done}', String(checklistDone)).replace('{total}', String(checklistTotal))}
+          </span>
+        )}
+        {attachmentCount > 0 && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)' }}>
+            <Image size={11} />
+            {attachmentCount}
+          </span>
+        )}
         {card.linked_page_id && <Link2 size={12} style={{ color: '#6366f1' }} />}
         {card.assignee_profile && (
           <span title={card.assignee_profile.display_name || card.assignee_profile.email} style={{ marginLeft: 'auto', width: 20, height: 20, borderRadius: '50%', backgroundColor: avatarColor(card.assignee_profile.email), color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -149,13 +227,43 @@ function CardView({ card, priorityLabel, dragging, onClick }: { card: ProjectCar
 
 // ─── Sortable card ────────────────────────────────────────────────────────────
 
-function SortableCard({ card, priorityLabel, canEdit, onClick }: { card: ProjectCard; priorityLabel: string; canEdit: boolean; onClick: () => void }) {
+function SortableCard({
+  card, priorityLabel, canEdit, onClick, variant = 'board', showMovePrev, showMoveNext, onMovePrev, onMoveNext,
+}: {
+  card: ProjectCard; priorityLabel: string; canEdit: boolean; onClick: () => void;
+  variant?: 'board' | 'compact'; showMovePrev?: boolean; showMoveNext?: boolean;
+  onMovePrev?: () => void; onMoveNext?: () => void;
+}) {
+  const { t } = useLanguage()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id, disabled: !canEdit })
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1,
   }
+  const moveBtnStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28,
+    borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-bg)',
+    cursor: 'pointer', color: 'var(--color-text-muted)', padding: 0, flexShrink: 0,
+  }
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...(canEdit ? listeners : {})}>
+      {variant === 'compact' && canEdit && (showMovePrev || showMoveNext) && (
+        <div
+          style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+        >
+          {showMovePrev ? (
+            <button type="button" title={t('projects_compact_move_prev')} onClick={onMovePrev} style={moveBtnStyle}>
+              <ChevronLeft size={14} />
+            </button>
+          ) : <span style={{ width: 28 }} />}
+          {showMoveNext ? (
+            <button type="button" title={t('projects_compact_move_next')} onClick={onMoveNext} style={moveBtnStyle}>
+              <ChevronRight size={14} />
+            </button>
+          ) : <span style={{ width: 28 }} />}
+        </div>
+      )}
       <CardView card={card} priorityLabel={priorityLabel} onClick={onClick} />
     </div>
   )
@@ -163,15 +271,36 @@ function SortableCard({ card, priorityLabel, canEdit, onClick }: { card: Project
 
 // ─── Column ───────────────────────────────────────────────────────────────────
 
-function Column({ column, cards, canEdit, priorityLabel, onAddCard, onCardClick, onRename, onDelete }: {
+function Column({
+  column, cards, canEdit, priorityLabel, onAddCard, onCardClick, onRename, onDelete,
+  variant = 'board', columnIndex = 0, columnsCount = 1, onMovePrev, onMoveNext,
+}: {
   column: ProjectColumn; cards: ProjectCard[]; canEdit: boolean; priorityLabel: (p: ProjectCardPriority) => string;
   onAddCard: () => void; onCardClick: (c: ProjectCard) => void; onRename: () => void; onDelete: () => void;
+  variant?: 'board' | 'compact'; columnIndex?: number; columnsCount?: number;
+  onMovePrev?: (cardId: string) => void; onMoveNext?: (cardId: string) => void;
 }) {
   const { t } = useLanguage()
   const { setNodeRef, isOver } = useDroppable({ id: `col:${column.id}` })
   const overLimit = column.wip_limit != null && cards.length > column.wip_limit
+  const isCompact = variant === 'compact'
+  const showMovePrev = isCompact && columnIndex > 0
+  const showMoveNext = isCompact && columnIndex < columnsCount - 1
   return (
-    <div style={{ width: 290, minWidth: 290, display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
+    <div
+      ref={setNodeRef}
+      style={{
+        width: isCompact ? '100%' : 290,
+        minWidth: isCompact ? 0 : 290,
+        flex: isCompact ? 1 : undefined,
+        display: 'flex',
+        flexDirection: 'column',
+        maxHeight: isCompact ? undefined : '100%',
+        borderRadius: 10,
+        transition: 'background-color 0.12s',
+        backgroundColor: isOver ? 'var(--color-hover)' : 'transparent',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', marginBottom: 6 }}>
         <span style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: column.color, flexShrink: 0 }} />
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{column.name}</span>
@@ -185,11 +314,34 @@ function Column({ column, cards, canEdit, priorityLabel, onAddCard, onCardClick,
           </>
         )}
       </div>
-      <div ref={setNodeRef} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, padding: 8, borderRadius: 10, backgroundColor: isOver ? 'var(--color-hover)' : 'var(--color-bg-secondary)', minHeight: 60, transition: 'background-color 0.12s' }}>
+      <div style={{
+        flex: isCompact ? undefined : 1,
+        overflowY: isCompact ? undefined : 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        padding: 8,
+        borderRadius: 10,
+        backgroundColor: 'var(--color-bg-secondary)',
+        minHeight: isCompact ? undefined : 60,
+      }}>
         <SortableContext items={cards.map(c => c.id)} strategy={verticalListSortingStrategy}>
           {cards.length === 0
             ? <div style={{ fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center', padding: '16px 0' }}>{t('projects_empty_column')}</div>
-            : cards.map(c => <SortableCard key={c.id} card={c} priorityLabel={priorityLabel(c.priority)} canEdit={canEdit} onClick={() => onCardClick(c)} />)
+            : cards.map(c => (
+              <SortableCard
+                key={c.id}
+                card={c}
+                priorityLabel={priorityLabel(c.priority)}
+                canEdit={canEdit}
+                variant={variant}
+                showMovePrev={showMovePrev}
+                showMoveNext={showMoveNext}
+                onMovePrev={showMovePrev && onMovePrev ? () => onMovePrev(c.id) : undefined}
+                onMoveNext={showMoveNext && onMoveNext ? () => onMoveNext(c.id) : undefined}
+                onClick={() => onCardClick(c)}
+              />
+            ))
           }
         </SortableContext>
         {canEdit && (
@@ -249,99 +401,750 @@ function PagePicker({ value, onChange }: { value: string | null; onChange: (id: 
 
 // ─── Card modal ───────────────────────────────────────────────────────────────
 
-interface CardForm { title: string; description: string; priority: ProjectCardPriority; due_date: string; assignee_user_id: string | null; labels: string[]; linked_page_id: string | null; completed: boolean }
+interface CardForm {
+  title: string; description: string; priority: ProjectCardPriority; due_date: string;
+  assignee_user_id: string | null; labels: string[]; linked_page_id: string | null;
+  completed: boolean; checklist: ProjectCardChecklistItem[]; attachments: ProjectCardAttachment[];
+}
 
-function CardModal({ card, members, canEdit, onClose, onSave, onDelete, onOpenPage }: {
-  card: ProjectCard | null; members: Member[]; canEdit: boolean;
-  onClose: () => void; onSave: (f: CardForm) => void; onDelete?: () => void; onOpenPage: (id: string) => void;
+interface PendingFile { id: string; file: File; preview: string }
+
+interface CardSaveExtras { pendingFiles: PendingFile[]; removedAttachmentIds: string[] }
+
+interface AutoSaveResult {
+  attachments: ProjectCardAttachment[]
+  uploadedPendingIds: string[]
+}
+
+interface UploadCardImagesResult {
+  uploaded: ProjectCardAttachment[]
+  uploadedPendingIds: string[]
+  failedCount: number
+}
+
+interface CardDraftStored {
+  form: CardForm
+  savedAt: string
+  removedAttachmentIds: string[]
+}
+
+interface CardModalStored {
+  open: boolean
+  boardId: string
+  cardId: string | null
+  columnId?: string
+}
+
+function getDraftKey(boardId: string, cardId: string | null, columnId?: string) {
+  return `${CARD_DRAFT_PREFIX}${boardId}:${cardId ?? 'new'}:${columnId ?? ''}`
+}
+
+function saveCardDraft(key: string, draft: CardDraftStored) {
+  try { sessionStorage.setItem(key, JSON.stringify(draft)) } catch { /* quota */ }
+}
+
+function loadCardDraft(key: string): CardDraftStored | null {
+  try {
+    const raw = sessionStorage.getItem(key)
+    return raw ? JSON.parse(raw) as CardDraftStored : null
+  } catch { return null }
+}
+
+function clearCardDraft(key: string) {
+  try { sessionStorage.removeItem(key) } catch { /* ignore */ }
+}
+
+function saveCardModalState(state: CardModalStored) {
+  try { sessionStorage.setItem(CARD_MODAL_STATE_KEY, JSON.stringify(state)) } catch { /* quota */ }
+}
+
+function loadCardModalState(): CardModalStored | null {
+  try {
+    const raw = sessionStorage.getItem(CARD_MODAL_STATE_KEY)
+    return raw ? JSON.parse(raw) as CardModalStored : null
+  } catch { return null }
+}
+
+function clearCardModalState() {
+  try { sessionStorage.removeItem(CARD_MODAL_STATE_KEY) } catch { /* ignore */ }
+}
+
+function reindexAllCards(list: ProjectCard[]): ProjectCard[] {
+  const byCol = new Map<string, ProjectCard[]>()
+  for (const c of list) {
+    const col = byCol.get(c.column_id) ?? []
+    col.push(c)
+    byCol.set(c.column_id, col)
+  }
+  const result: ProjectCard[] = []
+  for (const col of byCol.values()) {
+    col.forEach((c, i) => result.push({ ...c, sort_order: i }))
+  }
+  return result
+}
+
+function resolveColumnId(overId: string, list: ProjectCard[]): string | null {
+  if (overId.startsWith('col:')) return overId.slice(4)
+  return list.find(c => c.id === overId)?.column_id ?? null
+}
+
+function applyCardMove(prev: ProjectCard[], activeId: string, overId: string): ProjectCard[] | null {
+  if (activeId === overId) return null
+
+  const activeCard = prev.find(c => c.id === activeId)
+  if (!activeCard) return null
+
+  const activeCol = activeCard.column_id
+  const overCol = resolveColumnId(overId, prev)
+  if (!overCol) return null
+
+  if (activeCol === overCol && !overId.startsWith('col:')) {
+    const colCards = prev.filter(c => c.column_id === activeCol).sort(byOrder)
+    const oldIndex = colCards.findIndex(c => c.id === activeId)
+    const newIndex = colCards.findIndex(c => c.id === overId)
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return null
+    const reordered = arrayMove(colCards, oldIndex, newIndex)
+    const others = prev.filter(c => c.column_id !== activeCol)
+    return reindexAllCards([...others, ...reordered])
+  }
+
+  if (activeCol === overCol && overId.startsWith('col:')) {
+    const colCards = prev.filter(c => c.column_id === activeCol).sort(byOrder)
+    const oldIndex = colCards.findIndex(c => c.id === activeId)
+    if (oldIndex === -1 || oldIndex === colCards.length - 1) return null
+    const reordered = arrayMove(colCards, oldIndex, colCards.length - 1)
+    const others = prev.filter(c => c.column_id !== activeCol)
+    return reindexAllCards([...others, ...reordered])
+  }
+
+  const withoutActive = prev.filter(c => c.id !== activeId)
+  const moved = { ...activeCard, column_id: overCol }
+
+  if (overId.startsWith('col:')) {
+    const others = withoutActive.filter(c => c.column_id !== overCol)
+    const targetCol = withoutActive.filter(c => c.column_id === overCol)
+    return reindexAllCards([...others, ...targetCol, moved])
+  }
+
+  const overIndex = withoutActive.findIndex(c => c.id === overId)
+  if (overIndex === -1) return null
+  const next = [...withoutActive]
+  next.splice(overIndex, 0, moved)
+  return reindexAllCards(next)
+}
+
+function moveCardToColumn(prev: ProjectCard[], cardId: string, targetColumnId: string): ProjectCard[] | null {
+  const activeCard = prev.find(c => c.id === cardId)
+  if (!activeCard || activeCard.column_id === targetColumnId) return null
+  const withoutActive = prev.filter(c => c.id !== cardId)
+  const moved = { ...activeCard, column_id: targetColumnId }
+  const targetCol = withoutActive.filter(c => c.column_id === targetColumnId)
+  const others = withoutActive.filter(c => c.column_id !== targetColumnId)
+  return reindexAllCards([...others, ...targetCol, moved])
+}
+
+const collisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args)
+  if (pointerCollisions.length > 0) return pointerCollisions
+  return rectIntersection(args)
+}
+
+async function uploadCardImages(
+  userId: string, boardId: string, cardId: string, pending: PendingFile[],
+): Promise<UploadCardImagesResult> {
+  const uploaded: ProjectCardAttachment[] = []
+  const uploadedPendingIds: string[] = []
+  let failedCount = 0
+  for (const p of pending) {
+    const ext = p.file.name.split('.').pop() ?? (p.file.type.split('/')[1] || 'jpg')
+    const path = `${userId}/${boardId}/${cardId}/${Date.now()}-${p.id}.${ext}`
+    const { error } = await supabase.storage
+      .from(CARD_IMAGES_BUCKET)
+      .upload(path, p.file, { contentType: p.file.type, upsert: false })
+    if (error) {
+      failedCount++
+      continue
+    }
+    const { data } = supabase.storage.from(CARD_IMAGES_BUCKET).getPublicUrl(path)
+    uploaded.push({ id: crypto.randomUUID(), url: data.publicUrl, name: p.file.name || `image.${ext}` })
+    uploadedPendingIds.push(p.id)
+  }
+  return { uploaded, uploadedPendingIds, failedCount }
+}
+
+async function persistCardAttachments(
+  userId: string, boardId: string, cardId: string,
+  form: CardForm, extras: CardSaveExtras,
+): Promise<AutoSaveResult> {
+  let attachments = (form.attachments ?? []).filter(a => !extras.removedAttachmentIds.includes(a.id))
+  let uploadedPendingIds: string[] = []
+  if (extras.pendingFiles.length > 0) {
+    const { uploaded, uploadedPendingIds: ids, failedCount } = await uploadCardImages(userId, boardId, cardId, extras.pendingFiles)
+    if (failedCount > 0 && uploaded.length === 0) throw new Error('upload_failed')
+    attachments = [...attachments, ...uploaded]
+    uploadedPendingIds = ids
+  }
+  return { attachments, uploadedPendingIds }
+}
+
+function CardImageLightbox({ preview, onClose }: { preview: { url: string; name: string } | null; onClose: () => void }) {
+  const { t } = useLanguage()
+
+  useEffect(() => {
+    if (!preview) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [preview, onClose])
+
+  const handleDownload = async () => {
+    if (!preview) return
+    try {
+      const res = await fetch(preview.url)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const ext = preview.name.split('.').pop() ?? blob.type.split('/')[1] ?? 'jpg'
+      a.download = preview.name.includes('.') ? preview.name : `image_${Date.now()}.${ext}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      window.open(preview.url, '_blank')
+    }
+  }
+
+  if (!preview) return null
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.85)', padding: 16 }}
+    >
+      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, maxWidth: '95vw', maxHeight: '95vh' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={handleDownload}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+          >
+            <Download size={15} />{t('projects_attachments_download')}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ width: 36, height: 36, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.15)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <img
+          src={preview.url}
+          alt={preview.name}
+          style={{ maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain', borderRadius: 8, display: 'block' }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function CardAttachmentsSection({
+  attachments, pendingFiles, removedIds, canEdit, onAddPending, onRemoveExisting, onRemovePending,
+}: {
+  attachments: ProjectCardAttachment[]; pendingFiles: PendingFile[]; removedIds: string[];
+  canEdit: boolean;
+  onAddPending: (file: File) => void;
+  onRemoveExisting: (id: string) => void;
+  onRemovePending: (id: string) => void;
 }) {
   const { t } = useLanguage()
-  const [form, setForm] = useState<CardForm>({
-    title: card?.title ?? '', description: card?.description ?? '', priority: card?.priority ?? 'medium',
-    due_date: card?.due_date ?? '', assignee_user_id: card?.assignee_user_id ?? null,
-    labels: card?.labels ?? [], linked_page_id: card?.linked_page_id ?? null, completed: card?.completed ?? false,
-  })
-  const [labelInput, setLabelInput] = useState('')
-  const priorities: ProjectCardPriority[] = ['low', 'medium', 'high', 'urgent']
-  const pLabel = (p: ProjectCardPriority) => t(`projects_priority_${p}` as 'projects_priority_low')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [preview, setPreview] = useState<{ url: string; name: string } | null>(null)
+  const visibleAttachments = attachments.filter(a => !removedIds.includes(a.id))
+  const total = visibleAttachments.length + pendingFiles.length
 
-  const addLabel = () => {
-    const v = labelInput.trim()
-    if (v && !form.labels.includes(v)) setForm(f => ({ ...f, labels: [...f.labels, v] }))
-    setLabelInput('')
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('image/')) onAddPending(file)
+    e.target.value = ''
   }
 
   return (
-    <Modal title={card ? t('projects_edit_card') : t('projects_new_card')} onClose={onClose}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
-          <label style={labelStyle}>{t('projects_card_title')}</label>
-          <input disabled={!canEdit} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder={t('projects_card_title_placeholder')} style={inputStyle} autoFocus />
-        </div>
-        <div>
-          <label style={labelStyle}>{t('projects_card_description')}</label>
-          <textarea disabled={!canEdit} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
-        </div>
-        <div>
-          <label style={labelStyle}>{t('projects_priority')}</label>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {priorities.map(p => (
-              <button key={p} disabled={!canEdit} onClick={() => setForm(f => ({ ...f, priority: p }))}
-                style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: '1.5px solid', borderColor: form.priority === p ? PRIORITY_COLORS[p] : 'var(--color-border)', backgroundColor: form.priority === p ? `${PRIORITY_COLORS[p]}1f` : 'var(--color-bg)', color: form.priority === p ? PRIORITY_COLORS[p] : 'var(--color-text-muted)', fontSize: 12, fontWeight: form.priority === p ? 700 : 500, cursor: canEdit ? 'pointer' : 'default' }}>
-                {pLabel(p)}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>{t('projects_due_date')}</label>
-            <input disabled={!canEdit} type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} style={inputStyle} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>{t('projects_assignee')}</label>
-            <select disabled={!canEdit} value={form.assignee_user_id ?? ''} onChange={e => setForm(f => ({ ...f, assignee_user_id: e.target.value || null }))} style={inputStyle}>
-              <option value="">{t('projects_unassigned')}</option>
-              {members.map(m => <option key={m.id} value={m.id}>{m.display_name || m.email}</option>)}
-            </select>
-          </div>
-        </div>
-        <div>
-          <label style={labelStyle}>{t('projects_labels')}</label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-            {form.labels.map((l, i) => (
-              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text)', backgroundColor: 'var(--color-hover)', padding: '3px 8px', borderRadius: 6 }}>
-                {l}{canEdit && <button onClick={() => setForm(f => ({ ...f, labels: f.labels.filter((_, j) => j !== i) }))} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 0 }}><X size={11} /></button>}
-              </span>
-            ))}
-          </div>
-          {canEdit && <input value={labelInput} onChange={e => setLabelInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLabel() } }} placeholder={t('projects_labels_placeholder')} style={inputStyle} />}
-        </div>
-        <div>
-          <label style={labelStyle}>{t('projects_linked_page')}</label>
-          <PagePicker value={form.linked_page_id} onChange={(id) => setForm(f => ({ ...f, linked_page_id: id }))} />
-          {form.linked_page_id && (
-            <button onClick={() => onOpenPage(form.linked_page_id!)} style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: '#6366f1', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
-              <ExternalLink size={13} />{t('projects_open_page')}
-            </button>
-          )}
-        </div>
-        {canEdit && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={form.completed} onChange={e => setForm(f => ({ ...f, completed: e.target.checked }))} />
-            {t('projects_overview_completed')}
-          </label>
-        )}
-        {canEdit && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-            {onDelete ? <button onClick={onDelete} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: '#ef4444', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}><Trash2 size={14} />{t('projects_delete')}</button> : <span />}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <GhostBtn onClick={onClose}>{t('projects_cancel')}</GhostBtn>
-              <PrimaryBtn onClick={() => onSave(form)} disabled={!form.title.trim()}>{t('projects_save')}</PrimaryBtn>
-            </div>
-          </div>
+    <div>
+      <CardImageLightbox preview={preview} onClose={() => setPreview(null)} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <label style={{ ...labelStyle, marginBottom: 0 }}>{t('projects_attachments')}</label>
+        {total > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)' }}>
+            {t('projects_attachments_count').replace('{count}', String(total))}
+          </span>
         )}
       </div>
+      {(visibleAttachments.length > 0 || pendingFiles.length > 0) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+          {visibleAttachments.map(a => (
+            <div key={a.id} style={{ position: 'relative', width: 80, height: 80, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--color-border)', flexShrink: 0 }}>
+              <button
+                type="button"
+                title={t('projects_attachments_view')}
+                onClick={() => setPreview({ url: a.url, name: a.name })}
+                style={{ width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer', background: 'var(--color-hover)' }}
+              >
+                <img src={a.url} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); onRemoveExisting(a.id) }}
+                  style={{ position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: 999, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          ))}
+          {pendingFiles.map(p => (
+            <div key={p.id} style={{ position: 'relative', width: 80, height: 80, borderRadius: 8, overflow: 'hidden', border: '1px dashed #6366f1', flexShrink: 0 }}>
+              <button
+                type="button"
+                title={t('projects_attachments_view')}
+                onClick={() => setPreview({ url: p.preview, name: p.file.name || 'image' })}
+                style={{ width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer', background: 'transparent' }}
+              >
+                <img src={p.preview} alt={p.file.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); onRemovePending(p.id) }}
+                  style={{ position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: 999, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {canEdit && (
+        <>
+          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: '1px dashed var(--color-border)', background: 'transparent', color: 'var(--color-text-muted)', fontSize: 12.5, cursor: 'pointer', marginBottom: 6 }}
+          >
+            <Image size={14} />{t('projects_attachments_add')}
+          </button>
+          <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)' }}>{t('projects_attachments_paste_hint')}</p>
+        </>
+      )}
+    </div>
+  )
+}
+
+function CardChecklistSection({
+  items, canEdit, onUpdate,
+}: {
+  items: ProjectCardChecklistItem[]; canEdit: boolean;
+  onUpdate: (items: ProjectCardChecklistItem[], immediate: boolean) => void;
+}) {
+  const { t } = useLanguage()
+  const [input, setInput] = useState('')
+  const done = items.filter(i => i.completed).length
+  const total = items.length
+  const progressPct = total > 0 ? Math.round((done / total) * 100) : 0
+
+  const addItem = () => {
+    const text = input.trim()
+    if (!text) return
+    onUpdate([...items, { id: crypto.randomUUID(), text, completed: false }], true)
+    setInput('')
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <label style={{ ...labelStyle, marginBottom: 0 }}>{t('projects_checklist')}</label>
+        {total > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)' }}>
+            {t('projects_checklist_progress').replace('{done}', String(done)).replace('{total}', String(total))}
+          </span>
+        )}
+      </div>
+      {total > 0 && (
+        <div style={{ height: 4, borderRadius: 999, backgroundColor: 'var(--color-hover)', marginBottom: 8, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${progressPct}%`, borderRadius: 999, backgroundColor: done === total ? '#22c55e' : '#6366f1', transition: 'width 0.2s' }} />
+        </div>
+      )}
+      {items.length > 0 && (
+        <ul style={{ listStyle: 'none', margin: '0 0 8px', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {items.map(item => (
+            <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={item.completed}
+                disabled={!canEdit}
+                onChange={() => onUpdate(items.map(i => i.id === item.id ? { ...i, completed: !i.completed } : i), true)}
+                style={{ flexShrink: 0, cursor: canEdit ? 'pointer' : 'default' }}
+              />
+              <input
+                disabled={!canEdit}
+                value={item.text}
+                onChange={e => onUpdate(items.map(i => i.id === item.id ? { ...i, text: e.target.value } : i), false)}
+                style={{
+                  flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent',
+                  fontSize: 13, color: item.completed ? 'var(--color-text-muted)' : 'var(--color-text)',
+                  textDecoration: item.completed ? 'line-through' : 'none', padding: '4px 0',
+                }}
+              />
+              {canEdit && (
+                <button
+                  onClick={() => onUpdate(items.filter(i => i.id !== item.id), true)}
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canEdit && (
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
+          placeholder={t('projects_checklist_placeholder')}
+          style={inputStyle}
+        />
+      )}
+    </div>
+  )
+}
+
+function CardModal({ card, boardId: _boardId, columnId: _columnId, members, canEdit, isMobile, initialDraft, saveStatus, saveErrorKind, onClose, onSave, onDelete, onOpenPage, onAutoSave, onDraftChange }: {
+  card: ProjectCard | null; boardId: string; columnId?: string; members: Member[]; canEdit: boolean; isMobile?: boolean;
+  initialDraft?: CardDraftStored | null; saveStatus?: 'idle' | 'saving' | 'saved' | 'error'; saveErrorKind?: 'upload' | 'general';
+  onClose: () => void; onSave: (f: CardForm, extras: CardSaveExtras) => void; onDelete?: () => void; onOpenPage: (id: string) => void;
+  onAutoSave?: (form: CardForm, extras: CardSaveExtras) => Promise<AutoSaveResult | null> | AutoSaveResult | null;
+  onDraftChange?: (form: CardForm, removedAttachmentIds: string[]) => void;
+}) {
+  const { t } = useLanguage()
+
+  const resolveInitialForm = (): CardForm => {
+    if (initialDraft?.form) {
+      const cardUpdated = card?.updated_at ? new Date(card.updated_at).getTime() : 0
+      const draftSaved = new Date(initialDraft.savedAt).getTime()
+      if (!card || draftSaved >= cardUpdated) return initialDraft.form
+    }
+    return {
+      title: card?.title ?? '', description: card?.description ?? '', priority: card?.priority ?? 'medium',
+      due_date: card?.due_date ?? '', assignee_user_id: card?.assignee_user_id ?? null,
+      labels: card?.labels ?? [], linked_page_id: card?.linked_page_id ?? null, completed: card?.completed ?? false,
+      checklist: card?.checklist ?? [], attachments: card?.attachments ?? [],
+    }
+  }
+
+  const [form, setForm] = useState<CardForm>(resolveInitialForm)
+  const [labelInput, setLabelInput] = useState('')
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState<string[]>(initialDraft?.removedAttachmentIds ?? [])
+  const autoSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const formRef = useRef(form)
+  const removedIdsRef = useRef(removedAttachmentIds)
+  const pendingFilesRef = useRef<PendingFile[]>([])
+  formRef.current = form
+  removedIdsRef.current = removedAttachmentIds
+  pendingFilesRef.current = pendingFiles
+
+  const priorities: ProjectCardPriority[] = ['low', 'medium', 'high', 'urgent']
+  const pLabel = (p: ProjectCardPriority) => t(`projects_priority_${p}` as 'projects_priority_low')
+
+  const getExtras = useCallback((): CardSaveExtras => ({
+    pendingFiles: pendingFilesRef.current,
+    removedAttachmentIds: removedIdsRef.current,
+  }), [])
+
+  const applyAutoSaveResult = useCallback((result: AutoSaveResult) => {
+    setForm(f => {
+      const next = { ...f, attachments: result.attachments }
+      formRef.current = next
+      return next
+    })
+    setRemovedAttachmentIds([])
+    removedIdsRef.current = []
+    if (result.uploadedPendingIds.length > 0) {
+      setPendingFiles(prev => {
+        const next = prev.filter(p => {
+          if (result.uploadedPendingIds.includes(p.id)) URL.revokeObjectURL(p.preview)
+          return !result.uploadedPendingIds.includes(p.id)
+        })
+        pendingFilesRef.current = next
+        return next
+      })
+    }
+  }, [])
+
+  const runAutoSave = useCallback(async (nextForm: CardForm, immediate: boolean) => {
+    if (!onAutoSave || !canEdit) return
+    if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current)
+    const execute = async () => {
+      const result = await onAutoSave(nextForm, getExtras())
+      if (result) applyAutoSaveResult(result)
+    }
+    if (immediate) await execute()
+    else autoSaveDebounceRef.current = setTimeout(() => { void execute() }, AUTOSAVE_DEBOUNCE_MS)
+  }, [onAutoSave, canEdit, getExtras, applyAutoSaveResult])
+
+  const scheduleAutoSave = useCallback((nextForm: CardForm, immediate: boolean) => {
+    void runAutoSave(nextForm, immediate)
+  }, [runAutoSave])
+
+  const patchForm = useCallback((updater: (f: CardForm) => CardForm, immediate = false) => {
+    let nextForm: CardForm | null = null
+    setForm(prev => {
+      nextForm = updater(prev)
+      formRef.current = nextForm
+      return nextForm
+    })
+    if (nextForm) {
+      onDraftChange?.(nextForm, removedIdsRef.current)
+      scheduleAutoSave(nextForm, immediate)
+    }
+  }, [onDraftChange, scheduleAutoSave])
+
+  const descriptionStyle: React.CSSProperties = {
+    ...inputStyle, resize: 'vertical', lineHeight: 1.5, minHeight: isMobile ? 160 : 220,
+  }
+
+  const addPendingFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return
+    const id = crypto.randomUUID()
+    const pending: PendingFile = { id, file, preview: URL.createObjectURL(file) }
+    setPendingFiles(prev => {
+      const next = [...prev, pending]
+      pendingFilesRef.current = next
+      return next
+    })
+    void runAutoSave(formRef.current, true)
+  }
+
+  const removePendingFile = (id: string) => {
+    setPendingFiles(prev => {
+      const item = prev.find(p => p.id === id)
+      if (item) URL.revokeObjectURL(item.preview)
+      const next = prev.filter(p => p.id !== id)
+      pendingFilesRef.current = next
+      return next
+    })
+  }
+
+  const removeExistingAttachment = (id: string) => {
+    const next = [...removedIdsRef.current, id]
+    removedIdsRef.current = next
+    setRemovedAttachmentIds(next)
+    onDraftChange?.(formRef.current, next)
+    void runAutoSave(formRef.current, true)
+  }
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    if (!canEdit) return
+    for (const item of e.clipboardData.items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (file) addPendingFile(file)
+      }
+    }
+  }
+
+  const handleSave = () => {
+    onSave(form, { pendingFiles, removedAttachmentIds })
+  }
+
+  useEffect(() => () => { if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current) }, [])
+
+  useEffect(() => {
+    const flushDraft = () => {
+      if (onDraftChange) onDraftChange(formRef.current, removedIdsRef.current)
+    }
+    document.addEventListener('visibilitychange', flushDraft)
+    window.addEventListener('pagehide', flushDraft)
+    return () => {
+      document.removeEventListener('visibilitychange', flushDraft)
+      window.removeEventListener('pagehide', flushDraft)
+    }
+  }, [onDraftChange])
+
+  const updateChecklist = (checklist: ProjectCardChecklistItem[], immediate: boolean) => {
+    patchForm(f => ({ ...f, checklist }), immediate)
+  }
+
+  const addLabel = () => {
+    const v = labelInput.trim()
+    if (v && !form.labels.includes(v)) patchForm(f => ({ ...f, labels: [...f.labels, v] }), true)
+    setLabelInput('')
+  }
+
+  const saveStatusLabel = saveStatus === 'saving'
+    ? t('projects_saving')
+    : saveStatus === 'saved'
+      ? t('projects_saved')
+      : saveStatus === 'error'
+        ? (saveErrorKind === 'upload' ? t('projects_attachments_upload_error') : t('projects_autosave_error'))
+        : null
+
+  const priorityButtons = (
+    <div>
+      <label style={labelStyle}>{t('projects_priority')}</label>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {priorities.map(p => (
+          <button key={p} disabled={!canEdit} onClick={() => patchForm(f => ({ ...f, priority: p }), true)}
+            style={{ flex: 1, padding: isMobile ? '10px 0' : '7px 0', minHeight: isMobile ? 40 : undefined, borderRadius: 8, border: '1.5px solid', borderColor: form.priority === p ? PRIORITY_COLORS[p] : 'var(--color-border)', backgroundColor: form.priority === p ? `${PRIORITY_COLORS[p]}1f` : 'var(--color-bg)', color: form.priority === p ? PRIORITY_COLORS[p] : 'var(--color-text-muted)', fontSize: 12, fontWeight: form.priority === p ? 700 : 500, cursor: canEdit ? 'pointer' : 'default' }}>
+            {pLabel(p)}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  const dueAssigneeFields = (
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 12 }}>
+      <div style={{ flex: 1 }}>
+        <label style={labelStyle}>{t('projects_due_date')}</label>
+        <input disabled={!canEdit} type="date" value={form.due_date} onChange={e => patchForm(f => ({ ...f, due_date: e.target.value }))} style={inputStyle} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <label style={labelStyle}>{t('projects_assignee')}</label>
+        <select disabled={!canEdit} value={form.assignee_user_id ?? ''} onChange={e => patchForm(f => ({ ...f, assignee_user_id: e.target.value || null }), true)} style={inputStyle}>
+          <option value="">{t('projects_unassigned')}</option>
+          {members.map(m => <option key={m.id} value={m.id}>{m.display_name || m.email}</option>)}
+        </select>
+      </div>
+    </div>
+  )
+
+  const labelsField = (
+    <div>
+      <label style={labelStyle}>{t('projects_labels')}</label>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+        {form.labels.map((l, i) => (
+          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text)', backgroundColor: 'var(--color-hover)', padding: '3px 8px', borderRadius: 6 }}>
+            {l}{canEdit && <button onClick={() => patchForm(f => ({ ...f, labels: f.labels.filter((_, j) => j !== i) }), true)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 0 }}><X size={11} /></button>}
+          </span>
+        ))}
+      </div>
+      {canEdit && <input value={labelInput} onChange={e => setLabelInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLabel() } }} placeholder={t('projects_labels_placeholder')} style={inputStyle} />}
+    </div>
+  )
+
+  const linkedPageField = (
+    <div>
+      <label style={labelStyle}>{t('projects_linked_page')}</label>
+      <PagePicker value={form.linked_page_id} onChange={(id) => patchForm(f => ({ ...f, linked_page_id: id }), true)} />
+      {form.linked_page_id && (
+        <button onClick={() => onOpenPage(form.linked_page_id!)} style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: '#6366f1', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+          <ExternalLink size={13} />{t('projects_open_page')}
+        </button>
+      )}
+    </div>
+  )
+
+  const completedField = canEdit ? (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: 'pointer' }}>
+      <input type="checkbox" checked={form.completed} onChange={e => patchForm(f => ({ ...f, completed: e.target.checked }), true)} />
+      {t('projects_overview_completed')}
+    </label>
+  ) : null
+
+  const footer = (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4,
+      ...(isMobile ? { position: 'sticky', bottom: 0, backgroundColor: 'var(--color-bg)', paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 16 } : {}),
+    }}>
+      {canEdit && onDelete ? (
+        <button onClick={onDelete} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: '#ef4444', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <Trash2 size={14} />{t('projects_delete')}
+        </button>
+      ) : <span />}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {saveStatusLabel && (
+          <span style={{ fontSize: 12, fontWeight: 600, color: saveStatus === 'error' ? '#ef4444' : 'var(--color-text-muted)' }}>
+            {saveStatusLabel}
+          </span>
+        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <GhostBtn onClick={onClose}>{t('projects_cancel')}</GhostBtn>
+          {canEdit && <PrimaryBtn onClick={handleSave} disabled={!form.title.trim()}>{t('projects_save')}</PrimaryBtn>}
+        </div>
+      </div>
+    </div>
+  )
+
+  const attachmentsField = (
+    <CardAttachmentsSection
+      attachments={form.attachments}
+      pendingFiles={pendingFiles}
+      removedIds={removedAttachmentIds}
+      canEdit={canEdit}
+      onAddPending={addPendingFile}
+      onRemoveExisting={removeExistingAttachment}
+      onRemovePending={removePendingFile}
+    />
+  )
+
+  const leftColumn = (
+    <>
+      <div>
+        <label style={labelStyle}>{t('projects_card_title')}</label>
+        <input disabled={!canEdit} value={form.title} onChange={e => patchForm(f => ({ ...f, title: e.target.value }))} placeholder={t('projects_card_title_placeholder')} style={inputStyle} autoFocus />
+      </div>
+      <div>
+        <label style={labelStyle}>{t('projects_card_description')}</label>
+        <textarea disabled={!canEdit} value={form.description} onChange={e => patchForm(f => ({ ...f, description: e.target.value }))} rows={isMobile ? 6 : 8} style={descriptionStyle} />
+      </div>
+      {attachmentsField}
+      <CardChecklistSection items={form.checklist} canEdit={canEdit} onUpdate={updateChecklist} />
+    </>
+  )
+
+  return (
+    <Modal
+      title={card ? t('projects_edit_card') : t('projects_new_card')}
+      onClose={onClose}
+      closeOnBackdrop={false}
+      isMobile={isMobile}
+      width={860}
+      maxHeight="92vh"
+    >
+      {isMobile ? (
+        <div onPaste={handlePaste} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {leftColumn}
+          {priorityButtons}
+          {dueAssigneeFields}
+          {labelsField}
+          {linkedPageField}
+          {completedField}
+          {footer}
+        </div>
+      ) : (
+        <div onPaste={handlePaste} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16, alignItems: 'start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {leftColumn}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {priorityButtons}
+              {dueAssigneeFields}
+              {labelsField}
+              {linkedPageField}
+              {completedField}
+            </div>
+          </div>
+          {footer}
+        </div>
+      )}
     </Modal>
   )
 }
@@ -579,31 +1382,149 @@ function OverviewView({ columns, cards }: { columns: ProjectColumn[]; cards: Pro
   )
 }
 
+// ─── Compact kanban (mobile focus) ────────────────────────────────────────────
+
+function CompactKanbanView({
+  boardId,
+  columns,
+  cardsByColumn,
+  canEdit,
+  priorityLabel,
+  sensors,
+  persistError,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  activeDragCard,
+  pLabel,
+  onAddCard,
+  onCardClick,
+  onRename,
+  onDelete,
+  onMoveCardToColumn,
+}: {
+  boardId: string
+  columns: ProjectColumn[]
+  cardsByColumn: Record<string, ProjectCard[]>
+  canEdit: boolean
+  priorityLabel: (p: ProjectCardPriority) => string
+  sensors: ReturnType<typeof useSensors>
+  persistError: string | null
+  onDragStart: (e: DragStartEvent) => void
+  onDragOver: (e: DragOverEvent) => void
+  onDragEnd: (e: DragEndEvent) => void
+  activeDragCard: ProjectCard | null | undefined
+  pLabel: (p: ProjectCardPriority) => string
+  onAddCard: (columnId: string) => void
+  onCardClick: (c: ProjectCard) => void
+  onRename: (col: ProjectColumn) => void
+  onDelete: (col: ProjectColumn) => void
+  onMoveCardToColumn: (cardId: string, targetColumnId: string) => void
+}) {
+  const storageKey = `${COMPACT_COLUMN_KEY}${boardId}`
+
+  const [activeColumnId, setActiveColumnId] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem(storageKey)
+      if (stored && columns.some(c => c.id === stored)) return stored
+    } catch { /* ignore */ }
+    return columns[0]?.id ?? ''
+  })
+
+  useEffect(() => {
+    if (activeColumnId && !columns.some(c => c.id === activeColumnId)) {
+      setActiveColumnId(columns[0]?.id ?? '')
+    }
+  }, [columns, activeColumnId])
+
+  useEffect(() => {
+    if (activeColumnId) {
+      try { sessionStorage.setItem(storageKey, activeColumnId) } catch { /* ignore */ }
+    }
+  }, [activeColumnId, storageKey])
+
+  const activeCol = columns.find(c => c.id === activeColumnId) ?? columns[0]
+  if (!activeCol) return null
+
+  const activeColIdx = columns.findIndex(c => c.id === activeCol.id)
+  const prevCol = activeColIdx > 0 ? columns[activeColIdx - 1] : null
+  const nextCol = activeColIdx < columns.length - 1 ? columns[activeColIdx + 1] : null
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+      {persistError && (
+        <div style={{ margin: '0 12px', padding: '8px 12px', borderRadius: 8, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 12.5, fontWeight: 600 }}>
+          {persistError}
+        </div>
+      )}
+      <div style={{
+        display: 'flex', gap: 6, overflowX: 'auto', padding: '12px 12px 0', flexShrink: 0,
+        WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'],
+      }}>
+        {columns.map(col => {
+          const count = cardsByColumn[col.id]?.length ?? 0
+          const active = col.id === activeCol.id
+          return (
+            <button
+              key={col.id}
+              type="button"
+              onClick={() => setActiveColumnId(col.id)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                padding: '7px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                fontSize: 12, fontWeight: active ? 600 : 500, whiteSpace: 'nowrap',
+                backgroundColor: active ? '#6366f1' : 'var(--color-bg-secondary)',
+                color: active ? '#fff' : 'var(--color-text-muted)',
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: col.color, flexShrink: 0 }} />
+              {col.name} · {count}
+            </button>
+          )
+        })}
+      </div>
+      <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 12, WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'] }}>
+          <Column
+            variant="compact"
+            column={activeCol}
+            cards={cardsByColumn[activeCol.id] ?? []}
+            canEdit={canEdit}
+            priorityLabel={priorityLabel}
+            columnIndex={activeColIdx}
+            columnsCount={columns.length}
+            onMovePrev={prevCol ? (cardId) => onMoveCardToColumn(cardId, prevCol.id) : undefined}
+            onMoveNext={nextCol ? (cardId) => onMoveCardToColumn(cardId, nextCol.id) : undefined}
+            onAddCard={() => onAddCard(activeCol.id)}
+            onCardClick={onCardClick}
+            onRename={() => onRename(activeCol)}
+            onDelete={() => onDelete(activeCol)}
+          />
+        </div>
+        <DragOverlay>
+          {activeDragCard ? (
+            <div style={{ width: 'calc(100vw - 48px)', maxWidth: 480 }}>
+              <CardView card={activeDragCard} priorityLabel={pLabel(activeDragCard.priority)} dragging />
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    </div>
+  )
+}
+
 // ─── List view ────────────────────────────────────────────────────────────────
 
-function ListView({ columns, cards, onCardClick }: { columns: ProjectColumn[]; cards: ProjectCard[]; onCardClick: (c: ProjectCard) => void }) {
+function ListView({ columns, cards, totalCount, onCardClick }: { columns: ProjectColumn[]; cards: ProjectCard[]; totalCount: number; onCardClick: (c: ProjectCard) => void }) {
   const { t } = useLanguage()
-  const [fCol, setFCol] = useState('')
-  const [fPri, setFPri] = useState('')
   const colName = (id: string) => columns.find(c => c.id === id)?.name ?? '—'
-  const filtered = cards
-    .filter(c => (fCol ? c.column_id === fCol : true) && (fPri ? c.priority === fPri : true))
-    .sort(byOrder)
-  if (cards.length === 0) return <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('projects_no_cards')}</p>
+  const sorted = [...cards].sort(byOrder)
+  if (totalCount === 0) return <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('projects_no_cards')}</p>
+  if (sorted.length === 0) return <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('projects_empty_filter')}</p>
   const th: React.CSSProperties = { textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '8px 12px' }
   const td: React.CSSProperties = { padding: '10px 12px', fontSize: 13, color: 'var(--color-text)', borderTop: '1px solid var(--color-border)' }
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        <select value={fCol} onChange={e => setFCol(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
-          <option value="">{t('projects_table_column')}: {t('projects_filter_all')}</option>
-          {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select value={fPri} onChange={e => setFPri(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
-          <option value="">{t('projects_priority')}: {t('projects_filter_all')}</option>
-          {(['urgent', 'high', 'medium', 'low'] as ProjectCardPriority[]).map(p => <option key={p} value={p}>{t(`projects_priority_${p}` as 'projects_priority_low')}</option>)}
-        </select>
-      </div>
       <div style={{ border: '1px solid var(--color-border)', borderRadius: 12, overflow: 'hidden', backgroundColor: 'var(--color-surface)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
@@ -614,7 +1535,7 @@ function ListView({ columns, cards, onCardClick }: { columns: ProjectColumn[]; c
             <th style={th}>{t('projects_table_due')}</th>
           </tr></thead>
           <tbody>
-            {filtered.map(c => (
+            {sorted.map(c => (
               <tr key={c.id} onClick={() => onCardClick(c)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...td, fontWeight: 600, textDecoration: c.completed ? 'line-through' : 'none', opacity: c.completed ? 0.6 : 1 }}>{c.title}</td>
                 <td style={td}>{colName(c.column_id)}</td>
@@ -632,7 +1553,9 @@ function ListView({ columns, cards, onCardClick }: { columns: ProjectColumn[]; c
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
-type ViewMode = 'kanban' | 'list' | 'overview'
+type ViewMode = 'kanban' | 'compact' | 'list' | 'overview'
+
+const VALID_VIEWS: ViewMode[] = ['kanban', 'compact', 'list', 'overview']
 
 export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean }) {
   const { user } = useAuth()
@@ -644,10 +1567,26 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
   const [columns, setColumns] = useState<ProjectColumn[]>([])
   const [cards, setCards] = useState<ProjectCard[]>([])
   const [members, setMembers] = useState<Member[]>([])
-  const [view, setView] = useState<ViewMode>(() => (localStorage.getItem(VIEW_KEY) as ViewMode) || 'kanban')
+  const [view, setView] = useState<ViewMode>(() => {
+    const stored = localStorage.getItem(VIEW_KEY)
+    if (stored && VALID_VIEWS.includes(stored as ViewMode)) return stored as ViewMode
+    return 'kanban'
+  })
   const [loading, setLoading] = useState(true)
   const [boardLoading, setBoardLoading] = useState(false)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [cardSaveStatus, setCardSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [cardSaveErrorKind, setCardSaveErrorKind] = useState<'upload' | 'general'>('general')
+  const [persistError, setPersistError] = useState<string | null>(null)
+  const [cardFilters, setCardFilters] = useState<ProjectCardFilters>(defaultCardFilters)
+
+  const boardsRef = useRef(boards)
+  boardsRef.current = boards
+  const cardModalOpenRef = useRef(false)
+  const modalRestoredRef = useRef(false)
+  const cardSaveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dragSourceColumnRef = useRef<string | null>(null)
+  const userId = user?.id
 
   // Modals
   const [boardModal, setBoardModal] = useState<{ open: boolean; board?: ProjectBoard | null }>({ open: false })
@@ -655,13 +1594,17 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
   const [cardModal, setCardModal] = useState<{ open: boolean; card?: ProjectCard | null; columnId?: string }>({ open: false })
   const [columnModal, setColumnModal] = useState<{ open: boolean; column?: ProjectColumn | null }>({ open: false })
   const [shareOpen, setShareOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null)
 
   const activeBoard = boards.find(b => b.id === activeBoardId) ?? null
   const canEdit = !!activeBoard && (activeBoard.user_id === user?.id || activeBoard.share_role === 'editor' || activeBoard.share_role === 'owner')
   const isOwner = !!activeBoard && activeBoard.user_id === user?.id
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
+  )
   const pLabel = (p: ProjectCardPriority) => t(`projects_priority_${p}` as 'projects_priority_low')
 
   useEffect(() => { localStorage.setItem(VIEW_KEY, view) }, [view])
@@ -694,38 +1637,86 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
   useEffect(() => { loadBoards() }, [loadBoards])
   useEffect(() => { if (activeBoardId) localStorage.setItem(ACTIVE_BOARD_KEY, activeBoardId) }, [activeBoardId])
 
-  const loadBoardData = useCallback(async (boardId: string) => {
-    setBoardLoading(true)
-    const [{ data: cols }, { data: cds }] = await Promise.all([
-      supabase.from('project_columns').select('*').eq('board_id', boardId).order('sort_order', { ascending: true }),
-      supabase.from('project_cards').select('*, assignee:profiles!project_cards_assignee_user_id_fkey(email, display_name)').eq('board_id', boardId).order('sort_order', { ascending: true }),
-    ])
-    setColumns((cols as ProjectColumn[]) ?? [])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setCards(((cds as any[]) ?? []).map((r: any) => ({ ...r, labels: r.labels ?? [], assignee_profile: Array.isArray(r.assignee) ? r.assignee[0] : r.assignee })))
+  useEffect(() => {
+    if (activeBoardId) setCardFilters(loadCardFilters(activeBoardId))
+    else setCardFilters(defaultCardFilters())
+  }, [activeBoardId])
 
-    const board = boards.find(b => b.id === boardId)
-    const memberIds = new Set<string>([user?.id ?? ''])
-    if (board) memberIds.add(board.user_id)
-    const { data: sh } = await supabase.from('project_shares').select('shared_with_user_id').eq('board_id', boardId)
-    if (sh) sh.forEach((s: { shared_with_user_id: string }) => memberIds.add(s.shared_with_user_id))
-    const { data: profs } = await supabase.from('profiles').select('id, email, display_name').in('id', [...memberIds])
-    setMembers((profs as Member[]) ?? [])
-    setBoardLoading(false)
-  }, [boards, user])
+  useEffect(() => {
+    if (activeBoardId) saveCardFilters(activeBoardId, cardFilters)
+  }, [activeBoardId, cardFilters])
+
+  useEffect(() => { cardModalOpenRef.current = cardModal.open }, [cardModal.open])
+
+  const loadBoardData = useCallback(async (boardId: string, options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? cardModalOpenRef.current
+    if (!silent) setBoardLoading(true)
+    try {
+      const [{ data: cols }, { data: cds }] = await Promise.all([
+        supabase.from('project_columns').select('*').eq('board_id', boardId).order('sort_order', { ascending: true }),
+        supabase.from('project_cards').select('*, assignee:profiles!project_cards_assignee_user_id_fkey(email, display_name)').eq('board_id', boardId).order('sort_order', { ascending: true }),
+      ])
+      setColumns((cols as ProjectColumn[]) ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setCards(((cds as any[]) ?? []).map((r: any) => ({
+        ...r,
+        labels: r.labels ?? [],
+        checklist: r.checklist ?? [],
+        attachments: r.attachments ?? [],
+        assignee_profile: Array.isArray(r.assignee) ? r.assignee[0] : r.assignee,
+      })))
+
+      const board = boardsRef.current.find(b => b.id === boardId)
+      const memberIds = new Set<string>([userId ?? ''])
+      if (board) memberIds.add(board.user_id)
+      const { data: sh } = await supabase.from('project_shares').select('shared_with_user_id').eq('board_id', boardId)
+      if (sh) sh.forEach((s: { shared_with_user_id: string }) => memberIds.add(s.shared_with_user_id))
+      const { data: profs } = await supabase.from('profiles').select('id, email, display_name').in('id', [...memberIds])
+      setMembers((profs as Member[]) ?? [])
+    } finally {
+      if (!silent) setBoardLoading(false)
+    }
+  }, [userId])
 
   useEffect(() => {
     if (activeBoardId && boards.length) loadBoardData(activeBoardId)
     else { setColumns([]); setCards([]) }
   }, [activeBoardId, boards.length, loadBoardData])
 
+  useEffect(() => {
+    if (modalRestoredRef.current || boardLoading || !activeBoardId || cardModal.open) return
+    const saved = loadCardModalState()
+    if (!saved?.open || saved.boardId !== activeBoardId) return
+    modalRestoredRef.current = true
+    const card = saved.cardId ? cards.find(c => c.id === saved.cardId) ?? null : null
+    if (saved.cardId && !card) return
+    setCardModal({ open: true, card, columnId: saved.columnId })
+  }, [activeBoardId, boardLoading, cards])
+
+  useEffect(() => {
+    if (cardModal.open && activeBoardId) {
+      saveCardModalState({
+        open: true,
+        boardId: activeBoardId,
+        cardId: cardModal.card?.id ?? null,
+        columnId: cardModal.columnId,
+      })
+    } else if (!cardModal.open) {
+      clearCardModalState()
+    }
+  }, [cardModal.open, cardModal.card?.id, cardModal.columnId, activeBoardId])
+
+  const filteredCards = useMemo(() => filterProjectCards(cards, cardFilters), [cards, cardFilters])
+  const availableLabels = useMemo(() => collectBoardLabels(cards), [cards])
+  const filtersActive = hasActiveFilters(cardFilters)
+
   const cardsByColumn = useMemo(() => {
     const map: Record<string, ProjectCard[]> = {}
     columns.forEach(c => { map[c.id] = [] })
-    cards.forEach(c => { (map[c.column_id] ??= []).push(c) })
+    filteredCards.forEach(c => { (map[c.column_id] ??= []).push(c) })
     Object.values(map).forEach(list => list.sort(byOrder))
     return map
-  }, [columns, cards])
+  }, [columns, filteredCards])
 
   // ── CRUD ──
   const createBoard = async (data: { name: string; icon: string; color: string; description: string }) => {
@@ -775,23 +1766,199 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
     })
   }
 
-  const saveCard = async (f: CardForm) => {
+  const closeCardModal = useCallback(() => {
+    if (activeBoardId) {
+      clearCardDraft(getDraftKey(activeBoardId, cardModal.card?.id ?? null, cardModal.columnId))
+    }
+    clearCardModalState()
+    setCardModal({ open: false })
+    setCardSaveStatus('idle')
+    setCardSaveErrorKind('general')
+  }, [activeBoardId, cardModal.card?.id, cardModal.columnId])
+
+  const handleDraftChange = useCallback((form: CardForm, removedAttachmentIds: string[]) => {
     if (!activeBoardId) return
+    saveCardDraft(getDraftKey(activeBoardId, cardModal.card?.id ?? null, cardModal.columnId), {
+      form,
+      savedAt: new Date().toISOString(),
+      removedAttachmentIds,
+    })
+  }, [activeBoardId, cardModal.card?.id, cardModal.columnId])
+
+  const cardDraftKey = activeBoardId
+    ? getDraftKey(activeBoardId, cardModal.card?.id ?? null, cardModal.columnId)
+    : null
+
+  const autoSaveCard = async (formSnapshot: CardForm, extras: CardSaveExtras = { pendingFiles: [], removedAttachmentIds: [] }): Promise<AutoSaveResult | null> => {
+    if (!activeBoardId || !userId || !canEdit) return null
+
+    const hasPending = extras.pendingFiles.length > 0
+    const hasRemovals = extras.removedAttachmentIds.length > 0
+    if (!cardModal.card && !formSnapshot.title.trim() && !hasPending && !hasRemovals) {
+      setCardSaveStatus('idle')
+      return null
+    }
+    if (!cardModal.card && !formSnapshot.title.trim()) {
+      setCardSaveStatus('idle')
+      return null
+    }
+
+    setCardSaveStatus('saving')
+    setCardSaveErrorKind('general')
+    const updatedAt = new Date().toISOString()
+
+    let cardId = cardModal.card?.id
+    let attachments = (formSnapshot.attachments ?? []).filter(a => !extras.removedAttachmentIds.includes(a.id))
+    let uploadedPendingIds: string[] = []
+
+    if (!cardId) {
+      const colId = cardModal.columnId ?? columns[0]?.id
+      if (!colId) {
+        setCardSaveStatus('error')
+        return null
+      }
+      const order = (cardsByColumn[colId]?.length ?? 0)
+      const insertPayload = {
+        board_id: activeBoardId,
+        column_id: colId,
+        sort_order: order,
+        title: formSnapshot.title.trim(),
+        description: formSnapshot.description,
+        priority: formSnapshot.priority,
+        due_date: formSnapshot.due_date || null,
+        assignee_user_id: formSnapshot.assignee_user_id,
+        labels: formSnapshot.labels,
+        linked_page_id: formSnapshot.linked_page_id,
+        completed: formSnapshot.completed,
+        checklist: formSnapshot.checklist,
+        attachments,
+        updated_at: updatedAt,
+      }
+      const { data: inserted, error } = await supabase
+        .from('project_cards')
+        .insert(insertPayload)
+        .select('*')
+        .single()
+      if (error || !inserted) {
+        setCardSaveStatus('error')
+        return null
+      }
+      cardId = inserted.id
+      const newCard: ProjectCard = {
+        ...(inserted as ProjectCard),
+        labels: (inserted as ProjectCard).labels ?? [],
+        checklist: (inserted as ProjectCard).checklist ?? formSnapshot.checklist,
+        attachments: (inserted as ProjectCard).attachments ?? attachments,
+      }
+      setCards(prev => [...prev, newCard])
+      setCardModal(prev => ({ ...prev, card: newCard }))
+      if (cardDraftKey) {
+        clearCardDraft(cardDraftKey)
+        saveCardDraft(getDraftKey(activeBoardId, newCard.id, colId), {
+          form: { ...formSnapshot, attachments },
+          savedAt: updatedAt,
+          removedAttachmentIds: [],
+        })
+      }
+    }
+
+    if (!cardId) {
+      setCardSaveStatus('error')
+      return null
+    }
+
+    try {
+      const attachmentResult = await persistCardAttachments(userId, activeBoardId, cardId, formSnapshot, extras)
+      attachments = attachmentResult.attachments
+      uploadedPendingIds = attachmentResult.uploadedPendingIds
+    } catch {
+      setCardSaveErrorKind('upload')
+      setCardSaveStatus('error')
+      return null
+    }
+
     const payload = {
+      title: formSnapshot.title.trim(),
+      description: formSnapshot.description,
+      priority: formSnapshot.priority,
+      due_date: formSnapshot.due_date || null,
+      assignee_user_id: formSnapshot.assignee_user_id,
+      labels: formSnapshot.labels,
+      linked_page_id: formSnapshot.linked_page_id,
+      completed: formSnapshot.completed,
+      checklist: formSnapshot.checklist,
+      attachments,
+      updated_at: updatedAt,
+    }
+
+    const { error } = await supabase.from('project_cards').update(payload).eq('id', cardId)
+    if (error) {
+      setCardSaveStatus('error')
+      return null
+    }
+
+    setCards(prev => prev.map(c => c.id === cardId ? { ...c, ...payload } : c))
+    setCardSaveStatus('saved')
+    if (cardSaveStatusTimerRef.current) clearTimeout(cardSaveStatusTimerRef.current)
+    cardSaveStatusTimerRef.current = setTimeout(() => setCardSaveStatus('idle'), 2000)
+    return { attachments, uploadedPendingIds }
+  }
+
+  const saveCard = async (f: CardForm, extras: CardSaveExtras = { pendingFiles: [], removedAttachmentIds: [] }) => {
+    if (!activeBoardId || !userId) return
+
+    setCardSaveStatus('saving')
+    setCardSaveErrorKind('general')
+    const updatedAt = new Date().toISOString()
+    const basePayload = {
       title: f.title.trim(), description: f.description, priority: f.priority,
       due_date: f.due_date || null, assignee_user_id: f.assignee_user_id, labels: f.labels,
-      linked_page_id: f.linked_page_id, completed: f.completed, updated_at: new Date().toISOString(),
+      linked_page_id: f.linked_page_id, completed: f.completed, checklist: f.checklist,
     }
-    if (cardModal.card) {
-      await supabase.from('project_cards').update(payload).eq('id', cardModal.card.id)
-    } else {
+
+    let cardId = cardModal.card?.id
+
+    if (!cardId) {
       const colId = cardModal.columnId ?? columns[0]?.id
       if (!colId) return
       const order = (cardsByColumn[colId]?.length ?? 0)
-      await supabase.from('project_cards').insert({ board_id: activeBoardId, column_id: colId, sort_order: order, ...payload })
+      const { data: inserted, error } = await supabase
+        .from('project_cards')
+        .insert({ board_id: activeBoardId, column_id: colId, sort_order: order, attachments: [], ...basePayload, updated_at: updatedAt })
+        .select('id')
+        .single()
+      if (error || !inserted) {
+        setCardSaveStatus('error')
+        return
+      }
+      cardId = inserted.id
     }
+
+    if (!cardId) {
+      setCardSaveStatus('error')
+      return
+    }
+
+    let attachments: ProjectCardAttachment[]
+    try {
+      ({ attachments } = await persistCardAttachments(userId, activeBoardId, cardId, f, extras))
+    } catch {
+      setCardSaveErrorKind('upload')
+      setCardSaveStatus('error')
+      return
+    }
+
+    const { error } = await supabase.from('project_cards').update({ ...basePayload, attachments, updated_at: updatedAt }).eq('id', cardId)
+    if (error) {
+      setCardSaveStatus('error')
+      return
+    }
+
+    if (cardDraftKey) clearCardDraft(cardDraftKey)
+    clearCardModalState()
     setCardModal({ open: false })
-    await loadBoardData(activeBoardId)
+    setCardSaveStatus('idle')
+    await loadBoardData(activeBoardId, { silent: true })
   }
   const deleteCard = async () => {
     if (!cardModal.card || !activeBoardId) return
@@ -800,6 +1967,8 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
       message: t('projects_delete_card_confirm'),
       onConfirm: async () => {
         await supabase.from('project_cards').delete().eq('id', cardId)
+        if (cardDraftKey) clearCardDraft(cardDraftKey)
+        clearCardModalState()
         setCardModal({ open: false })
         await loadBoardData(activeBoardId)
         setDeleteConfirm(null)
@@ -815,48 +1984,75 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
 
   // ── Drag & drop ──
   const persist = async (list: ProjectCard[]) => {
-    await Promise.all(list.map(c => supabase.from('project_cards').update({ column_id: c.column_id, sort_order: c.sort_order }).eq('id', c.id)))
+    const results = await Promise.all(
+      list.map(c => supabase.from('project_cards').update({ column_id: c.column_id, sort_order: c.sort_order }).eq('id', c.id)),
+    )
+    if (results.some(r => r.error)) {
+      setPersistError(t('projects_persist_error'))
+      if (activeBoardId) await loadBoardData(activeBoardId, { silent: true })
+      return false
+    }
+    setPersistError(null)
+    return true
   }
 
-  const handleDragStart = (e: DragStartEvent) => setActiveDragId(String(e.active.id))
+  const handleDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id)
+    setActiveDragId(id)
+    dragSourceColumnRef.current = cards.find(c => c.id === id)?.column_id ?? null
+  }
 
-  const handleDragEnd = (e: DragEndEvent) => {
-    setActiveDragId(null)
-    const { active, over } = e
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event
     if (!over) return
-    const activeCard = cards.find(c => c.id === active.id)
-    if (!activeCard) return
-    const sourceCol = activeCard.column_id
-    let targetCol: string
-    let overCardId: string | null = null
+
+    const activeId = String(active.id)
     const overId = String(over.id)
-    if (overId.startsWith('col:')) targetCol = overId.slice(4)
-    else {
-      const oc = cards.find(c => c.id === overId)
-      if (!oc) return
-      targetCol = oc.column_id
-      overCardId = oc.id
-    }
-    if (sourceCol === targetCol && overId === String(active.id)) return
+    if (activeId === overId) return
 
-    const source = cards.filter(c => c.column_id === sourceCol).sort(byOrder)
-    const sameCol = sourceCol === targetCol
-    const newSource = source.filter(c => c.id !== activeCard.id)
-    const target = sameCol ? newSource : cards.filter(c => c.column_id === targetCol).sort(byOrder)
-    let insertIdx = target.length
-    if (overCardId) {
-      const idx = target.findIndex(c => c.id === overCardId)
-      if (idx !== -1) insertIdx = idx
-    }
-    const moved: ProjectCard = { ...activeCard, column_id: targetCol }
-    target.splice(insertIdx, 0, moved)
-    target.forEach((c, i) => { c.sort_order = i; c.column_id = targetCol })
-    if (!sameCol) newSource.forEach((c, i) => { c.sort_order = i })
+    setCards(prev => applyCardMove(prev, activeId, overId) ?? prev)
+  }
 
-    const others = cards.filter(c => c.column_id !== sourceCol && c.column_id !== targetCol)
-    const result = sameCol ? [...others, ...target] : [...others, ...newSource, ...target]
-    setCards(result)
-    void persist(sameCol ? target : [...newSource, ...target])
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+    const activeId = String(active.id)
+    const sourceCol = dragSourceColumnRef.current
+
+    setActiveDragId(null)
+
+    let next = cards
+    setCards(prev => {
+      if (over) {
+        next = applyCardMove(prev, activeId, String(over.id)) ?? prev
+      } else {
+        next = prev
+      }
+      return next
+    })
+
+    try {
+      if (!sourceCol) return
+
+      const destCol = next.find(c => c.id === activeId)?.column_id
+      const overCol = over ? resolveColumnId(String(over.id), next) : null
+      const affectedCols = new Set(
+        [sourceCol, destCol, overCol].filter((c): c is string => !!c),
+      )
+      const toPersist = next.filter(c => affectedCols.has(c.column_id))
+      if (toPersist.length > 0) await persist(toPersist)
+    } finally {
+      dragSourceColumnRef.current = null
+    }
+  }
+
+  const handleMoveCardToColumn = async (cardId: string, targetColumnId: string) => {
+    const sourceCol = cards.find(c => c.id === cardId)?.column_id
+    const next = moveCardToColumn(cards, cardId, targetColumnId)
+    if (!next) return
+    setCards(next)
+    const affectedCols = new Set([sourceCol, targetColumnId].filter((c): c is string => !!c))
+    const toPersist = next.filter(c => affectedCols.has(c.column_id))
+    if (toPersist.length > 0) await persist(toPersist)
   }
 
   // ── Render ──
@@ -907,7 +2103,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             {activeBoard && (
               <div style={{ display: 'flex', borderRadius: 8, border: '1px solid var(--color-border)', overflow: 'hidden' }}>
-                {([['kanban', LayoutGrid], ['list', ListIcon], ['overview', BarChart3]] as const).map(([v, Icon]) => (
+                {([['kanban', LayoutGrid], ['list', ListIcon], ['overview', BarChart3], ['compact', Smartphone]] as const).map(([v, Icon]) => (
                   <button key={v} onClick={() => setView(v)} title={t(`projects_view_${v}` as 'projects_view_kanban')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '6px 8px' : '6px 11px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: view === v ? 600 : 400, backgroundColor: view === v ? '#6366f1' : 'var(--color-bg)', color: view === v ? '#fff' : 'var(--color-text-muted)' }}>
                     <Icon size={13} />{!isMobile && t(`projects_view_${v}` as 'projects_view_kanban')}
                   </button>
@@ -916,6 +2112,9 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
             )}
             {activeBoard && isOwner && (
               <>
+                <button onClick={() => setImportOpen(true)} title={t('projects_import')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? 8 : '6px 11px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', fontSize: 12, color: 'var(--color-text-muted)' }}>
+                  <Upload size={13} />{!isMobile && t('projects_import')}
+                </button>
                 <button onClick={() => setShareOpen(true)} title={t('projects_share')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? 8 : '6px 11px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', fontSize: 12, color: 'var(--color-text-muted)' }}>
                   <Share2 size={13} />{!isMobile && t('projects_share')}
                 </button>
@@ -941,6 +2140,17 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
         )}
       </div>
 
+      {activeBoard && boards.length > 0 && !boardLoading && (
+        <CardFilterBar
+          filters={cardFilters}
+          onChange={setCardFilters}
+          columns={columns}
+          members={members}
+          availableLabels={availableLabels}
+          isMobile={isMobile}
+        />
+      )}
+
       {/* Content */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {boards.length === 0 ? (
@@ -952,8 +2162,18 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
           </div>
         ) : boardLoading ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: 14 }}>{t('projects_loading')}</div>
+        ) : filtersActive && filteredCards.length === 0 && cards.length > 0 ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center' }}>
+            <p style={{ margin: 0, fontSize: 14, color: 'var(--color-text-muted)' }}>{t('projects_empty_filter')}</p>
+          </div>
         ) : view === 'kanban' ? (
-          <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <>
+            {persistError && (
+              <div style={{ margin: '0 16px', padding: '8px 12px', borderRadius: 8, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 12.5, fontWeight: 600 }}>
+                {persistError}
+              </div>
+            )}
+          <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
             <div style={{ flex: 1, display: 'flex', gap: 12, padding: 16, overflowX: 'auto', overflowY: 'hidden', alignItems: 'stretch' }}>
               {columns.map(col => (
                 <Column
@@ -974,13 +2194,34 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
               {activeDragCard ? <div style={{ width: 274 }}><CardView card={activeDragCard} priorityLabel={pLabel(activeDragCard.priority)} dragging /></div> : null}
             </DragOverlay>
           </DndContext>
+          </>
+        ) : view === 'compact' ? (
+          <CompactKanbanView
+            boardId={activeBoardId!}
+            columns={columns}
+            cardsByColumn={cardsByColumn}
+            canEdit={canEdit}
+            priorityLabel={pLabel}
+            sensors={sensors}
+            persistError={persistError}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            activeDragCard={activeDragCard}
+            pLabel={pLabel}
+            onAddCard={(columnId) => setCardModal({ open: true, card: null, columnId })}
+            onCardClick={(c) => setCardModal({ open: true, card: c })}
+            onRename={(col) => setColumnModal({ open: true, column: col })}
+            onDelete={deleteColumn}
+            onMoveCardToColumn={handleMoveCardToColumn}
+          />
         ) : view === 'list' ? (
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-            <ListView columns={columns} cards={cards} onCardClick={(c) => setCardModal({ open: true, card: c })} />
+            <ListView columns={columns} cards={filteredCards} totalCount={cards.length} onCardClick={(c) => setCardModal({ open: true, card: c })} />
           </div>
         ) : (
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-            <OverviewView columns={columns} cards={cards} />
+            <OverviewView columns={columns} cards={filteredCards} />
           </div>
         )}
       </div>
@@ -992,14 +2233,37 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
       {columnModal.open && (
         <ColumnModal column={columnModal.column ?? null} onClose={() => setColumnModal({ open: false })} onSave={saveColumn} />
       )}
-      {cardModal.open && (
+      {cardModal.open && activeBoardId && (
         <CardModal
-          card={cardModal.card ?? null} members={members} canEdit={canEdit}
-          onClose={() => setCardModal({ open: false })} onSave={saveCard}
-          onDelete={cardModal.card ? deleteCard : undefined} onOpenPage={openLinkedPage}
+          card={cardModal.card ?? null}
+          boardId={activeBoardId}
+          columnId={cardModal.columnId}
+          members={members}
+          canEdit={canEdit}
+          isMobile={isMobile}
+          initialDraft={cardDraftKey ? loadCardDraft(cardDraftKey) : null}
+          saveStatus={cardSaveStatus}
+          saveErrorKind={cardSaveErrorKind}
+          onClose={closeCardModal}
+          onSave={saveCard}
+          onAutoSave={autoSaveCard}
+          onDraftChange={handleDraftChange}
+          onDelete={cardModal.card ? deleteCard : undefined}
+          onOpenPage={openLinkedPage}
         />
       )}
       {shareOpen && activeBoard && <ShareModal board={activeBoard} onClose={() => setShareOpen(false)} />}
+      {importOpen && activeBoardId && columns[0] && (
+        <ImportCardsModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          boardId={activeBoardId}
+          columnId={columns[0].id}
+          columnName={columns[0].name}
+          isMobile={isMobile}
+          onImported={() => loadBoardData(activeBoardId, { silent: true })}
+        />
+      )}
       <ConfirmDeleteModal
         open={!!deleteConfirm}
         title={t('projects_delete')}

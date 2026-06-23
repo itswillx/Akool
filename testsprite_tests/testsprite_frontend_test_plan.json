@@ -1,0 +1,970 @@
+[
+  {
+    "id": "TC001",
+    "title": "Sign in and reach the dashboard",
+    "description": "A user can sign in with valid email and password and land in the dashboard after authentication.",
+    "category": "Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the dashboard is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "See the dashboard overview after signing in",
+    "description": "This verifies a user can sign in, dismiss the welcome tour if it appears, and reach the dashboard overview with its key summary areas visible.",
+    "category": "Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Dismiss the welcome tour if it appears"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the dashboard overview is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify favorites, todos, finance snapshot, and notifications are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Open projects from the sidebar",
+    "description": "A user can switch from the dashboard to the projects workspace using the sidebar navigation.",
+    "category": "Workspace Navigation",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Open the sidebar"
+      },
+      {
+        "type": "action",
+        "description": "Select the projects module"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the projects workspace is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Open finance from the sidebar",
+    "description": "A user can switch from the dashboard to the finance workspace using the sidebar navigation.",
+    "category": "Workspace Navigation",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Open the sidebar"
+      },
+      {
+        "type": "action",
+        "description": "Select the finance module"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the finance workspace is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "Open the projects board and review cards",
+    "description": "This verifies a user can open the Kanban board and see the project columns and cards that make up the workspace.",
+    "category": "Projects Kanban",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open projects"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the Kanban board is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify columns and cards are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "Open and edit a note page in the workspace",
+    "description": "This verifies a user can open a workspace note page, edit its content, and see the updated note persist in the editor.",
+    "category": "Pages and Workspace Content Editing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open the workspace"
+      },
+      {
+        "type": "action",
+        "description": "Open a note page"
+      },
+      {
+        "type": "action",
+        "description": "Edit the note content"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the note editor shows the updated content"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Dismiss the welcome tour after first sign in",
+    "description": "A first-time user can dismiss the welcome tour and continue into the main application.",
+    "category": "Welcome Tour Dismissal",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Dismiss the welcome tour"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the main application is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "Import project cards from pasted markdown",
+    "description": "This verifies a user can paste markdown into the import dialog and see the new cards added to the Kanban board.",
+    "category": "Projects Kanban",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open projects"
+      },
+      {
+        "type": "action",
+        "description": "Open the import cards dialog"
+      },
+      {
+        "type": "action",
+        "description": "Paste markdown into the text area"
+      },
+      {
+        "type": "action",
+        "description": "Import the cards"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new cards are displayed on the board"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "View dashboard summary sections",
+    "description": "This verifies the dashboard home view shows the key summary sections that help a user quickly review current work and status.",
+    "category": "Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify favorites, todos, finance snapshot, and notifications are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC010",
+    "title": "Review finance overview data",
+    "description": "A user can open the finance area and see the overview sections for accounts, transactions, budgets, goals, and workspaces.",
+    "category": "Finance",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /finance"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify finance overview data is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify accounts, transactions, budgets, goals, and workspace information are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC011",
+    "title": "Open and update a drawing page in the workspace",
+    "description": "This verifies a user can open a workspace drawing page, make a canvas change, and see the updated drawing remain visible.",
+    "category": "Pages and Workspace Content Editing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open the workspace"
+      },
+      {
+        "type": "action",
+        "description": "Open a drawing page"
+      },
+      {
+        "type": "action",
+        "description": "Edit the canvas"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated drawing is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC012",
+    "title": "Drill into finance details and return",
+    "description": "A user can open a finance subsection, review its details, and return to the main finance overview.",
+    "category": "Finance",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /finance"
+      },
+      {
+        "type": "action",
+        "description": "Open a finance subsection"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify subsection details are displayed"
+      },
+      {
+        "type": "action",
+        "description": "Return to the finance overview"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the finance overview is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC013",
+    "title": "Filter projects by search and priority",
+    "description": "This verifies a user can narrow the Kanban board by searching for cards and applying a priority filter.",
+    "category": "Projects Kanban",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open projects"
+      },
+      {
+        "type": "action",
+        "description": "Open the card filters"
+      },
+      {
+        "type": "action",
+        "description": "Search for a card"
+      },
+      {
+        "type": "action",
+        "description": "Filter by priority"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the filtered cards are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC014",
+    "title": "Read help content",
+    "description": "A user can open the help area and view product guidance content.",
+    "category": "Help and Onboarding",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /help"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify help content is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify product guidance is displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC015",
+    "title": "Open and manage tasks on a to-do page",
+    "description": "This verifies a user can open a workspace to-do page, add or update tasks, and see the task list refresh with the change.",
+    "category": "Pages and Workspace Content Editing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open the workspace"
+      },
+      {
+        "type": "action",
+        "description": "Open a to-do page"
+      },
+      {
+        "type": "action",
+        "description": "Add or update a task"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the task list reflects the change"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC016",
+    "title": "Work with note and drawing content in split view",
+    "description": "This verifies a user can open a split-view page and see note and drawing content side by side while editing the workspace.",
+    "category": "Pages and Workspace Content Editing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open the workspace"
+      },
+      {
+        "type": "action",
+        "description": "Open a split view page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify note and drawing views are displayed side by side"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC017",
+    "title": "Start the guided tour from help",
+    "description": "A user can start the guided tour from the help area and see onboarding guidance steps.",
+    "category": "Help and Onboarding",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /help"
+      },
+      {
+        "type": "action",
+        "description": "Start the guided tour"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify onboarding guidance is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify tour highlights are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC018",
+    "title": "Complete the onboarding tour",
+    "description": "A user can advance through the guided tour and reach the end of the onboarding guidance.",
+    "category": "Help and Onboarding",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /help"
+      },
+      {
+        "type": "action",
+        "description": "Start the guided tour"
+      },
+      {
+        "type": "action",
+        "description": "Advance through the tour steps"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the tour progresses"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify onboarding highlights remain visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC019",
+    "title": "Update user access settings",
+    "description": "An authorized admin can change a user access setting and see the updated admin state.",
+    "category": "Admin User Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /admin/users"
+      },
+      {
+        "type": "action",
+        "description": "Change a user access setting"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated admin state is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user list remains displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC020",
+    "title": "Start a backup from the admin backup page",
+    "description": "An authorized admin can initiate a backup from the backup management page and see the interface update to reflect the action.",
+    "category": "Admin Backup Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/backup"
+      },
+      {
+        "type": "action",
+        "description": "Start a backup action"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a backup in-progress or completed state is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC021",
+    "title": "View the admin user list",
+    "description": "An authorized admin can open the user management area and review the list of users.",
+    "category": "Admin User Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /admin/users"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user list is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify admin user management controls are displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC022",
+    "title": "Show a login error for invalid credentials",
+    "description": "A user entering invalid credentials sees a login error and does not reach the main application.",
+    "category": "Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with invalid@example.com"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with invalid-password"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a login error message is visible"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC023",
+    "title": "Access backup management as an authorized admin",
+    "description": "An authorized admin can open backup management and see the available backup controls and current management state.",
+    "category": "Admin Backup Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/backup"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify backup controls are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the backup management state is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC024",
+    "title": "Handle empty or invalid project markdown import",
+    "description": "This verifies the import flow prevents creating project cards when the pasted markdown is empty or invalid and shows a validation error.",
+    "category": "Projects Kanban",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open projects"
+      },
+      {
+        "type": "action",
+        "description": "Open the import cards dialog"
+      },
+      {
+        "type": "action",
+        "description": "Paste invalid markdown into the text area"
+      },
+      {
+        "type": "action",
+        "description": "Import the cards"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a markdown validation error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no new cards are added"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC025",
+    "title": "Review admin controls after updating access",
+    "description": "An authorized admin can use the user management controls after making a change and confirm the updated state persists on screen.",
+    "category": "Admin User Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /admin/users"
+      },
+      {
+        "type": "action",
+        "description": "Change a user access setting"
+      },
+      {
+        "type": "action",
+        "description": "Review the user management controls again"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated access state is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the admin controls are still available"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC026",
+    "title": "Return to backup controls after starting a backup",
+    "description": "An authorized admin can start a backup and then continue using the backup management page with the updated state still visible.",
+    "category": "Admin Backup Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/backup"
+      },
+      {
+        "type": "action",
+        "description": "Start a backup action"
+      },
+      {
+        "type": "action",
+        "description": "Review the backup management controls"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify backup controls remain available"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated backup state remains visible"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC027",
+    "title": "See backup controls from a fresh visit to the admin page",
+    "description": "An authorized admin can open the backup management page directly and view the controls without needing prior state on the page.",
+    "category": "Admin Backup Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/backup"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify backup management content is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify backup controls are available"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC028",
+    "title": "Keep backup state visible after interacting with the page",
+    "description": "An authorized admin can interact with backup management and still see the page state update without losing access to the controls.",
+    "category": "Admin Backup Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/backup"
+      },
+      {
+        "type": "action",
+        "description": "Start a backup action"
+      },
+      {
+        "type": "action",
+        "description": "Review the backup management page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the backup state is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the backup controls are still available"
+      }
+    ],
+    "priority": "Low"
+  }
+]

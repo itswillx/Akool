@@ -262,6 +262,18 @@ export interface ProjectColumn {
   created_at: string
 }
 
+export interface ProjectCardChecklistItem {
+  id: string
+  text: string
+  completed: boolean
+}
+
+export interface ProjectCardAttachment {
+  id: string
+  url: string
+  name: string
+}
+
 export interface ProjectCard {
   id: string
   board_id: string
@@ -274,6 +286,8 @@ export interface ProjectCard {
   labels: string[]
   linked_page_id: string | null
   completed: boolean
+  checklist: ProjectCardChecklistItem[]
+  attachments: ProjectCardAttachment[]
   sort_order: number
   created_at: string
   updated_at: string
@@ -288,6 +302,24 @@ export interface ProjectShare {
   role: ProjectShareRole
   created_at: string
   profile?: { email: string; display_name: string | null }
+}
+
+export interface SiteBackup {
+  id: string
+  created_at: string
+  created_by: string | null
+  type: 'manual' | 'automatic'
+  status: 'running' | 'completed' | 'failed'
+  storage_path: string
+  size_bytes: number
+  tables_summary: Record<string, number>
+  error_message?: string | null
+}
+
+export interface SiteBackupSettings {
+  auto_enabled: boolean
+  interval_days: number
+  last_auto_at: string | null
 }
 
 export interface NoteContent {

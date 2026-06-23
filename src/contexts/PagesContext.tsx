@@ -10,8 +10,8 @@ interface PagesContextType {
   loading: boolean
   activePage: Page | null
   setActivePage: (page: Page | null) => void
-  activePanel: 'users' | 'finance' | 'projects' | 'help' | null
-  setActivePanel: (panel: 'users' | 'finance' | 'projects' | 'help' | null) => void
+  activePanel: 'users' | 'finance' | 'projects' | 'help' | 'backup' | null
+  setActivePanel: (panel: 'users' | 'finance' | 'projects' | 'help' | 'backup' | null) => void
   createPage: (opts?: { parent_id?: string; type?: PageType }) => Promise<Page | null>
   updatePage: (id: string, updates: Partial<Page>) => Promise<void>
   deletePage: (id: string) => Promise<void>
@@ -55,7 +55,7 @@ export function PagesProvider({ children }: { children: ReactNode }) {
   const [sharedPages, setSharedPages] = useState<Page[]>([])
   const [loading, setLoading] = useState(true)
   const [activePage, setActivePageRaw] = useState<Page | null>(null)
-  const [activePanel, setActivePanelRaw] = useState<'users' | 'finance' | 'projects' | 'help' | null>(null)
+  const [activePanel, setActivePanelRaw] = useState<'users' | 'finance' | 'projects' | 'help' | 'backup' | null>(null)
   const restoredRef = useRef(false)
 
   const ACTIVE_PAGE_KEY = 'excalinotion_active_page_id'
@@ -72,7 +72,7 @@ export function PagesProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const setActivePanel = useCallback((panel: 'users' | 'finance' | 'projects' | 'help' | null) => {
+  const setActivePanel = useCallback((panel: 'users' | 'finance' | 'projects' | 'help' | 'backup' | null) => {
     setActivePanelRaw(panel)
     if (panel !== null) {
       setActivePageRaw(null)
@@ -165,7 +165,7 @@ export function PagesProvider({ children }: { children: ReactNode }) {
     if (!loading && !restoredRef.current) {
       restoredRef.current = true
       const savedPanel = localStorage.getItem(ACTIVE_PANEL_KEY)
-      if (savedPanel === 'users' || savedPanel === 'finance' || savedPanel === 'projects' || savedPanel === 'help') {
+      if (savedPanel === 'users' || savedPanel === 'finance' || savedPanel === 'projects' || savedPanel === 'help' || savedPanel === 'backup') {
         setActivePanelRaw(savedPanel)
       } else {
         const savedId = localStorage.getItem(ACTIVE_PAGE_KEY)

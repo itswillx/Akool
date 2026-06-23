@@ -12,6 +12,7 @@ const UserManagementPanel = lazy(() => import('./UserManagementPanel'))
 const FinancePanel = lazy(() => import('./FinancePanel'))
 const ProjectsPanel = lazy(() => import('./ProjectsPanel'))
 const HelpPanel = lazy(() => import('./HelpPanel'))
+const BackupPanel = lazy(() => import('./BackupPanel'))
 
 function ContentFallback() {
   return (
@@ -50,6 +51,10 @@ export default function MainContent({ isMobile = false }: MainContentProps) {
 
   if (activePanel === 'help') {
     return <Lazy><HelpPanel /></Lazy>
+  }
+
+  if (activePanel === 'backup') {
+    return <Lazy><BackupPanel /></Lazy>
   }
 
   if (!activePage) {
