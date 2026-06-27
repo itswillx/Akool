@@ -278,7 +278,7 @@ function useFinanceData() {
     await supabase.rpc('bootstrap_finance_categories', { p_user_id: user.id })
     const [accs, cats, txs, buds, gls, ctbs, recs, rEnts, ownedShares, incShares, shTxs, shBuds] = await Promise.all([
       supabase.from('finance_accounts').select('*').eq('user_id', user.id).order('created_at'),
-      supabase.from('finance_categories').select('*').eq('user_id', user.id).order('type').order('name'),
+      supabase.from('finance_categories').select('*').eq('user_id', user.id).is('workspace_id', null).order('type').order('name'),
       supabase.from('finance_transactions').select('*').eq('user_id', user.id).order('date', { ascending: false }).order('created_at', { ascending: false }),
       supabase.from('finance_budgets').select('*').eq('user_id', user.id),
       supabase.from('finance_goals').select('*').order('deadline'),
@@ -606,6 +606,7 @@ function TransactionModal({
   const categories = form.share_with_family ? familyCategories : personalCategories
   const accounts = form.share_with_family ? familyAccounts : personalAccounts
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [showMore, setShowMore] = useState(false)
 
@@ -655,6 +656,7 @@ function TransactionModal({
     const amt = parseFloat(form.amount.replace(',', '.'))
     if (!amt || amt <= 0) return
     setSaving(true)
+    setSaveError(null)
 
     let photoUrl: string | null | undefined = undefined
     if (photoFile) {
@@ -673,19 +675,24 @@ function TransactionModal({
       photoUrl = tx?.photo_url ?? null
     }
 
-    await onSave({
-      type: form.type,
-      amount: amt,
-      description: form.description.trim(),
-      date: form.date,
-      account_id: form.account_id || null,
-      category_id: form.category_id || null,
-      shared_with_user_id: form.share_with_family ? null : (form.shared_with_user_id || null),
-      workspace_id: (form.share_with_family && workspace) ? workspace.id : null,
-      photo_url: photoUrl ?? null,
-    })
-    setSaving(false)
-    onClose()
+    try {
+      await onSave({
+        type: form.type,
+        amount: amt,
+        description: form.description.trim(),
+        date: form.date,
+        account_id: form.account_id || null,
+        category_id: form.category_id || null,
+        shared_with_user_id: form.share_with_family ? null : (form.shared_with_user_id || null),
+        workspace_id: (form.share_with_family && workspace) ? workspace.id : null,
+        photo_url: photoUrl ?? null,
+      })
+      onClose()
+    } catch {
+      setSaveError(t('finance_save_error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const accent = form.type === 'income' ? '#22c55e' : '#ef4444'
@@ -872,6 +879,11 @@ function TransactionModal({
 
         {/* Sticky footer actions */}
         <div style={{ position: 'sticky', bottom: 0, display: 'flex', flexDirection: 'column', gap: 10, marginTop: 20, paddingTop: 12, backgroundColor: 'var(--color-bg)' }}>
+          {saveError && (
+            <div style={{ padding: '10px 12px', borderRadius: 10, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 13, fontWeight: 600 }}>
+              {saveError}
+            </div>
+          )}
           <button onClick={handleSave} disabled={saving}
             style={{ padding: '15px 16px', borderRadius: 12, border: 'none', backgroundColor: '#6366f1', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 16, fontWeight: 700, opacity: saving ? 0.7 : 1 }}>
             {t('finance_save')}
@@ -980,6 +992,11 @@ function TransactionModal({
         {photoSection}
       </div>
 
+      {saveError && (
+        <div style={{ marginTop: 16, padding: '10px 12px', borderRadius: 8, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 13, fontWeight: 600 }}>
+          {saveError}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
         {tx && onDelete && !confirming && (
           <button onClick={() => setConfirming(true)}
@@ -3426,11 +3443,10 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   // CRUD helpers
   const saveTx = async (data: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>) => {
     if (!user) return
-    if (txModal.tx) {
-      await supabase.from('finance_transactions').update(data).eq('id', txModal.tx.id)
-    } else {
-      await supabase.from('finance_transactions').insert({ ...data, user_id: user.id })
-    }
+    const { error } = txModal.tx
+      ? await supabase.from('finance_transactions').update(data).eq('id', txModal.tx.id)
+      : await supabase.from('finance_transactions').insert({ ...data, user_id: user.id })
+    if (error) throw error
     await reload()
   }
 

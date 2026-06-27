@@ -1,9 +1,17 @@
+# Coolify / Nixpacks — build estático do Vite, servido pelo Caddy com fallback SPA.
+# Documentação completa: docs/deploy-coolify.md
+
 [variables]
-NIXPACKS_NODE_VERSION = "20"
+# Node 22 LTS — atende aos requisitos do Vite 8 / React 19.
+NIXPACKS_NODE_VERSION = "22"
+# Faz o Caddy servir o build estático com try_files (deep-links/refresh não dão 404).
 NIXPACKS_SPA_OUTPUT_DIR = "dist"
 
 [phases.install]
-cmds = ["npm ci"]
+# `npm install` (em vez de `npm ci`) evita falha de optionalDependencies
+# nativas (rollup/esbuild) quando o package-lock foi gerado fora do Linux.
+# Instala também devDependencies, necessárias ao `vite build`.
+cmds = ["npm install --no-audit --no-fund"]
 
 [phases.build]
 cmds = ["npm run build"]

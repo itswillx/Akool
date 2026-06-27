@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Plus, X, Trash2, Pencil, Share2, FolderKanban, LayoutGrid, List as ListIcon,
   BarChart3, ChevronDown, ChevronLeft, ChevronRight, Link2, ExternalLink, Search,
-  Calendar, CheckSquare, Image, Download, Smartphone, Upload,
+  Calendar, CheckSquare, Image, Download, Smartphone, Upload, GanttChartSquare,
 } from 'lucide-react'
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors, useDroppable,
@@ -19,6 +19,7 @@ import { usePages } from '../contexts/PagesContext'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
 import ImportCardsModal from './ImportCardsModal'
 import CardFilterBar from './CardFilterBar'
+import GanttView from './GanttView'
 import {
   type ProjectCardFilters,
   filterProjectCards,
@@ -245,7 +246,7 @@ function SortableCard({
     cursor: 'pointer', color: 'var(--color-text-muted)', padding: 0, flexShrink: 0,
   }
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...(canEdit ? listeners : {})}>
+    <div ref={setNodeRef} style={{ ...style, touchAction: canEdit ? 'pan-y' : 'auto' }} {...attributes} {...(canEdit ? listeners : {})}>
       {variant === 'compact' && canEdit && (showMovePrev || showMoveNext) && (
         <div
           style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}
@@ -286,6 +287,7 @@ function Column({
   const isCompact = variant === 'compact'
   const showMovePrev = isCompact && columnIndex > 0
   const showMoveNext = isCompact && columnIndex < columnsCount - 1
+  const sortableItems = useMemo(() => cards.map(c => c.id), [cards])
   return (
     <div
       ref={setNodeRef}
@@ -325,7 +327,7 @@ function Column({
         backgroundColor: 'var(--color-bg-secondary)',
         minHeight: isCompact ? undefined : 60,
       }}>
-        <SortableContext items={cards.map(c => c.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
           {cards.length === 0
             ? <div style={{ fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center', padding: '16px 0' }}>{t('projects_empty_column')}</div>
             : cards.map(c => (
@@ -402,8 +404,9 @@ function PagePicker({ value, onChange }: { value: string | null; onChange: (id: 
 // ─── Card modal ───────────────────────────────────────────────────────────────
 
 interface CardForm {
-  title: string; description: string; priority: ProjectCardPriority; due_date: string;
+  title: string; description: string; priority: ProjectCardPriority; start_date: string; due_date: string;
   assignee_user_id: string | null; labels: string[]; linked_page_id: string | null;
+  parent_card_id: string | null; depends_on: string[];
   completed: boolean; checklist: ProjectCardChecklistItem[]; attachments: ProjectCardAttachment[];
 }
 
@@ -823,8 +826,8 @@ function CardChecklistSection({
   )
 }
 
-function CardModal({ card, boardId: _boardId, columnId: _columnId, members, canEdit, isMobile, initialDraft, saveStatus, saveErrorKind, onClose, onSave, onDelete, onOpenPage, onAutoSave, onDraftChange }: {
-  card: ProjectCard | null; boardId: string; columnId?: string; members: Member[]; canEdit: boolean; isMobile?: boolean;
+function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allCards, canEdit, isMobile, initialDraft, saveStatus, saveErrorKind, onClose, onSave, onDelete, onOpenPage, onAutoSave, onDraftChange }: {
+  card: ProjectCard | null; boardId: string; columnId?: string; members: Member[]; allCards: ProjectCard[]; canEdit: boolean; isMobile?: boolean;
   initialDraft?: CardDraftStored | null; saveStatus?: 'idle' | 'saving' | 'saved' | 'error'; saveErrorKind?: 'upload' | 'general';
   onClose: () => void; onSave: (f: CardForm, extras: CardSaveExtras) => void; onDelete?: () => void; onOpenPage: (id: string) => void;
   onAutoSave?: (form: CardForm, extras: CardSaveExtras) => Promise<AutoSaveResult | null> | AutoSaveResult | null;
@@ -840,8 +843,9 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, canE
     }
     return {
       title: card?.title ?? '', description: card?.description ?? '', priority: card?.priority ?? 'medium',
-      due_date: card?.due_date ?? '', assignee_user_id: card?.assignee_user_id ?? null,
-      labels: card?.labels ?? [], linked_page_id: card?.linked_page_id ?? null, completed: card?.completed ?? false,
+      start_date: card?.start_date ?? '', due_date: card?.due_date ?? '', assignee_user_id: card?.assignee_user_id ?? null,
+      labels: card?.labels ?? [], linked_page_id: card?.linked_page_id ?? null,
+      parent_card_id: card?.parent_card_id ?? null, depends_on: card?.depends_on ?? [], completed: card?.completed ?? false,
       checklist: card?.checklist ?? [], attachments: card?.attachments ?? [],
     }
   }
@@ -1010,18 +1014,91 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, canE
   )
 
   const dueAssigneeFields = (
-    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 12 }}>
-      <div style={{ flex: 1 }}>
-        <label style={labelStyle}>{t('projects_due_date')}</label>
-        <input disabled={!canEdit} type="date" value={form.due_date} onChange={e => patchForm(f => ({ ...f, due_date: e.target.value }))} style={inputStyle} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle}>{t('projects_start_date')}</label>
+          <input disabled={!canEdit} type="date" max={form.due_date || undefined} value={form.start_date} onChange={e => patchForm(f => ({ ...f, start_date: e.target.value }))} style={inputStyle} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle}>{t('projects_due_date')}</label>
+          <input disabled={!canEdit} type="date" min={form.start_date || undefined} value={form.due_date} onChange={e => patchForm(f => ({ ...f, due_date: e.target.value }))} style={inputStyle} />
+        </div>
       </div>
-      <div style={{ flex: 1 }}>
+      <div>
         <label style={labelStyle}>{t('projects_assignee')}</label>
         <select disabled={!canEdit} value={form.assignee_user_id ?? ''} onChange={e => patchForm(f => ({ ...f, assignee_user_id: e.target.value || null }), true)} style={inputStyle}>
           <option value="">{t('projects_unassigned')}</option>
           {members.map(m => <option key={m.id} value={m.id}>{m.display_name || m.email}</option>)}
         </select>
       </div>
+    </div>
+  )
+
+  // Cards selectable as parent / dependency: exclude self and (for parent) own descendants to avoid cycles.
+  const descendantIds = useMemo(() => {
+    if (!card) return new Set<string>()
+    const childrenOf = new Map<string, string[]>()
+    allCards.forEach(c => {
+      if (c.parent_card_id) {
+        const arr = childrenOf.get(c.parent_card_id) ?? []
+        arr.push(c.id)
+        childrenOf.set(c.parent_card_id, arr)
+      }
+    })
+    const out = new Set<string>()
+    const stack = [card.id]
+    while (stack.length) {
+      const id = stack.pop()!
+      for (const childId of childrenOf.get(id) ?? []) {
+        if (!out.has(childId)) { out.add(childId); stack.push(childId) }
+      }
+    }
+    return out
+  }, [card, allCards])
+
+  const parentOptions = useMemo(
+    () => allCards.filter(c => c.id !== card?.id && !descendantIds.has(c.id)),
+    [allCards, card, descendantIds],
+  )
+  const dependencyOptions = useMemo(
+    () => allCards.filter(c => c.id !== card?.id && !form.depends_on.includes(c.id)),
+    [allCards, card, form.depends_on],
+  )
+  const cardTitleById = useCallback(
+    (id: string) => allCards.find(c => c.id === id)?.title || t('projects_new_card'),
+    [allCards, t],
+  )
+
+  const parentField = (
+    <div>
+      <label style={labelStyle}>{t('projects_parent_task')}</label>
+      <select disabled={!canEdit} value={form.parent_card_id ?? ''} onChange={e => patchForm(f => ({ ...f, parent_card_id: e.target.value || null }), true)} style={inputStyle}>
+        <option value="">{t('projects_no_parent')}</option>
+        {parentOptions.map(c => <option key={c.id} value={c.id}>{c.title || t('projects_new_card')}</option>)}
+      </select>
+    </div>
+  )
+
+  const dependenciesField = (
+    <div>
+      <label style={labelStyle}>{t('projects_dependencies')}</label>
+      {form.depends_on.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+          {form.depends_on.map(id => (
+            <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text)', backgroundColor: 'var(--color-hover)', padding: '3px 8px', borderRadius: 6 }}>
+              {cardTitleById(id)}
+              {canEdit && <button onClick={() => patchForm(f => ({ ...f, depends_on: f.depends_on.filter(d => d !== id) }), true)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 0 }}><X size={11} /></button>}
+            </span>
+          ))}
+        </div>
+      )}
+      {canEdit && (
+        <select value="" disabled={dependencyOptions.length === 0} onChange={e => { const id = e.target.value; if (id) patchForm(f => ({ ...f, depends_on: [...f.depends_on, id] }), true) }} style={inputStyle}>
+          <option value="">{t('projects_dependencies_add')}</option>
+          {dependencyOptions.map(c => <option key={c.id} value={c.id}>{c.title || t('projects_new_card')}</option>)}
+        </select>
+      )}
     </div>
   )
 
@@ -1123,6 +1200,8 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, canE
           {leftColumn}
           {priorityButtons}
           {dueAssigneeFields}
+          {parentField}
+          {dependenciesField}
           {labelsField}
           {linkedPageField}
           {completedField}
@@ -1137,6 +1216,8 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, canE
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {priorityButtons}
               {dueAssigneeFields}
+              {parentField}
+              {dependenciesField}
               {labelsField}
               {linkedPageField}
               {completedField}
@@ -1484,7 +1565,7 @@ function CompactKanbanView({
         })}
       </div>
       <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
-        <div style={{ flex: 1, overflowY: 'auto', padding: 12, WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'] }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
           <Column
             variant="compact"
             column={activeCol}
@@ -1553,9 +1634,9 @@ function ListView({ columns, cards, totalCount, onCardClick }: { columns: Projec
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
-type ViewMode = 'kanban' | 'compact' | 'list' | 'overview'
+type ViewMode = 'kanban' | 'compact' | 'list' | 'overview' | 'timeline'
 
-const VALID_VIEWS: ViewMode[] = ['kanban', 'compact', 'list', 'overview']
+const VALID_VIEWS: ViewMode[] = ['kanban', 'compact', 'list', 'overview', 'timeline']
 
 export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean }) {
   const { user } = useAuth()
@@ -1603,7 +1684,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   )
   const pLabel = (p: ProjectCardPriority) => t(`projects_priority_${p}` as 'projects_priority_low')
 
@@ -1825,10 +1906,13 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
         title: formSnapshot.title.trim(),
         description: formSnapshot.description,
         priority: formSnapshot.priority,
+        start_date: formSnapshot.start_date || null,
         due_date: formSnapshot.due_date || null,
         assignee_user_id: formSnapshot.assignee_user_id,
         labels: formSnapshot.labels,
         linked_page_id: formSnapshot.linked_page_id,
+        parent_card_id: formSnapshot.parent_card_id,
+        depends_on: formSnapshot.depends_on,
         completed: formSnapshot.completed,
         checklist: formSnapshot.checklist,
         attachments,
@@ -1881,10 +1965,13 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
       title: formSnapshot.title.trim(),
       description: formSnapshot.description,
       priority: formSnapshot.priority,
+      start_date: formSnapshot.start_date || null,
       due_date: formSnapshot.due_date || null,
       assignee_user_id: formSnapshot.assignee_user_id,
       labels: formSnapshot.labels,
       linked_page_id: formSnapshot.linked_page_id,
+      parent_card_id: formSnapshot.parent_card_id,
+      depends_on: formSnapshot.depends_on,
       completed: formSnapshot.completed,
       checklist: formSnapshot.checklist,
       attachments,
@@ -1912,8 +1999,9 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
     const updatedAt = new Date().toISOString()
     const basePayload = {
       title: f.title.trim(), description: f.description, priority: f.priority,
-      due_date: f.due_date || null, assignee_user_id: f.assignee_user_id, labels: f.labels,
-      linked_page_id: f.linked_page_id, completed: f.completed, checklist: f.checklist,
+      start_date: f.start_date || null, due_date: f.due_date || null, assignee_user_id: f.assignee_user_id, labels: f.labels,
+      linked_page_id: f.linked_page_id, parent_card_id: f.parent_card_id, depends_on: f.depends_on,
+      completed: f.completed, checklist: f.checklist,
     }
 
     let cardId = cardModal.card?.id
@@ -1982,6 +2070,20 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
     if (page) setActivePage(page)
   }
 
+  const handleRescheduleCard = async (
+    cardId: string,
+    dates: { start_date: string | null; due_date: string | null },
+  ) => {
+    if (!activeBoardId) return
+    const updated_at = new Date().toISOString()
+    setCards(prev => prev.map(c => (c.id === cardId ? { ...c, ...dates, updated_at } : c)))
+    const { error } = await supabase.from('project_cards').update({ ...dates, updated_at }).eq('id', cardId)
+    if (error) {
+      setPersistError(t('projects_persist_error'))
+      await loadBoardData(activeBoardId, { silent: true })
+    }
+  }
+
   // ── Drag & drop ──
   const persist = async (list: ProjectCard[]) => {
     const results = await Promise.all(
@@ -2010,7 +2112,17 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
     const overId = String(over.id)
     if (activeId === overId) return
 
-    setCards(prev => applyCardMove(prev, activeId, overId) ?? prev)
+    // Só refletir movimentos ENTRE colunas durante o drag-over.
+    // Reordenação na mesma coluna é feita visualmente pela sortable
+    // strategy e commitada em onDragEnd — mutar o estado aqui causa
+    // um loop de medição/re-render ("Maximum update depth exceeded").
+    setCards(prev => {
+      const activeCard = prev.find(c => c.id === activeId)
+      if (!activeCard) return prev
+      const overCol = resolveColumnId(overId, prev)
+      if (!overCol || overCol === activeCard.column_id) return prev
+      return applyCardMove(prev, activeId, overId) ?? prev
+    })
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -2103,7 +2215,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             {activeBoard && (
               <div style={{ display: 'flex', borderRadius: 8, border: '1px solid var(--color-border)', overflow: 'hidden' }}>
-                {([['kanban', LayoutGrid], ['list', ListIcon], ['overview', BarChart3], ['compact', Smartphone]] as const).map(([v, Icon]) => (
+                {([['kanban', LayoutGrid], ['timeline', GanttChartSquare], ['list', ListIcon], ['overview', BarChart3], ['compact', Smartphone]] as const).map(([v, Icon]) => (
                   <button key={v} onClick={() => setView(v)} title={t(`projects_view_${v}` as 'projects_view_kanban')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '6px 8px' : '6px 11px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: view === v ? 600 : 400, backgroundColor: view === v ? '#6366f1' : 'var(--color-bg)', color: view === v ? '#fff' : 'var(--color-text-muted)' }}>
                     <Icon size={13} />{!isMobile && t(`projects_view_${v}` as 'projects_view_kanban')}
                   </button>
@@ -2215,6 +2327,18 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
             onDelete={deleteColumn}
             onMoveCardToColumn={handleMoveCardToColumn}
           />
+        ) : view === 'timeline' ? (
+          <GanttView
+            columns={columns}
+            cards={filteredCards}
+            canEdit={canEdit}
+            isMobile={isMobile}
+            priorityLabel={pLabel}
+            boardId={activeBoardId!}
+            onCardClick={(c) => setCardModal({ open: true, card: c })}
+            onAddCard={(columnId) => setCardModal({ open: true, card: null, columnId })}
+            onCardReschedule={canEdit ? handleRescheduleCard : undefined}
+          />
         ) : view === 'list' ? (
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
             <ListView columns={columns} cards={filteredCards} totalCount={cards.length} onCardClick={(c) => setCardModal({ open: true, card: c })} />
@@ -2239,6 +2363,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
           boardId={activeBoardId}
           columnId={cardModal.columnId}
           members={members}
+          allCards={cards}
           canEdit={canEdit}
           isMobile={isMobile}
           initialDraft={cardDraftKey ? loadCardDraft(cardDraftKey) : null}

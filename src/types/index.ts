@@ -281,10 +281,13 @@ export interface ProjectCard {
   title: string
   description: string
   priority: ProjectCardPriority
+  start_date: string | null
   due_date: string | null
   assignee_user_id: string | null
   labels: string[]
   linked_page_id: string | null
+  parent_card_id: string | null
+  depends_on: string[]
   completed: boolean
   checklist: ProjectCardChecklistItem[]
   attachments: ProjectCardAttachment[]
