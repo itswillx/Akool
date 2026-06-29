@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
-import { supabase } from '../lib/supabase'
-import type { SiteBackup, SiteBackupSettings } from '../types'
+import { supabase } from '../../lib/supabase'
+import type { SiteBackup, SiteBackupSettings } from '../../types'
 
 const EDGE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/site-backup`
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -44,13 +44,12 @@ async function callSiteBackup(body: Record<string, unknown>) {
 }
 
 async function fetchListAndSettings(): Promise<{ backups: SiteBackup[]; settings: SiteBackupSettings | null }> {
-  const [listRes, settingsRes] = await Promise.all([
-    callSiteBackup({ action: 'list_backups' }),
-    callSiteBackup({ action: 'get_settings' }),
-  ])
+  // Single round-trip: the edge function returns both the backup list and the
+  // settings in one `get_overview` call (avoids re-verifying admin twice).
+  const res = await callSiteBackup({ action: 'get_overview' })
   return {
-    backups: listRes.backups ?? [],
-    settings: settingsRes.settings ?? null,
+    backups: res.backups ?? [],
+    settings: res.settings ?? null,
   }
 }
 

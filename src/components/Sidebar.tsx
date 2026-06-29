@@ -8,6 +8,8 @@ import {
 import type { Page, PageType } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
+import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
+import type { WorkspaceMode } from '../contexts/WorkspaceModeContext'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { useLanguage } from '../i18n/LanguageContext'
 import UserSettingsModal from './UserSettingsModal'
@@ -217,6 +219,8 @@ function SidebarFooterMenu({
   setShowExport,
   signOut,
   onNavigate,
+  mode,
+  setMode,
 }: {
   isAdmin: boolean
   activePanel: string | null
@@ -225,6 +229,8 @@ function SidebarFooterMenu({
   setShowExport: (v: boolean) => void
   signOut: () => void
   onNavigate?: () => void
+  mode: WorkspaceMode
+  setMode: (mode: WorkspaceMode) => void
 }) {
   const { t } = useLanguage()
   const [expanded, setExpanded] = useState(getFooterExpanded)
@@ -234,6 +240,14 @@ function SidebarFooterMenu({
     const next = !expanded
     setExpanded(next)
     setFooterExpanded(next)
+  }
+
+  // These panels live in the projects-world shell. If the user is in finance
+  // mode, switch back to "all" so the chosen panel is actually visible.
+  const navPanel = (panel: 'users' | 'help' | 'backup') => {
+    if (mode === 'finance') setMode('all')
+    setActivePanel(panel)
+    onNavigate?.()
   }
 
   return (
@@ -254,8 +268,8 @@ function SidebarFooterMenu({
         <div style={{ paddingTop: 2 }}>
           {isAdmin && (
             <SidebarAction
-              onClick={() => { setActivePanel('users'); onNavigate?.() }}
-              active={activePanel === 'users'}
+              onClick={() => navPanel('users')}
+              active={mode !== 'finance' && activePanel === 'users'}
             >
               <Users size={13} /><span>{t('sidebar_users')}</span>
             </SidebarAction>
@@ -266,11 +280,11 @@ function SidebarFooterMenu({
           <SidebarAction onClick={() => setShowExport(true)}>
             <FileDown size={13} /><span>{t('sidebar_export_pdf')}</span>
           </SidebarAction>
-          <SidebarAction onClick={() => { setActivePanel('help'); onNavigate?.() }} active={activePanel === 'help'}>
+          <SidebarAction onClick={() => navPanel('help')} active={mode !== 'finance' && activePanel === 'help'}>
             <HelpCircle size={13} /><span>{t('sidebar_help')}</span>
           </SidebarAction>
           {isAdmin && (
-            <SidebarAction onClick={() => { setActivePanel('backup'); onNavigate?.() }} active={activePanel === 'backup'}>
+            <SidebarAction onClick={() => navPanel('backup')} active={mode !== 'finance' && activePanel === 'backup'}>
               <Database size={13} /><span>{t('sidebar_backup')}</span>
             </SidebarAction>
           )}
@@ -424,6 +438,7 @@ interface SidebarProps {
 export default function Sidebar({ onNavigate }: SidebarProps = {}) {
   const { pages, sharedPages, loading, createPage, setActivePage, activePage, activePanel, setActivePanel } = usePages()
   const { user, profile, isAdmin, signOut } = useAuth()
+  const { mode, setMode } = useWorkspaceMode()
   const { t } = useLanguage()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
@@ -463,6 +478,7 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
         )}
       </div>
 
+      {mode !== 'finance' ? (<>
       {/* Create New + Search row */}
       <div style={{ padding: '8px 8px 4px', display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
         <CreateNewDropdown onNewPage={handleNewPage} />
@@ -509,12 +525,14 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
           >
             <LayoutDashboard size={13} /><span>{t('sidebar_dashboard')}</span>
           </SidebarAction>
-          <SidebarAction
-            onClick={() => { setActivePage(null); setActivePanel('finance'); onNavigate?.() }}
-            active={activePanel === 'finance'}
-          >
-            <Wallet size={13} /><span>{t('sidebar_section_finance')}</span>
-          </SidebarAction>
+          {mode === 'all' && (
+            <SidebarAction
+              onClick={() => { setActivePage(null); setActivePanel('finance'); onNavigate?.() }}
+              active={activePanel === 'finance'}
+            >
+              <Wallet size={13} /><span>{t('sidebar_section_finance')}</span>
+            </SidebarAction>
+          )}
           <SidebarAction
             onClick={() => { setActivePage(null); setActivePanel('projects'); onNavigate?.() }}
             active={activePanel === 'projects'}
@@ -575,6 +593,15 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
         )}
 
       </div>
+      </>) : (
+        <div style={{ ...S.pagesScroll, padding: '8px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 4px', color: 'var(--color-text-muted)' }}>
+            <Wallet size={14} />
+            <span style={{ fontSize: 12.5, fontWeight: 600 }}>{t('sidebar_section_finance')}</span>
+          </div>
+          <p style={{ ...S.emptyText, padding: 4, marginTop: 2 }}>{t('mode_finance_sidebar_hint')}</p>
+        </div>
+      )}
 
       <SidebarFooterMenu
         isAdmin={isAdmin}
@@ -584,6 +611,8 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
         setShowExport={setShowExport}
         signOut={signOut}
         onNavigate={onNavigate}
+        mode={mode}
+        setMode={setMode}
       />
 
       <UserSettingsModal open={showSettings} onClose={() => setShowSettings(false)} />

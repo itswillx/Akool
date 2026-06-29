@@ -37,6 +37,8 @@ const BACKUP_TABLES = [
 const STORAGE_BUCKETS = ["note-images", "project-card-images", "transaction-photos"] as const;
 const BACKUP_BUCKET = "site-backups";
 const MAX_BACKUPS = 10;
+const STORAGE_PAGE_SIZE = 1000;
+const STORAGE_REMOVE_BATCH = 100;
 
 type BackupTable = (typeof BACKUP_TABLES)[number];
 
@@ -122,29 +124,72 @@ async function dumpTables(serviceClient: SupabaseClient): Promise<{
   return { tables, summary };
 }
 
-async function listStorageFiles(
+// Recursively list every file under `root` in a bucket. Paginates each folder
+// with `offset` because Supabase caps `list()` at STORAGE_PAGE_SIZE items —
+// without this, folders with >1000 entries are silently truncated.
+async function listFilesUnder(
   serviceClient: SupabaseClient,
   bucket: string,
+  root = "",
 ): Promise<string[]> {
   const paths: string[] = [];
-  const queue = [""];
+  const queue = [root];
 
   while (queue.length > 0) {
     const prefix = queue.pop()!;
-    const { data, error } = await serviceClient.storage.from(bucket).list(prefix, { limit: 1000 });
-    if (error) continue;
-
-    for (const item of data ?? []) {
-      const path = prefix ? `${prefix}/${item.name}` : item.name;
-      if (item.id) {
-        paths.push(path);
-      } else {
-        queue.push(path);
+    let offset = 0;
+    for (;;) {
+      const { data, error } = await serviceClient.storage
+        .from(bucket)
+        .list(prefix, { limit: STORAGE_PAGE_SIZE, offset });
+      if (error) break;
+      const page = data ?? [];
+      for (const item of page) {
+        const path = prefix ? `${prefix}/${item.name}` : item.name;
+        if (item.id) {
+          paths.push(path); // file (has an id)
+        } else {
+          queue.push(path); // folder
+        }
       }
+      if (page.length < STORAGE_PAGE_SIZE) break;
+      offset += STORAGE_PAGE_SIZE;
     }
   }
 
   return paths;
+}
+
+function listStorageFiles(serviceClient: SupabaseClient, bucket: string): Promise<string[]> {
+  return listFilesUnder(serviceClient, bucket);
+}
+
+// Recursively delete everything under `prefix`. Used to fully clean a backup's
+// copied storage tree (`${backupId}/storage/**`) — listing a folder path and
+// calling remove() on it does NOT recurse, which left orphaned files before.
+async function removeStoragePrefix(
+  serviceClient: SupabaseClient,
+  bucket: string,
+  prefix: string,
+): Promise<void> {
+  const files = await listFilesUnder(serviceClient, bucket, prefix);
+  for (let i = 0; i < files.length; i += STORAGE_REMOVE_BATCH) {
+    await serviceClient.storage.from(bucket).remove(files.slice(i, i + STORAGE_REMOVE_BATCH));
+  }
+}
+
+// Whether an exact object path exists in a bucket (used to probe server-side
+// copy support without trusting a possibly-ignored option).
+async function objectExists(
+  serviceClient: SupabaseClient,
+  bucket: string,
+  path: string,
+): Promise<boolean> {
+  const slash = path.lastIndexOf("/");
+  const dir = slash >= 0 ? path.slice(0, slash) : "";
+  const name = slash >= 0 ? path.slice(slash + 1) : path;
+  const { data } = await serviceClient.storage.from(bucket).list(dir, { search: name, limit: 1 });
+  return !!data && data.some((i) => i.name === name);
 }
 
 async function copyStorageToBackup(
@@ -152,17 +197,48 @@ async function copyStorageToBackup(
   backupId: string,
 ): Promise<Record<string, string[]>> {
   const manifest: Record<string, string[]> = {};
+  // null = capability unknown, true = cross-bucket copy works, false = fall back.
+  let serverCopy: boolean | null = null;
+
+  const downloadUpload = async (bucket: string, filePath: string, destPath: string) => {
+    const { data, error } = await serviceClient.storage.from(bucket).download(filePath);
+    if (error || !data) return;
+    await serviceClient.storage.from(BACKUP_BUCKET).upload(destPath, data, { upsert: true });
+  };
 
   for (const bucket of STORAGE_BUCKETS) {
     const files = await listStorageFiles(serviceClient, bucket);
     manifest[bucket] = files;
 
     for (const filePath of files) {
-      const { data, error } = await serviceClient.storage.from(bucket).download(filePath);
-      if (error || !data) continue;
-
       const destPath = `${backupId}/storage/${bucket}/${filePath}`;
-      await serviceClient.storage.from(BACKUP_BUCKET).upload(destPath, data, { upsert: true });
+
+      if (serverCopy === false) {
+        await downloadUpload(bucket, filePath, destPath);
+        continue;
+      }
+
+      // Prefer a server-side copy: no bytes flow through the function.
+      const { error: copyErr } = await serviceClient.storage
+        .from(bucket)
+        .copy(filePath, destPath, { destinationBucket: BACKUP_BUCKET });
+
+      if (serverCopy === null) {
+        // Probe once: confirm the object actually landed in BACKUP_BUCKET. An
+        // older storage client could ignore `destinationBucket` and copy into
+        // the source bucket instead — detect that, clean the stray object, and
+        // fall back to download+upload for the rest of the run.
+        if (!copyErr && await objectExists(serviceClient, BACKUP_BUCKET, destPath)) {
+          serverCopy = true;
+        } else {
+          serverCopy = false;
+          if (!copyErr) await serviceClient.storage.from(bucket).remove([destPath]);
+          await downloadUpload(bucket, filePath, destPath);
+          continue;
+        }
+      }
+
+      if (copyErr) await downloadUpload(bucket, filePath, destPath);
     }
   }
 
@@ -180,14 +256,8 @@ async function enforceRetention(serviceClient: SupabaseClient): Promise<void> {
 
   const toDelete = all.slice(MAX_BACKUPS);
   for (const row of toDelete) {
+    await removeStoragePrefix(serviceClient, BACKUP_BUCKET, row.id);
     await serviceClient.storage.from(BACKUP_BUCKET).remove([row.storage_path]);
-    await serviceClient.storage.from(BACKUP_BUCKET).list(`${row.id}/storage`).then(async (res) => {
-      if (res.data) {
-        for (const item of res.data) {
-          await serviceClient.storage.from(BACKUP_BUCKET).remove([`${row.id}/storage/${item.name}`]);
-        }
-      }
-    });
     await serviceClient.from("site_backups").delete().eq("id", row.id);
   }
 }
@@ -320,16 +390,11 @@ async function deleteBackup(serviceClient: SupabaseClient, backupId: string): Pr
     .eq("id", backupId)
     .single();
 
+  // Remove the whole copied-storage tree (${backupId}/storage/**) recursively…
+  await removeStoragePrefix(serviceClient, BACKUP_BUCKET, backupId);
+  // …and the compressed archive sitting next to it (${backupId}.json.gz).
   if (meta?.storage_path) {
     await serviceClient.storage.from(BACKUP_BUCKET).remove([meta.storage_path]);
-  }
-
-  const { data: storageItems } = await serviceClient.storage.from(BACKUP_BUCKET).list(`${backupId}/storage`);
-  if (storageItems?.length) {
-    const paths = storageItems.flatMap((item) =>
-      STORAGE_BUCKETS.map((b) => `${backupId}/storage/${b}/${item.name}`)
-    );
-    if (paths.length) await serviceClient.storage.from(BACKUP_BUCKET).remove(paths);
   }
 
   await serviceClient.from("site_backups").delete().eq("id", backupId);
@@ -388,6 +453,16 @@ Deno.serve(async (req: Request) => {
           .order("created_at", { ascending: false });
         if (error) throw new Error(error.message);
         return jsonResponse(req, { backups: data ?? [] });
+      }
+      case "get_overview": {
+        // List + settings in one round-trip (saves a second admin verification).
+        const [listRes, settingsRes] = await Promise.all([
+          serviceClient.from("site_backups").select("*").order("created_at", { ascending: false }),
+          serviceClient.from("site_backup_settings").select("*").eq("id", 1).single(),
+        ]);
+        if (listRes.error) throw new Error(listRes.error.message);
+        if (settingsRes.error) throw new Error(settingsRes.error.message);
+        return jsonResponse(req, { backups: listRes.data ?? [], settings: settingsRes.data });
       }
       case "restore_backup": {
         if (!body.backup_id) throw new Error("backup_id required");

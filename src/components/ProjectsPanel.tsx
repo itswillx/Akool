@@ -3,13 +3,14 @@ import {
   Plus, X, Trash2, Pencil, Share2, FolderKanban, LayoutGrid, List as ListIcon,
   BarChart3, ChevronDown, ChevronLeft, ChevronRight, Link2, ExternalLink, Search,
   Calendar, CheckSquare, Image, Download, Smartphone, Upload, GanttChartSquare,
+  GripVertical,
 } from 'lucide-react'
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors, useDroppable,
   pointerWithin, rectIntersection,
 } from '@dnd-kit/core'
 import type { CollisionDetection, DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core'
-import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import { SortableContext, useSortable, verticalListSortingStrategy, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { ProjectBoard, ProjectColumn, ProjectCard, ProjectCardChecklistItem, ProjectCardAttachment, ProjectShare, ProjectCardPriority, ProjectShareRole, Page } from '../types'
 import { supabase } from '../lib/supabase'
@@ -275,11 +276,15 @@ function SortableCard({
 function Column({
   column, cards, canEdit, priorityLabel, onAddCard, onCardClick, onRename, onDelete,
   variant = 'board', columnIndex = 0, columnsCount = 1, onMovePrev, onMoveNext,
+  dragHandleRef, dragHandleListeners, dragHandleAttributes,
 }: {
   column: ProjectColumn; cards: ProjectCard[]; canEdit: boolean; priorityLabel: (p: ProjectCardPriority) => string;
   onAddCard: () => void; onCardClick: (c: ProjectCard) => void; onRename: () => void; onDelete: () => void;
   variant?: 'board' | 'compact'; columnIndex?: number; columnsCount?: number;
   onMovePrev?: (cardId: string) => void; onMoveNext?: (cardId: string) => void;
+  dragHandleRef?: (node: HTMLElement | null) => void;
+  dragHandleListeners?: Record<string, unknown>;
+  dragHandleAttributes?: Record<string, unknown>;
 }) {
   const { t } = useLanguage()
   const { setNodeRef, isOver } = useDroppable({ id: `col:${column.id}` })
@@ -288,6 +293,7 @@ function Column({
   const showMovePrev = isCompact && columnIndex > 0
   const showMoveNext = isCompact && columnIndex < columnsCount - 1
   const sortableItems = useMemo(() => cards.map(c => c.id), [cards])
+  const showDragHandle = !isCompact && canEdit && !!dragHandleRef
   return (
     <div
       ref={setNodeRef}
@@ -304,6 +310,17 @@ function Column({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', marginBottom: 6 }}>
+        {showDragHandle && (
+          <button
+            ref={dragHandleRef}
+            {...(dragHandleAttributes ?? {})}
+            {...(dragHandleListeners ?? {})}
+            title={t('projects_reorder_column')}
+            style={{ border: 'none', background: 'none', cursor: 'grab', color: 'var(--color-text-muted)', display: 'flex', padding: 0, flexShrink: 0, touchAction: 'none' }}
+          >
+            <GripVertical size={14} />
+          </button>
+        )}
         <span style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: column.color, flexShrink: 0 }} />
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{column.name}</span>
         <span style={{ fontSize: 11, fontWeight: 700, color: overLimit ? '#ef4444' : 'var(--color-text-muted)', backgroundColor: 'var(--color-hover)', borderRadius: 999, padding: '1px 7px' }}>
@@ -352,6 +369,35 @@ function Column({
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── Sortable column (board reorder) ──────────────────────────────────────────
+
+function SortableColumn({ column, canEdit, ...rest }: {
+  column: ProjectColumn; cards: ProjectCard[]; canEdit: boolean; priorityLabel: (p: ProjectCardPriority) => string;
+  onAddCard: () => void; onCardClick: (c: ProjectCard) => void; onRename: () => void; onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id: column.id, data: { type: 'column' }, disabled: !canEdit,
+  })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    height: '100%',
+  }
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Column
+        column={column}
+        canEdit={canEdit}
+        dragHandleRef={setActivatorNodeRef}
+        dragHandleListeners={listeners as unknown as Record<string, unknown>}
+        dragHandleAttributes={attributes as unknown as Record<string, unknown>}
+        {...rest}
+      />
     </div>
   )
 }
@@ -547,9 +593,16 @@ function moveCardToColumn(prev: ProjectCard[], cardId: string, targetColumnId: s
 }
 
 const collisionDetection: CollisionDetection = (args) => {
-  const pointerCollisions = pointerWithin(args)
+  // When dragging a column, only collide with other columns so the drop always
+  // resolves to a column (never a card under the pointer) and the horizontal
+  // sortable preview animates. Card drags keep the full set of droppables.
+  const isColumnDrag = args.active?.data?.current?.type === 'column'
+  const scoped = isColumnDrag
+    ? { ...args, droppableContainers: args.droppableContainers.filter(c => c.data.current?.type === 'column') }
+    : args
+  const pointerCollisions = pointerWithin(scoped)
   if (pointerCollisions.length > 0) return pointerCollisions
-  return rectIntersection(args)
+  return rectIntersection(scoped)
 }
 
 async function uploadCardImages(
@@ -1483,6 +1536,7 @@ function CompactKanbanView({
   onRename,
   onDelete,
   onMoveCardToColumn,
+  onReorderColumn,
 }: {
   boardId: string
   columns: ProjectColumn[]
@@ -1501,7 +1555,9 @@ function CompactKanbanView({
   onRename: (col: ProjectColumn) => void
   onDelete: (col: ProjectColumn) => void
   onMoveCardToColumn: (cardId: string, targetColumnId: string) => void
+  onReorderColumn?: (colId: string, dir: -1 | 1) => void
 }) {
+  const { t } = useLanguage()
   const storageKey = `${COMPACT_COLUMN_KEY}${boardId}`
 
   const [activeColumnId, setActiveColumnId] = useState(() => {
@@ -1564,6 +1620,29 @@ function CompactKanbanView({
           )
         })}
       </div>
+      {onReorderColumn && columns.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 0', flexShrink: 0 }}>
+          <button
+            type="button"
+            disabled={!prevCol}
+            onClick={() => prevCol && onReorderColumn(activeCol.id, -1)}
+            title={t('projects_column_move_left')}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: prevCol ? 'pointer' : 'default', color: 'var(--color-text-muted)', opacity: prevCol ? 1 : 0.4, padding: 0 }}
+          >
+            <ChevronLeft size={15} />
+          </button>
+          <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('projects_reorder_column')}</span>
+          <button
+            type="button"
+            disabled={!nextCol}
+            onClick={() => nextCol && onReorderColumn(activeCol.id, 1)}
+            title={t('projects_column_move_right')}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: nextCol ? 'pointer' : 'default', color: 'var(--color-text-muted)', opacity: nextCol ? 1 : 0.4, padding: 0 }}
+          >
+            <ChevronRight size={15} />
+          </button>
+        </div>
+      )}
       <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
         <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
           <Column
@@ -2098,6 +2177,29 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
     return true
   }
 
+  const persistColumns = async (list: ProjectColumn[]) => {
+    const results = await Promise.all(
+      list.map(c => supabase.from('project_columns').update({ sort_order: c.sort_order }).eq('id', c.id)),
+    )
+    if (results.some(r => r.error)) {
+      setPersistError(t('projects_persist_error'))
+      if (activeBoardId) await loadBoardData(activeBoardId, { silent: true })
+      return false
+    }
+    setPersistError(null)
+    return true
+  }
+
+  // Reorder a column by one slot (used by the compact/mobile view, which has no drag).
+  const moveColumnByOffset = async (colId: string, dir: -1 | 1) => {
+    const idx = columns.findIndex(c => c.id === colId)
+    const target = idx + dir
+    if (idx === -1 || target < 0 || target >= columns.length) return
+    const reordered = arrayMove(columns, idx, target).map((c, i) => ({ ...c, sort_order: i }))
+    setColumns(reordered)
+    await persistColumns(reordered)
+  }
+
   const handleDragStart = (e: DragStartEvent) => {
     const id = String(e.active.id)
     setActiveDragId(id)
@@ -2106,6 +2208,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
 
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event
+    if (active.data.current?.type === 'column') return
     if (!over) return
 
     const activeId = String(active.id)
@@ -2128,6 +2231,21 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     const activeId = String(active.id)
+
+    if (active.data.current?.type === 'column') {
+      setActiveDragId(null)
+      if (!over) return
+      const overRaw = String(over.id)
+      const overColId = overRaw.startsWith('col:') ? overRaw.slice(4) : overRaw
+      const oldIndex = columns.findIndex(c => c.id === activeId)
+      const newIndex = columns.findIndex(c => c.id === overColId)
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
+      const reordered = arrayMove(columns, oldIndex, newIndex).map((c, i) => ({ ...c, sort_order: i }))
+      setColumns(reordered)
+      await persistColumns(reordered)
+      return
+    }
+
     const sourceCol = dragSourceColumnRef.current
 
     setActiveDragId(null)
@@ -2173,6 +2291,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
   }
 
   const activeDragCard = activeDragId ? cards.find(c => c.id === activeDragId) : null
+  const activeDragColumn = activeDragId ? columns.find(c => c.id === activeDragId) : null
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--color-bg)', overflow: 'hidden' }}>
@@ -2287,15 +2406,17 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
             )}
           <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
             <div style={{ flex: 1, display: 'flex', gap: 12, padding: 16, overflowX: 'auto', overflowY: 'hidden', alignItems: 'stretch' }}>
-              {columns.map(col => (
-                <Column
-                  key={col.id} column={col} cards={cardsByColumn[col.id] ?? []} canEdit={canEdit} priorityLabel={pLabel}
-                  onAddCard={() => setCardModal({ open: true, card: null, columnId: col.id })}
-                  onCardClick={(c) => setCardModal({ open: true, card: c })}
-                  onRename={() => setColumnModal({ open: true, column: col })}
-                  onDelete={() => deleteColumn(col)}
-                />
-              ))}
+              <SortableContext items={columns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
+                {columns.map(col => (
+                  <SortableColumn
+                    key={col.id} column={col} cards={cardsByColumn[col.id] ?? []} canEdit={canEdit} priorityLabel={pLabel}
+                    onAddCard={() => setCardModal({ open: true, card: null, columnId: col.id })}
+                    onCardClick={(c) => setCardModal({ open: true, card: c })}
+                    onRename={() => setColumnModal({ open: true, column: col })}
+                    onDelete={() => deleteColumn(col)}
+                  />
+                ))}
+              </SortableContext>
               {canEdit && (
                 <button onClick={() => setColumnModal({ open: true, column: null })} style={{ width: 200, minWidth: 200, height: 'fit-content', display: 'flex', alignItems: 'center', gap: 6, padding: '10px 12px', borderRadius: 10, border: '1px dashed var(--color-border)', background: 'transparent', color: 'var(--color-text-muted)', fontSize: 13, cursor: 'pointer' }}>
                   <Plus size={14} />{t('projects_add_column')}
@@ -2303,7 +2424,14 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
               )}
             </div>
             <DragOverlay>
-              {activeDragCard ? <div style={{ width: 274 }}><CardView card={activeDragCard} priorityLabel={pLabel(activeDragCard.priority)} dragging /></div> : null}
+              {activeDragColumn ? (
+                <div style={{ width: 290, opacity: 0.9, cursor: 'grabbing' }}>
+                  <Column
+                    column={activeDragColumn} cards={cardsByColumn[activeDragColumn.id] ?? []} canEdit={false} priorityLabel={pLabel}
+                    onAddCard={() => {}} onCardClick={() => {}} onRename={() => {}} onDelete={() => {}}
+                  />
+                </div>
+              ) : activeDragCard ? <div style={{ width: 274 }}><CardView card={activeDragCard} priorityLabel={pLabel(activeDragCard.priority)} dragging /></div> : null}
             </DragOverlay>
           </DndContext>
           </>
@@ -2326,6 +2454,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
             onRename={(col) => setColumnModal({ open: true, column: col })}
             onDelete={deleteColumn}
             onMoveCardToColumn={handleMoveCardToColumn}
+            onReorderColumn={canEdit ? moveColumnByOffset : undefined}
           />
         ) : view === 'timeline' ? (
           <GanttView

@@ -6,9 +6,11 @@ import { NotificationsProvider } from './contexts/NotificationsContext'
 import { OnboardingProvider } from './contexts/OnboardingContext'
 import { LanguageProvider } from './i18n/LanguageContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { WorkspaceModeProvider } from './contexts/WorkspaceModeContext'
 import AuthPage from './pages/AuthPage'
 import Sidebar from './components/Sidebar'
 import MainContent from './components/MainContent'
+import WorkspaceModeSwitch from './components/WorkspaceModeSwitch'
 import { useIsMobile } from './hooks/useIsMobile'
 import { getT } from './i18n/translations'
 import type { Lang } from './i18n/translations'
@@ -56,6 +58,7 @@ function AppInner() {
       <LanguageProvider>
       <ThemeProvider>
       <OnboardingProvider>
+      <WorkspaceModeProvider>
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
         {/* Sidebar: overlay drawer on all devices */}
         {showSidebar && (
@@ -83,10 +86,12 @@ function AppInner() {
               </button>
               <div style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: 'var(--color-logo-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-logo-text)', fontWeight: 700, fontSize: 13 }}>A</div>
               <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>Akool</span>
+              <WorkspaceModeSwitch />
             </div>
           <MainContent isMobile={isMobile} />
         </main>
       </div>
+      </WorkspaceModeProvider>
       </OnboardingProvider>
       </ThemeProvider>
       </LanguageProvider>

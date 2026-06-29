@@ -6,6 +6,7 @@ import {
 import type { Page, PageType, Todo, FinanceAccount, FinanceTransaction, FinanceCategory } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
+import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -59,14 +60,15 @@ interface FinanceStats {
   loaded: boolean
 }
 
-function useDashboardFinance(userId: string | undefined): FinanceStats {
+function useDashboardFinance(userId: string | undefined, enabled: boolean): FinanceStats {
   const [stats, setStats] = useState<FinanceStats>({
     totalBalance: 0, monthIncome: 0, monthExpense: 0,
     topCategories: [], monthlyData: [], savingsRate: 0, loaded: false,
   })
 
   useEffect(() => {
-    if (!userId) return
+    // In "projects" mode finance is hidden, so skip the finance_* queries entirely.
+    if (!userId || !enabled) return
     const ym = currentYM()
     const months = last6Months(ym)
 
@@ -110,7 +112,7 @@ function useDashboardFinance(userId: string | undefined): FinanceStats {
 
       setStats({ totalBalance, monthIncome, monthExpense, topCategories, monthlyData, savingsRate, loaded: true })
     })
-  }, [userId])
+  }, [userId, enabled])
 
   return stats
 }
@@ -118,13 +120,17 @@ function useDashboardFinance(userId: string | undefined): FinanceStats {
 export default function Dashboard({ isMobile = false }: DashboardProps) {
   const { pages, createPage, setActivePage, setActivePanel } = usePages()
   const { user, profile } = useAuth()
+  const { mode } = useWorkspaceMode()
   const { t } = useLanguage()
   const { notifications, unreadCount, markAsRead, markAllRead } = useNotifications()
   const [todos, setTodos] = useState<Todo[]>([])
   const [notifOpen, setNotifOpen] = useState(false)
   const notifRef = useRef<HTMLDivElement>(null)
   const ym = currentYM()
-  const finance = useDashboardFinance(user?.id)
+  // Finance widgets only appear in the "all" (everything) view; in "projects"
+  // mode they are hidden and their queries are skipped.
+  const showFinance = mode === 'all'
+  const finance = useDashboardFinance(user?.id, showFinance)
 
   useEffect(() => {
     if (!notifOpen) return
@@ -255,17 +261,19 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
           </div>
         </div>
 
-        {/* ── Top 4 stat cards ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
-          <StatCard
-            onClick={() => { localStorage.setItem('finance_active_tab', 'overview'); setActivePanel('finance') }}
-            icon={<Wallet size={15} />} iconColor="#6366f1"
-            label="Finanças" sub={t('dashboard_finance_balance')}
-            value={fmtCurrency(finance.totalBalance)}
-            valueColor={finance.totalBalance < 0 ? 'var(--color-error)' : 'var(--color-text)'}
-            sparkline={finance.monthlyData}
-            sparklineKey="expense"
-          />
+        {/* ── Top stat cards ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : (showFinance ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)'), gap: 12, marginBottom: 12 }}>
+          {showFinance && (
+            <StatCard
+              onClick={() => { localStorage.setItem('finance_active_tab', 'overview'); setActivePanel('finance') }}
+              icon={<Wallet size={15} />} iconColor="#6366f1"
+              label="Finanças" sub={t('dashboard_finance_balance')}
+              value={fmtCurrency(finance.totalBalance)}
+              valueColor={finance.totalBalance < 0 ? 'var(--color-error)' : 'var(--color-text)'}
+              sparkline={finance.monthlyData}
+              sparklineKey="expense"
+            />
+          )}
           <StatCard
             icon={<FileText size={15} />} iconColor="#0ea5e9"
             label={t('dashboard_activity')} sub={t('dashboard_stat_notes')}
@@ -284,6 +292,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
           />
         </div>
 
+        {showFinance && (<>
         {/* ── Finance overview cards ── */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 20 }}>
           <FinanceCard
@@ -336,6 +345,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
             <SavingsRateBar rate={finance.savingsRate} />
           </Panel>
         </div>
+        </>)}
 
         {/* ── Bottom row: recent + upcoming ── */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 1fr', gap: 14 }}>

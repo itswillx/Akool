@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PageType } from '../types'
 import { usePages } from '../contexts/PagesContext'
+import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
 import PageHeader from './PageHeader'
 
 const NoteEditor = lazy(() => import('./NoteEditor'))
@@ -9,10 +10,10 @@ const DrawingCanvas = lazy(() => import('./DrawingCanvas'))
 const TodoList = lazy(() => import('./TodoList'))
 const Dashboard = lazy(() => import('./Dashboard'))
 const UserManagementPanel = lazy(() => import('./UserManagementPanel'))
-const FinancePanel = lazy(() => import('./FinancePanel'))
+const FinancePanel = lazy(() => import('../modules/finance'))
 const ProjectsPanel = lazy(() => import('./ProjectsPanel'))
 const HelpPanel = lazy(() => import('./HelpPanel'))
-const BackupPanel = lazy(() => import('./BackupPanel'))
+const BackupPanel = lazy(() => import('../modules/backup'))
 
 function ContentFallback() {
   return (
@@ -34,14 +35,23 @@ interface MainContentProps {
 
 export default function MainContent({ isMobile = false }: MainContentProps) {
   const { activePage, activePanel } = usePages()
+  const { mode } = useWorkspaceMode()
   const [splitRatio, setSplitRatio] = useState(50)
   const [dragging, setDragging] = useState(false)
+
+  // Finance mode: the finance module takes over the whole content area and
+  // ignores the projects-world page/panel routing entirely.
+  if (mode === 'finance') {
+    return <Lazy><FinancePanel isMobile={isMobile} /></Lazy>
+  }
 
   if (activePanel === 'users') {
     return <Lazy><UserManagementPanel /></Lazy>
   }
 
-  if (activePanel === 'finance') {
+  // Finance as an inline panel only exists in the "all" (everything) mode.
+  // In "projects" mode this branch is skipped and falls through to the dashboard.
+  if (activePanel === 'finance' && mode === 'all') {
     return <Lazy><FinancePanel isMobile={isMobile} /></Lazy>
   }
 

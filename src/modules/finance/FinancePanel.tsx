@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react'
 import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, User, Link2, FileDown, Camera, Download, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal } from 'lucide-react'
-import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceBudget, FinanceTxType, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceWorkspace, FinanceWorkspaceMember, FinanceWorkspaceInvite } from '../types'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
-import { useLanguage } from '../i18n/LanguageContext'
-import { useIsMobile } from '../hooks/useIsMobile'
+import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceBudget, FinanceTxType, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceWorkspace, FinanceWorkspaceMember, FinanceWorkspaceInvite } from '../../types'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
+import { useLanguage } from '../../i18n/LanguageContext'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 // ─── Mobile context ────────────────────────────────────────────────────────────
 // Lets nested components (modals, tabs) adapt their layout without threading an
@@ -3674,7 +3674,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
               if (exporting) return
               setExporting(true)
               try {
-                const { exportFinanceToPdf } = await import('../hooks/usePdfExport')
+                const { exportFinanceToPdf } = await import('../../hooks/usePdfExport')
                 await exportFinanceToPdf({ transactions, accounts, categories, budgets, goals, contributions, recurring, month, userName: profile?.display_name || profile?.email || '' })
               } catch (err) {
                 console.error('[FinancePDF] export error:', err)

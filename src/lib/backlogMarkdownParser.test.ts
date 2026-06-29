@@ -30,7 +30,7 @@ const NOTION_LIST_BLOCK = `## Tópico: Performance
 - **Prioridade:** P1
 - **Esforço:** M
 - **Labels:** performance, finance
-- **Arquivos:** \`src/components/FinancePanel.tsx\`
+- **Arquivos:** \`src/modules/finance/FinancePanel.tsx\`
 
 **Problema:** Select sem limite carrega todas as transações.
 

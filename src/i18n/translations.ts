@@ -48,6 +48,16 @@ const translations = {
     sidebar_section_finance: 'Finanças',
     sidebar_section_projects: 'Projetos',
 
+    // Workspace mode switch (top bar)
+    mode_all: 'Tudo',
+    mode_projects: 'Projetos',
+    mode_finance: 'Financeiro',
+    mode_all_tooltip: 'Visão completa (projetos + finanças)',
+    mode_projects_tooltip: 'Visão Projetos (sem finanças)',
+    mode_finance_tooltip: 'Visão Financeiro',
+    mode_switch_aria: 'Alternar visão',
+    mode_finance_sidebar_hint: 'Você está na visão Financeiro. Use as abas para navegar pelos módulos de finanças.',
+
     // Projects module
     projects_title: 'Projetos',
     projects_loading: 'Carregando projetos...',
@@ -95,6 +105,9 @@ const translations = {
     projects_add_column: 'Adicionar coluna',
     projects_column_name: 'Nome da coluna',
     projects_rename_column: 'Renomear coluna',
+    projects_reorder_column: 'Arraste para reordenar a coluna',
+    projects_column_move_left: 'Mover coluna para a esquerda',
+    projects_column_move_right: 'Mover coluna para a direita',
     projects_delete_column: 'Excluir coluna',
     projects_delete_column_confirm: 'Excluir esta coluna e todos os seus cards?',
     projects_wip_limit: 'Limite WIP',
@@ -281,6 +294,12 @@ const translations = {
     backup_auto_disabled: 'Backup automático desativado',
     backup_error_unauthorized: 'Sessão inválida ou expirada — faça login novamente.',
     backup_error_forbidden: 'Apenas administradores podem gerenciar backups.',
+    backup_confirm_delete_desc: 'Excluir o ponto de restauração de {date}? Esta ação não pode ser desfeita.',
+    backup_col_date: 'Data',
+    backup_col_type: 'Tipo',
+    backup_col_status: 'Status',
+    backup_col_size: 'Tamanho',
+    backup_col_actions: 'Ações',
 
     page_header_untitled: 'Sem título',
     page_header_change_icon: 'Alterar ícone',
@@ -748,6 +767,16 @@ const translations = {
     sidebar_section_finance: 'Finance',
     sidebar_section_projects: 'Projects',
 
+    // Workspace mode switch (top bar)
+    mode_all: 'Everything',
+    mode_projects: 'Projects',
+    mode_finance: 'Finance',
+    mode_all_tooltip: 'Full view (projects + finance)',
+    mode_projects_tooltip: 'Projects view (no finance)',
+    mode_finance_tooltip: 'Finance view',
+    mode_switch_aria: 'Switch view',
+    mode_finance_sidebar_hint: 'You are in the Finance view. Use the tabs to navigate the finance modules.',
+
     // Projects module
     projects_title: 'Projects',
     projects_loading: 'Loading projects...',
@@ -795,6 +824,9 @@ const translations = {
     projects_add_column: 'Add column',
     projects_column_name: 'Column name',
     projects_rename_column: 'Rename column',
+    projects_reorder_column: 'Drag to reorder column',
+    projects_column_move_left: 'Move column left',
+    projects_column_move_right: 'Move column right',
     projects_delete_column: 'Delete column',
     projects_delete_column_confirm: 'Delete this column and all its cards?',
     projects_wip_limit: 'WIP limit',
@@ -981,6 +1013,12 @@ const translations = {
     backup_auto_disabled: 'Automatic backup disabled',
     backup_error_unauthorized: 'Invalid or expired session — please sign in again.',
     backup_error_forbidden: 'Only administrators can manage backups.',
+    backup_confirm_delete_desc: 'Delete the restore point from {date}? This action cannot be undone.',
+    backup_col_date: 'Date',
+    backup_col_type: 'Type',
+    backup_col_status: 'Status',
+    backup_col_size: 'Size',
+    backup_col_actions: 'Actions',
 
     // Page header
     page_header_untitled: 'Untitled',

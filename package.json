@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "import:cards": "node scripts/import-backlog-cards.mjs"
+    "import:cards": "node scripts/import-backlog-cards.mjs",
+    "generate:architecture-map": "node scripts/generate-architecture-map.mjs",
+    "generate:auth-flow-map": "node scripts/generate-auth-flow-map.mjs",
+    "generate:maps": "node scripts/generate-architecture-map.mjs && node scripts/generate-auth-flow-map.mjs"
   },
   "dependencies": {
     "@blocknote/core": "^0.50.0",

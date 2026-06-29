@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatBackupSize, mapBackupError } from './useSiteBackup'
-import { getT } from '../i18n/translations'
+import { getT } from '../../i18n/translations'
 
 describe('formatBackupSize', () => {
   it('formats bytes', () => {
