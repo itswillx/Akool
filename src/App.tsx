@@ -11,6 +11,8 @@ import AuthPage from './pages/AuthPage'
 import Sidebar from './components/Sidebar'
 import MainContent from './components/MainContent'
 import WorkspaceModeSwitch from './components/WorkspaceModeSwitch'
+import UserSettingsModal from './components/UserSettingsModal'
+import { initials } from './lib/avatar'
 import { useIsMobile } from './hooks/useIsMobile'
 import { getT } from './i18n/translations'
 import type { Lang } from './i18n/translations'
@@ -19,6 +21,7 @@ function AppInner() {
   const { user, profile, loading, signOut, justSignedIn } = useAuth()
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
   const [dailyLoginRequired, setDailyLoginRequired] = useState(false)
   const mountTimeRef = useRef(Date.now())
 
@@ -87,8 +90,26 @@ function AppInner() {
               <div style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: 'var(--color-logo-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-logo-text)', fontWeight: 700, fontSize: 13 }}>A</div>
               <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>Akool</span>
               <WorkspaceModeSwitch />
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => setShowAccount(true)}
+                  title={profile?.display_name || user?.email || ''}
+                  aria-label={tFallback('account_menu')}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, padding: isMobile ? 4 : '0 12px 0 5px', borderRadius: 9, border: 'none', backgroundColor: 'var(--color-logo-bg)', cursor: 'pointer', color: 'var(--color-logo-text)', flexShrink: 0 }}
+                >
+                  <span style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: 'var(--color-logo-text)', color: 'var(--color-logo-bg)', fontWeight: 700, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {initials(profile?.display_name || user?.email || '?')}
+                  </span>
+                  {!isMobile && (
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-logo-text)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {profile?.display_name || user?.email}
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
           <MainContent isMobile={isMobile} />
+          <UserSettingsModal open={showAccount} onClose={() => setShowAccount(false)} />
         </main>
       </div>
       </WorkspaceModeProvider>

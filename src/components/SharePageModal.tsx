@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { X, UserPlus, ChevronDown, Trash2, Search, Crown, Eye, Pencil } from 'lucide-react'
 import type { PageShare, PageShareRole } from '../types'
 import { supabase } from '../lib/supabase'
+import { sanitizeIlikeTerm } from '../lib/profileSearch'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 
@@ -161,11 +162,13 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (!q.trim()) { setSearchResults([]); return }
     debounceRef.current = setTimeout(async () => {
+      const term = sanitizeIlikeTerm(q)
+      if (!term) { setSearchResults([]); return }
       const existingIds = new Set([user?.id, ...shares.map(s => s.shared_with_user_id)])
       const { data } = await supabase
         .from('profiles')
         .select('id, email, display_name')
-        .or(`email.ilike.%${q}%,display_name.ilike.%${q}%`)
+        .or(`email.ilike.%${term}%,display_name.ilike.%${term}%`)
         .limit(8)
       if (data) {
         setSearchResults((data as UserProfile[]).filter(p => !existingIds.has(p.id)))

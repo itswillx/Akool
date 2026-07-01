@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { BlockNoteEditor } from '@blocknote/core'
+import { BlockNoteSchema, defaultBlockSpecs, filterSuggestionItems } from '@blocknote/core'
 import { BlockNoteView } from '@blocknote/mantine'
-import { useCreateBlockNote } from '@blocknote/react'
+import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
+import type { DefaultReactSuggestionItem } from '@blocknote/react'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
+import { FolderKanban } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { DiagramBlock } from './DiagramBlock'
+import { ProjectCardBlock } from './blocks/ProjectCardBlock'
+import ImportProjectCardsModal from './ImportProjectCardsModal'
+import { buildCardSnapshot } from '../lib/projectImport'
+import type { ProjectBoard, ProjectCard, ProjectColumn } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useCollaborativeContent } from '../hooks/useCollaborativeContent'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -73,7 +79,9 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
 }
 
 
-const customSchema = { diagram: DiagramBlock }
+const schema = BlockNoteSchema.create({
+  blockSpecs: { ...defaultBlockSpecs, diagram: DiagramBlock(), projectCard: ProjectCardBlock() },
+})
 
 function EditorInner({
   pageId,
@@ -140,28 +148,67 @@ function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appThem
   }, [pageId])
 
   const editor = useCreateBlockNote({
-    customBlocks: customSchema,
+    schema,
     uploadFile,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ...(initialContent.length > 0 ? { initialContent: initialContent as any } : {}),
   })
 
-  const save = useCallback(async (ed: BlockNoteEditor) => {
-    const content = ed.document
+  const { t } = useLanguage()
+  const [importOpen, setImportOpen] = useState(false)
+  // Block where the cursor sat when "/" → Projetos was picked; new card blocks
+  // are inserted right after it.
+  const referenceBlockIdRef = useRef<string | null>(null)
+
+  const save = useCallback(async () => {
+    const content = editor.document
     const { data } = await supabase
       .from('note_contents')
       .upsert({ page_id: pageId, content }, { onConflict: 'page_id' })
       .select('updated_at')
       .single()
     if (data?.updated_at) onSave(data.updated_at)
-  }, [pageId, onSave])
+  }, [editor, pageId, onSave])
 
   const handleChange = useCallback(() => {
     if (readOnly) return
     onDirty?.()
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => save(editor), 1000)
-  }, [editor, save, readOnly, onDirty])
+    saveTimer.current = setTimeout(() => save(), 1000)
+  }, [save, readOnly, onDirty])
+
+  // Slash menu: default items plus a "Projetos" entry that opens the card picker.
+  const getSlashItems = useCallback(async (query: string): Promise<DefaultReactSuggestionItem[]> => {
+    const projetosItem: DefaultReactSuggestionItem = {
+      title: t('import_cards_slash_title'),
+      subtext: t('import_cards_slash_subtitle'),
+      aliases: ['projetos', 'projects', 'card', 'cards', 'kanban'],
+      group: t('projects_title'),
+      icon: <FolderKanban size={18} />,
+      onItemClick: () => {
+        if (readOnly) return
+        referenceBlockIdRef.current = editor.getTextCursorPosition().block.id
+        setImportOpen(true)
+      },
+    }
+    return filterSuggestionItems([...getDefaultReactSlashMenuItems(editor), projetosItem], query)
+  }, [editor, t, readOnly])
+
+  const handleImport = useCallback((cards: ProjectCard[], board: ProjectBoard, columns: ProjectColumn[]) => {
+    const columnName = (id: string) => columns.find(c => c.id === id)?.name ?? null
+    const blocks = cards.map(card => ({
+      type: 'projectCard' as const,
+      props: {
+        cardId: card.id,
+        boardId: board.id,
+        snapshot: JSON.stringify(buildCardSnapshot(card, board, columnName(card.column_id))),
+      },
+    }))
+    const ref = referenceBlockIdRef.current ?? editor.getTextCursorPosition().block.id
+    editor.insertBlocks(blocks, ref, 'after')
+    setImportOpen(false)
+    handleChange()
+  }, [editor, handleChange])
 
   useEffect(() => {
     return () => {
@@ -176,8 +223,18 @@ function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appThem
         onChange={handleChange}
         editable={!readOnly}
         theme={appTheme}
+        slashMenu={false}
         style={{ height: '100%' }}
-      />
+      >
+        <SuggestionMenuController triggerCharacter="/" getItems={getSlashItems} />
+      </BlockNoteView>
+      {!readOnly && (
+        <ImportProjectCardsModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          onImport={handleImport}
+        />
+      )}
     </div>
   )
 }

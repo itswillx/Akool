@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Plus, X, Trash2, Pencil, Share2, FolderKanban, LayoutGrid, List as ListIcon,
-  BarChart3, ChevronDown, ChevronLeft, ChevronRight, Link2, ExternalLink, Search,
+  BarChart3, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Link2, ExternalLink, Search,
   Calendar, CheckSquare, Image, Download, Smartphone, Upload, GanttChartSquare,
-  GripVertical,
+  GripVertical, Check,
 } from 'lucide-react'
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors, useDroppable,
@@ -12,15 +12,22 @@ import {
 import type { CollisionDetection, DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { ProjectBoard, ProjectColumn, ProjectCard, ProjectCardChecklistItem, ProjectCardAttachment, ProjectShare, ProjectCardPriority, ProjectShareRole, Page } from '../types'
+import type { ProjectBoard, ProjectColumn, ProjectCard, ProjectCardChecklistItem, ProjectCardAttachment, ProjectCardLink, ProjectShare, ProjectCardPriority, ProjectShareRole, Page } from '../types'
 import { supabase } from '../lib/supabase'
+import { sanitizeIlikeTerm } from '../lib/profileSearch'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { usePages } from '../contexts/PagesContext'
+import { useIsMobile } from '../hooks/useIsMobile'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
 import ImportCardsModal from './ImportCardsModal'
 import CardFilterBar from './CardFilterBar'
 import GanttView from './GanttView'
+import { MarkdownText } from './MarkdownText'
+import { RichTextEditor } from './RichTextEditor'
+import { normalizeLinkUrl, linkDisplay } from '../lib/cardLinks'
+import { Donut, Legend, SegmentedBar, AreaTrend, type ChartDatum } from './Charts'
+import { overviewSummary, countByColumnId, countByPriority, countByAssignee, dueBuckets, createdPerWeek, PRIORITY_ORDER } from '../lib/projectStats'
 import {
   type ProjectCardFilters,
   filterProjectCards,
@@ -453,7 +460,7 @@ interface CardForm {
   title: string; description: string; priority: ProjectCardPriority; start_date: string; due_date: string;
   assignee_user_id: string | null; labels: string[]; linked_page_id: string | null;
   parent_card_id: string | null; depends_on: string[];
-  completed: boolean; checklist: ProjectCardChecklistItem[]; attachments: ProjectCardAttachment[];
+  completed: boolean; checklist: ProjectCardChecklistItem[]; attachments: ProjectCardAttachment[]; links: ProjectCardLink[];
 }
 
 interface PendingFile { id: string; file: File; preview: string }
@@ -716,6 +723,7 @@ function CardAttachmentsSection({
   const { t } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<{ url: string; name: string } | null>(null)
+  const [open, setOpen] = useState(false)
   const visibleAttachments = attachments.filter(a => !removedIds.includes(a.id))
   const total = visibleAttachments.length + pendingFiles.length
 
@@ -728,14 +736,20 @@ function CardAttachmentsSection({
   return (
     <div>
       <CardImageLightbox preview={preview} onClose={() => setPreview(null)} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-        <label style={{ ...labelStyle, marginBottom: 0 }}>{t('projects_attachments')}</label>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, width: '100%', marginBottom: open ? 4 : 0, border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {open ? <ChevronDown size={14} color="var(--color-text-muted)" /> : <ChevronRight size={14} color="var(--color-text-muted)" />}
+          <span style={{ ...labelStyle, marginBottom: 0 }}>{t('projects_attachments')}</span>
+        </span>
         {total > 0 && (
           <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)' }}>
             {t('projects_attachments_count').replace('{count}', String(total))}
           </span>
         )}
-      </div>
+      </button>
+      {open && (
+      <>
       {(visibleAttachments.length > 0 || pendingFiles.length > 0) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
           {visibleAttachments.map(a => (
@@ -795,6 +809,8 @@ function CardAttachmentsSection({
           <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)' }}>{t('projects_attachments_paste_hint')}</p>
         </>
       )}
+      </>
+      )}
     </div>
   )
 }
@@ -807,6 +823,7 @@ function CardChecklistSection({
 }) {
   const { t } = useLanguage()
   const [input, setInput] = useState('')
+  const [open, setOpen] = useState(false)
   const done = items.filter(i => i.completed).length
   const total = items.length
   const progressPct = total > 0 ? Math.round((done / total) * 100) : 0
@@ -820,61 +837,146 @@ function CardChecklistSection({
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-        <label style={{ ...labelStyle, marginBottom: 0 }}>{t('projects_checklist')}</label>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, width: '100%', marginBottom: open ? 4 : 0, border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {open ? <ChevronDown size={14} color="var(--color-text-muted)" /> : <ChevronRight size={14} color="var(--color-text-muted)" />}
+          <span style={{ ...labelStyle, marginBottom: 0 }}>{t('projects_checklist')}</span>
+        </span>
         {total > 0 && (
           <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)' }}>
             {t('projects_checklist_progress').replace('{done}', String(done)).replace('{total}', String(total))}
           </span>
         )}
-      </div>
-      {total > 0 && (
-        <div style={{ height: 4, borderRadius: 999, backgroundColor: 'var(--color-hover)', marginBottom: 8, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${progressPct}%`, borderRadius: 999, backgroundColor: done === total ? '#22c55e' : '#6366f1', transition: 'width 0.2s' }} />
-        </div>
+      </button>
+      {open && (
+        <>
+          {total > 0 && (
+            <div style={{ height: 4, borderRadius: 999, backgroundColor: 'var(--color-hover)', marginBottom: 8, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${progressPct}%`, borderRadius: 999, backgroundColor: done === total ? '#22c55e' : '#6366f1', transition: 'width 0.2s' }} />
+            </div>
+          )}
+          {items.length > 0 && (
+            <ul style={{ listStyle: 'none', margin: '0 0 8px', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {items.map(item => (
+                <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={item.completed}
+                    disabled={!canEdit}
+                    onChange={() => onUpdate(items.map(i => i.id === item.id ? { ...i, completed: !i.completed } : i), true)}
+                    style={{ flexShrink: 0, cursor: canEdit ? 'pointer' : 'default' }}
+                  />
+                  <input
+                    disabled={!canEdit}
+                    value={item.text}
+                    onChange={e => onUpdate(items.map(i => i.id === item.id ? { ...i, text: e.target.value } : i), false)}
+                    style={{
+                      flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent',
+                      fontSize: 13, color: item.completed ? 'var(--color-text-muted)' : 'var(--color-text)',
+                      textDecoration: item.completed ? 'line-through' : 'none', padding: '4px 0',
+                    }}
+                  />
+                  {canEdit && (
+                    <button
+                      onClick={() => onUpdate(items.filter(i => i.id !== item.id), true)}
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {canEdit && (
+            <input
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
+              placeholder={t('projects_checklist_placeholder')}
+              style={inputStyle}
+            />
+          )}
+        </>
       )}
-      {items.length > 0 && (
-        <ul style={{ listStyle: 'none', margin: '0 0 8px', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {items.map(item => (
-            <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={item.completed}
-                disabled={!canEdit}
-                onChange={() => onUpdate(items.map(i => i.id === item.id ? { ...i, completed: !i.completed } : i), true)}
-                style={{ flexShrink: 0, cursor: canEdit ? 'pointer' : 'default' }}
-              />
-              <input
-                disabled={!canEdit}
-                value={item.text}
-                onChange={e => onUpdate(items.map(i => i.id === item.id ? { ...i, text: e.target.value } : i), false)}
-                style={{
-                  flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent',
-                  fontSize: 13, color: item.completed ? 'var(--color-text-muted)' : 'var(--color-text)',
-                  textDecoration: item.completed ? 'line-through' : 'none', padding: '4px 0',
-                }}
-              />
+    </div>
+  )
+}
+
+// Trello-style links: attach a web URL (+ optional display text), shown as a
+// clickable list that opens each link directly in a new tab.
+function CardLinksSection({ links, canEdit, onUpdate }: {
+  links: ProjectCardLink[]; canEdit: boolean;
+  onUpdate: (links: ProjectCardLink[], immediate: boolean) => void;
+}) {
+  const { t } = useLanguage()
+  const [urlInput, setUrlInput] = useState('')
+  const [titleInput, setTitleInput] = useState('')
+  const canAdd = !!normalizeLinkUrl(urlInput)
+
+  const addLink = () => {
+    const url = normalizeLinkUrl(urlInput)
+    if (!url) return
+    onUpdate([...links, { id: crypto.randomUUID(), url, title: titleInput.trim() }], true)
+    setUrlInput('')
+    setTitleInput('')
+  }
+
+  return (
+    <div>
+      <label style={labelStyle}>{t('projects_links')}</label>
+      {links.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: canEdit ? 8 : 0 }}>
+          {links.map(link => (
+            <div key={link.id} style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: 'var(--color-hover)', borderRadius: 6, padding: '6px 8px' }}>
+              <a href={link.url} target="_blank" rel="noopener noreferrer" title={link.url}
+                style={{ flex: 1, minWidth: 0, display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-primary)', fontSize: 13, fontWeight: 500, textDecoration: 'none', overflow: 'hidden' }}>
+                <Link2 size={13} style={{ flexShrink: 0 }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkDisplay(link)}</span>
+              </a>
               {canEdit && (
-                <button
-                  onClick={() => onUpdate(items.filter(i => i.id !== item.id), true)}
-                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}
-                >
+                <button onClick={() => onUpdate(links.filter(l => l.id !== link.id), true)} title={t('projects_delete')}
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}>
                   <X size={13} />
                 </button>
               )}
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
       {canEdit && (
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
-          placeholder={t('projects_checklist_placeholder')}
-          style={inputStyle}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLink() } }}
+            placeholder={t('projects_links_url_placeholder')} style={inputStyle} />
+          <input value={titleInput} onChange={e => setTitleInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLink() } }}
+            placeholder={t('projects_links_title_placeholder')} style={inputStyle} />
+          <button type="button" onClick={addLink} disabled={!canAdd}
+            style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: '1px dashed var(--color-border)', background: 'transparent', color: canAdd ? 'var(--color-primary)' : 'var(--color-text-muted)', fontSize: 12.5, fontWeight: 600, cursor: canAdd ? 'pointer' : 'default' }}>
+            <Link2 size={14} />{t('projects_links_add')}
+          </button>
+        </div>
       )}
+    </div>
+  )
+}
+
+// Collapsible group used to categorize the card's meta fields (button + chevron,
+// mirroring the CardFilterBar collapse pattern).
+function CollapsibleSection({ title, defaultOpen = false, children }: {
+  title: string; defaultOpen?: boolean; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, backgroundColor: 'var(--color-bg)', overflow: 'hidden' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '10px 12px', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text)', fontSize: 13, fontWeight: 600 }}>
+        <span>{title}</span>
+        {open ? <ChevronUp size={15} color="var(--color-text-muted)" /> : <ChevronDown size={15} color="var(--color-text-muted)" />}
+      </button>
+      {open && <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '0 12px 12px' }}>{children}</div>}
     </div>
   )
 }
@@ -899,7 +1001,7 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
       start_date: card?.start_date ?? '', due_date: card?.due_date ?? '', assignee_user_id: card?.assignee_user_id ?? null,
       labels: card?.labels ?? [], linked_page_id: card?.linked_page_id ?? null,
       parent_card_id: card?.parent_card_id ?? null, depends_on: card?.depends_on ?? [], completed: card?.completed ?? false,
-      checklist: card?.checklist ?? [], attachments: card?.attachments ?? [],
+      checklist: card?.checklist ?? [], attachments: card?.attachments ?? [], links: card?.links ?? [],
     }
   }
 
@@ -907,6 +1009,7 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
   const [labelInput, setLabelInput] = useState('')
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState<string[]>(initialDraft?.removedAttachmentIds ?? [])
+  const [editingDesc, setEditingDesc] = useState(false)
   const autoSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const formRef = useRef(form)
   const removedIdsRef = useRef(removedAttachmentIds)
@@ -970,10 +1073,6 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
       scheduleAutoSave(nextForm, immediate)
     }
   }, [onDraftChange, scheduleAutoSave])
-
-  const descriptionStyle: React.CSSProperties = {
-    ...inputStyle, resize: 'vertical', lineHeight: 1.5, minHeight: isMobile ? 160 : 220,
-  }
 
   const addPendingFile = (file: File) => {
     if (!file.type.startsWith('image/')) return
@@ -1181,12 +1280,44 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
     </div>
   )
 
+  const linksField = (
+    <CardLinksSection
+      links={form.links}
+      canEdit={canEdit}
+      onUpdate={(links, immediate) => patchForm(f => ({ ...f, links }), immediate)}
+    />
+  )
+
   const completedField = canEdit ? (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: 'pointer' }}>
-      <input type="checkbox" checked={form.completed} onChange={e => patchForm(f => ({ ...f, completed: e.target.checked }), true)} />
+    <button type="button" onClick={() => patchForm(f => ({ ...f, completed: !f.completed }), true)}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid', borderColor: form.completed ? '#22c55e' : 'var(--color-border)', backgroundColor: form.completed ? '#22c55e1f' : 'var(--color-bg)', color: form.completed ? '#22c55e' : 'var(--color-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+      <span style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px solid', borderColor: form.completed ? '#22c55e' : 'var(--color-border)', backgroundColor: form.completed ? '#22c55e' : 'transparent', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {form.completed && <Check size={12} color="#fff" />}
+      </span>
       {t('projects_overview_completed')}
-    </label>
+    </button>
   ) : null
+
+  const planningSection = (
+    <CollapsibleSection title={t('projects_section_planning')} defaultOpen>
+      {priorityButtons}
+      {dueAssigneeFields}
+    </CollapsibleSection>
+  )
+  const organizationSection = (
+    <CollapsibleSection title={t('projects_section_organization')}>
+      {parentField}
+      {dependenciesField}
+      {labelsField}
+      {completedField}
+    </CollapsibleSection>
+  )
+  const linksSection = (
+    <CollapsibleSection title={t('projects_section_links')}>
+      {linksField}
+      {linkedPageField}
+    </CollapsibleSection>
+  )
 
   const footer = (
     <div style={{
@@ -1224,18 +1355,56 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
     />
   )
 
-  const leftColumn = (
+  const titleField = (
+    <div>
+      <label style={labelStyle}>{t('projects_card_title')}</label>
+      <input disabled={!canEdit} value={form.title} onChange={e => patchForm(f => ({ ...f, title: e.target.value }))} placeholder={t('projects_card_title_placeholder')} style={{ ...inputStyle, fontSize: isMobile ? 14 : 16, fontWeight: 600 }} autoFocus={!isMobile} />
+    </div>
+  )
+
+  // Trello-style description: rendered preview by default, click to edit (visual editor).
+  const descriptionField = (
+    <div>
+      <label style={labelStyle}>{t('projects_card_description')}</label>
+      {canEdit && editingDesc ? (
+        <div>
+          <RichTextEditor
+            markdown={form.description}
+            onChange={md => patchForm(f => ({ ...f, description: md }))}
+            onBlur={() => setEditingDesc(false)}
+            autoFocus
+            minHeight={isMobile ? 200 : 440}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => setEditingDesc(false)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <CheckSquare size={14} />{t('projects_desc_done')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div onClick={() => { if (canEdit) setEditingDesc(true) }}
+          style={{ ...inputStyle, minHeight: 64, height: 'auto', padding: '10px 12px', cursor: canEdit ? 'text' : 'default' }}>
+          {form.description.trim()
+            ? <MarkdownText text={form.description} style={{ fontSize: 14, color: 'var(--color-text)', lineHeight: 1.5 }} />
+            : <span style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>{canEdit ? t('projects_card_description_placeholder') : ''}</span>}
+        </div>
+      )}
+    </div>
+  )
+
+  const mainColumn = (
     <>
-      <div>
-        <label style={labelStyle}>{t('projects_card_title')}</label>
-        <input disabled={!canEdit} value={form.title} onChange={e => patchForm(f => ({ ...f, title: e.target.value }))} placeholder={t('projects_card_title_placeholder')} style={inputStyle} autoFocus />
-      </div>
-      <div>
-        <label style={labelStyle}>{t('projects_card_description')}</label>
-        <textarea disabled={!canEdit} value={form.description} onChange={e => patchForm(f => ({ ...f, description: e.target.value }))} rows={isMobile ? 6 : 8} style={descriptionStyle} />
-      </div>
+      {descriptionField}
       {attachmentsField}
       <CardChecklistSection items={form.checklist} canEdit={canEdit} onUpdate={updateChecklist} />
+    </>
+  )
+
+  const leftColumn = (
+    <>
+      {titleField}
+      {mainColumn}
     </>
   )
 
@@ -1245,35 +1414,28 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
       onClose={onClose}
       closeOnBackdrop={false}
       isMobile={isMobile}
-      width={860}
+      width={1040}
       maxHeight="92vh"
     >
       {isMobile ? (
         <div onPaste={handlePaste} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {leftColumn}
-          {priorityButtons}
-          {dueAssigneeFields}
-          {parentField}
-          {dependenciesField}
-          {labelsField}
-          {linkedPageField}
-          {completedField}
+          {planningSection}
+          {organizationSection}
+          {linksSection}
           {footer}
         </div>
       ) : (
         <div onPaste={handlePaste} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16, alignItems: 'start' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {leftColumn}
+          {titleField}
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.7fr) minmax(240px, 1fr)', gap: 20, alignItems: 'start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+              {mainColumn}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {priorityButtons}
-              {dueAssigneeFields}
-              {parentField}
-              {dependenciesField}
-              {labelsField}
-              {linkedPageField}
-              {completedField}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12, backgroundColor: 'var(--color-bg-secondary)', borderRadius: 10 }}>
+              {planningSection}
+              {organizationSection}
+              {linksSection}
             </div>
           </div>
           {footer}
@@ -1287,6 +1449,7 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
 
 function BoardModal({ board, onClose, onSave }: { board: ProjectBoard | null; onClose: () => void; onSave: (data: { name: string; icon: string; color: string; description: string }) => void }) {
   const { t } = useLanguage()
+  const isMobile = useIsMobile()
   const [name, setName] = useState(board?.name ?? '')
   const [icon, setIcon] = useState(board?.icon ?? '📋')
   const [color, setColor] = useState(board?.color ?? '#6366f1')
@@ -1296,7 +1459,7 @@ function BoardModal({ board, onClose, onSave }: { board: ProjectBoard | null; on
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div>
           <label style={labelStyle}>{t('projects_board_name')}</label>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder={t('projects_board_name_placeholder')} style={inputStyle} autoFocus />
+          <input value={name} onChange={e => setName(e.target.value)} placeholder={t('projects_board_name_placeholder')} style={inputStyle} autoFocus={!isMobile} />
         </div>
         <div>
           <label style={labelStyle}>{t('projects_board_icon')}</label>
@@ -1331,6 +1494,7 @@ function BoardModal({ board, onClose, onSave }: { board: ProjectBoard | null; on
 
 function ColumnModal({ column, onClose, onSave }: { column: ProjectColumn | null; onClose: () => void; onSave: (data: { name: string; color: string; wip_limit: number | null }) => void }) {
   const { t } = useLanguage()
+  const isMobile = useIsMobile()
   const [name, setName] = useState(column?.name ?? '')
   const [color, setColor] = useState(column?.color ?? '#94a3b8')
   const [wip, setWip] = useState<string>(column?.wip_limit != null ? String(column.wip_limit) : '')
@@ -1339,7 +1503,7 @@ function ColumnModal({ column, onClose, onSave }: { column: ProjectColumn | null
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div>
           <label style={labelStyle}>{t('projects_column_name')}</label>
-          <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} autoFocus />
+          <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} autoFocus={!isMobile} />
         </div>
         <div>
           <label style={labelStyle}>{t('projects_board_color')}</label>
@@ -1393,8 +1557,10 @@ function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: () => vo
     if (debounce.current) clearTimeout(debounce.current)
     if (!val.trim()) { setResults([]); return }
     debounce.current = setTimeout(async () => {
+      const term = sanitizeIlikeTerm(val)
+      if (!term) { setResults([]); return }
       const exclude = new Set([user?.id, board.user_id, ...shares.map(s => s.shared_with_user_id)])
-      const { data } = await supabase.from('profiles').select('id, email, display_name').or(`email.ilike.%${val}%,display_name.ilike.%${val}%`).limit(8)
+      const { data } = await supabase.from('profiles').select('id, email, display_name').or(`email.ilike.%${term}%,display_name.ilike.%${term}%`).limit(8)
       if (data) setResults((data as Member[]).filter(m => !exclude.has(m.id)))
     }, 300)
   }
@@ -1447,70 +1613,109 @@ function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: () => vo
 
 // ─── Overview ─────────────────────────────────────────────────────────────────
 
-function OverviewView({ columns, cards }: { columns: ProjectColumn[]; cards: ProjectCard[] }) {
+function OverviewView({ columns, cards, members }: { columns: ProjectColumn[]; cards: ProjectCard[]; members: Member[] }) {
   const { t } = useLanguage()
-  const total = cards.length
-  const completed = cards.filter(c => c.completed).length
-  const overdue = cards.filter(c => c.due_date && !c.completed && c.due_date < todayStr()).length
-  const pct = total ? Math.round((completed / total) * 100) : 0
-  const priorities: ProjectCardPriority[] = ['urgent', 'high', 'medium', 'low']
-  const stat = (label: string, value: number | string, color: string) => (
-    <div style={{ flex: 1, minWidth: 130, backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: '14px 16px' }}>
+  const today = todayStr()
+  const s = overviewSummary(cards, today)
+
+  const colCounts = countByColumnId(cards)
+  const statusData: ChartDatum[] = columns.map(col => ({ label: col.name, value: colCounts[col.id] ?? 0, color: col.color }))
+  const priCounts = countByPriority(cards)
+  const priData: ChartDatum[] = PRIORITY_ORDER.map(p => ({ label: t(`projects_priority_${p}` as 'projects_priority_low'), value: priCounts[p], color: PRIORITY_COLORS[p] }))
+
+  const assignees = countByAssignee(cards).slice(0, 6)
+  const maxAssignee = Math.max(1, ...assignees.map(a => a.count))
+
+  const due = dueBuckets(cards, today)
+  const dueSegs: ChartDatum[] = [
+    { label: t('projects_overview_due_overdue'), value: due.overdue, color: '#ef4444' },
+    { label: t('projects_overview_due_today'), value: due.today, color: '#f59e0b' },
+    { label: t('projects_overview_due_week'), value: due.week, color: '#3b82f6' },
+    { label: t('projects_overview_due_later'), value: due.later, color: '#6366f1' },
+    { label: t('projects_overview_due_none'), value: due.none, color: 'var(--color-text-muted)' },
+  ]
+
+  const weekLabel = (iso: string) => { const [, m, d] = iso.split('-'); return `${d}/${m}` }
+  const trend = createdPerWeek(cards, 8, today).map(b => ({ label: weekLabel(b.weekStart), value: b.count }))
+
+  const stat = (label: string, value: number | string, color: string, sub?: string) => (
+    <div style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: '14px 16px' }}>
       <div style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, color, marginTop: 4 }}>{value}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
+        <span style={{ fontSize: 24, fontWeight: 800, color }}>{value}</span>
+        {sub && <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-muted)' }}>{sub}</span>}
+      </div>
     </div>
   )
+  const cardBox = (title: string, children: React.ReactNode, full?: boolean): React.ReactNode => (
+    <div style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: '16px 20px', ...(full ? { gridColumn: '1 / -1' } : {}) }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)', marginBottom: 14 }}>{title}</div>
+      {children}
+    </div>
+  )
+
+  if (cards.length === 0) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center', fontSize: 14, color: 'var(--color-text-muted)' }}>{t('projects_overview_empty')}</div>
+    )
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {stat(t('projects_overview_total_cards'), total, 'var(--color-text)')}
-        {stat(t('projects_overview_completed'), completed, '#22c55e')}
-        {stat(t('projects_overview_overdue'), overdue, '#ef4444')}
-        {stat(t('projects_overview_progress'), `${pct}%`, '#6366f1')}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+        {stat(t('projects_overview_total_cards'), s.total, 'var(--color-text)')}
+        {stat(t('projects_overview_open'), s.open, 'var(--color-text)')}
+        {stat(t('projects_overview_completed'), s.completed, '#22c55e', `${s.completionPct}%`)}
+        {stat(t('projects_overview_overdue'), s.overdue, '#ef4444')}
+        {stat(t('projects_overview_due_week'), s.dueThisWeekOpen, '#f59e0b')}
+        {stat(t('projects_overview_unassigned'), s.unassigned, '#6366f1')}
       </div>
-      <div style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: '16px 20px' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)', marginBottom: 12 }}>{t('projects_overview_progress')}</div>
-        <div style={{ height: 12, borderRadius: 999, backgroundColor: 'var(--color-hover)', overflow: 'hidden' }}>
-          <div style={{ width: `${pct}%`, height: '100%', backgroundColor: '#22c55e', transition: 'width 0.3s' }} />
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 260, backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: '16px 20px' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)', marginBottom: 14 }}>{t('projects_overview_by_column')}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {columns.map(col => {
-              const n = cards.filter(c => c.column_id === col.id).length
-              const w = total ? (n / total) * 100 : 0
+
+      {/* Charts */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+        {cardBox(t('projects_overview_by_column'), (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+            <Donut data={statusData} centerValue={s.total} centerLabel={t('projects_overview_total_cards')} />
+            <Legend items={statusData} />
+          </div>
+        ))}
+        {cardBox(t('projects_overview_by_priority'), (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+            <Donut data={priData} centerValue={s.total} centerLabel={t('projects_overview_total_cards')} />
+            <Legend items={priData} />
+          </div>
+        ))}
+        {cardBox(t('projects_overview_by_assignee'), (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {assignees.map(a => {
+              const m = a.id ? members.find(mm => mm.id === a.id) : null
+              const name = m ? (m.display_name || m.email) : t('projects_overview_unassigned')
+              const w = (a.count / maxAssignee) * 100
               return (
-                <div key={col.id}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <span style={{ fontSize: 12.5, color: 'var(--color-text)' }}>{col.name}</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-muted)' }}>{n}</span>
+                <div key={a.id ?? 'none'} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: m ? avatarColor(m.email) : 'var(--color-hover)', color: m ? '#fff' : 'var(--color-text-muted)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{m ? initials(name) : '–'}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 3 }}>
+                      <span style={{ fontSize: 12.5, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-muted)', flexShrink: 0 }}>{a.count}</span>
+                    </div>
+                    <div style={{ height: 7, borderRadius: 999, backgroundColor: 'var(--color-hover)' }}><div style={{ width: `${w}%`, height: '100%', backgroundColor: '#6366f1', borderRadius: 999 }} /></div>
                   </div>
-                  <div style={{ height: 7, borderRadius: 999, backgroundColor: 'var(--color-hover)' }}><div style={{ width: `${w}%`, height: '100%', backgroundColor: col.color, borderRadius: 999 }} /></div>
                 </div>
               )
             })}
           </div>
-        </div>
-        <div style={{ flex: 1, minWidth: 260, backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: '16px 20px' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)', marginBottom: 14 }}>{t('projects_overview_by_priority')}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {priorities.map(p => {
-              const n = cards.filter(c => c.priority === p).length
-              const w = total ? (n / total) * 100 : 0
-              return (
-                <div key={p}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <span style={{ fontSize: 12.5, color: 'var(--color-text)' }}>{t(`projects_priority_${p}` as 'projects_priority_low')}</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-muted)' }}>{n}</span>
-                  </div>
-                  <div style={{ height: 7, borderRadius: 999, backgroundColor: 'var(--color-hover)' }}><div style={{ width: `${w}%`, height: '100%', backgroundColor: PRIORITY_COLORS[p], borderRadius: 999 }} /></div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        ))}
+        {cardBox(t('projects_overview_by_due'), (
+          <>
+            <SegmentedBar segments={dueSegs} />
+            <div style={{ marginTop: 14 }}><Legend items={dueSegs} /></div>
+          </>
+        ))}
+        {cardBox(t('projects_overview_created_trend'), (
+          <AreaTrend points={trend} color="#6366f1" />
+        ), true)}
       </div>
     </div>
   )
@@ -1822,6 +2027,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
         ...r,
         labels: r.labels ?? [],
         checklist: r.checklist ?? [],
+        links: r.links ?? [],
         attachments: r.attachments ?? [],
         assignee_profile: Array.isArray(r.assignee) ? r.assignee[0] : r.assignee,
       })))
@@ -1994,6 +2200,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
         depends_on: formSnapshot.depends_on,
         completed: formSnapshot.completed,
         checklist: formSnapshot.checklist,
+        links: formSnapshot.links,
         attachments,
         updated_at: updatedAt,
       }
@@ -2053,6 +2260,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
       depends_on: formSnapshot.depends_on,
       completed: formSnapshot.completed,
       checklist: formSnapshot.checklist,
+      links: formSnapshot.links,
       attachments,
       updated_at: updatedAt,
     }
@@ -2080,7 +2288,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
       title: f.title.trim(), description: f.description, priority: f.priority,
       start_date: f.start_date || null, due_date: f.due_date || null, assignee_user_id: f.assignee_user_id, labels: f.labels,
       linked_page_id: f.linked_page_id, parent_card_id: f.parent_card_id, depends_on: f.depends_on,
-      completed: f.completed, checklist: f.checklist,
+      completed: f.completed, checklist: f.checklist, links: f.links,
     }
 
     let cardId = cardModal.card?.id
@@ -2298,10 +2506,6 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
       {/* Header */}
       <div style={{ padding: isMobile ? '12px 14px' : '14px 16px', borderBottom: '1px solid var(--color-border)', flexShrink: 0, backgroundColor: 'var(--color-bg-secondary)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#6366f122', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <FolderKanban size={16} color="#6366f1" />
-          </div>
-
           {/* Board selector */}
           {boards.length > 0 ? (
             <div style={{ position: 'relative' }}>
@@ -2474,7 +2678,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
           </div>
         ) : (
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-            <OverviewView columns={columns} cards={filteredCards} />
+            <OverviewView columns={columns} cards={filteredCards} members={members} />
           </div>
         )}
       </div>

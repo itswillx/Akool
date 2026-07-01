@@ -358,23 +358,22 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
                             style={{ position: 'absolute', left, top: row.hasChildren ? ROW_H / 2 - 5 : ROW_H / 2 - 9, width, height: row.hasChildren ? 10 : 18, borderRadius: row.hasChildren ? 3 : 6, background: row.hasChildren ? 'transparent' : `${color}33`, border: row.hasChildren ? `2px solid ${color}` : `1px solid ${color}`, overflow: 'hidden', display: 'flex', alignItems: 'center', cursor, touchAction: canDrag ? 'none' : undefined }}
                           >
                             {!row.hasChildren && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${bar.progress}%`, background: color, opacity: 0.85, pointerEvents: 'none' }} />}
-                            {!row.hasChildren && !hovered && width > 24 && (
-                              <span style={{ position: 'relative', padding: '0 6px', maxWidth: Math.min(width - 12, 132), fontSize: 11, fontWeight: 600, color: '#fff', mixBlendMode: 'difference', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none' }}>
+                            {!row.hasChildren && width > 24 && (
+                              <span style={{ position: 'relative', padding: hovered && canDrag ? '0 12px' : '0 6px', maxWidth: Math.min(width - 12, 132), fontSize: 11, fontWeight: 600, color: 'var(--color-text)', textShadow: '0 0 2px var(--color-bg), 0 0 2px var(--color-bg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none' }}>
                                 {row.card.title}
                               </span>
                             )}
                             {canDrag && (
                               <>
-                                <div onPointerDown={(e) => beginDrag(e, row.card, 'start')} onPointerMove={moveDrag} onPointerUp={endDrag} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 7, cursor: 'ew-resize', zIndex: 2 }} />
-                                <div onPointerDown={(e) => beginDrag(e, row.card, 'end')} onPointerMove={moveDrag} onPointerUp={endDrag} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 7, cursor: 'ew-resize', zIndex: 2 }} />
+                                <div onPointerDown={(e) => beginDrag(e, row.card, 'start')} onPointerMove={moveDrag} onPointerUp={endDrag} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 9, cursor: 'ew-resize', zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none' }}>
+                                  {hovered && <span style={{ width: 4, height: 12, borderRadius: 2, background: color, boxShadow: '0 0 0 1.5px var(--color-bg)', pointerEvents: 'none' }} />}
+                                </div>
+                                <div onPointerDown={(e) => beginDrag(e, row.card, 'end')} onPointerMove={moveDrag} onPointerUp={endDrag} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 9, cursor: 'ew-resize', zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none' }}>
+                                  {hovered && <span style={{ width: 4, height: 12, borderRadius: 2, background: color, boxShadow: '0 0 0 1.5px var(--color-bg)', pointerEvents: 'none' }} />}
+                                </div>
                               </>
                             )}
                           </div>
-                          {!isMobile && hovered && (
-                            <span style={{ position: 'absolute', left: left + 6, top: ROW_H / 2 - 9, height: 18, display: 'flex', alignItems: 'center', padding: '0 8px', borderRadius: 6, background: 'var(--color-bg)', border: `1px solid ${color}`, color: 'var(--color-text)', fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap', zIndex: 5, pointerEvents: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.18)' }}>
-                              {row.card.title}
-                            </span>
-                          )}
                         </>
                       )
                     })()}

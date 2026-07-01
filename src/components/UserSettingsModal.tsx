@@ -1,17 +1,21 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, User, Lock, Check, Eye, EyeOff, Shield, Sun, Moon, Gift, Copy, CheckCheck } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
+import { X, User, Lock, Check, Eye, EyeOff, Shield, Sun, Moon, Gift, Copy, CheckCheck, Users, Database } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import type { Lang } from '../i18n/translations'
+
+const UserManagementPanel = lazy(() => import('./UserManagementPanel'))
+const BackupPanel = lazy(() => import('../modules/backup'))
 
 interface Props {
   open: boolean
   onClose: () => void
 }
 
-type Tab = 'profile' | 'password' | 'invites'
+type Tab = 'profile' | 'password' | 'invites' | 'users' | 'backup'
 
 interface InviteCode {
   id: string
@@ -27,6 +31,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
   const { user, profile, isAdmin, changePassword, updateProfile, refreshProfile } = useAuth()
   const { t } = useLanguage()
   const { theme, setTheme } = useTheme()
+  const isMobile = useIsMobile()
   const [tab, setTab] = useState<Tab>('profile')
   const overlayRef = useRef<HTMLDivElement>(null)
 
@@ -140,13 +145,17 @@ export default function UserSettingsModal({ open, onClose }: Props) {
 
   if (!open) return null
 
+  // The Users/Backup admin panels need a much wider, taller shell than the
+  // account tabs, which stay compact.
+  const wideTab = tab === 'users' || tab === 'backup'
+
   return (
     <div
       ref={overlayRef}
       onClick={handleOverlayClick}
-      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? 12 : 24 }}
     >
-      <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.24)', width: '100%', maxWidth: 460, maxHeight: 'calc(100dvh - 48px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.24)', width: '100%', maxWidth: wideTab ? (isMobile ? '100%' : 980) : 460, height: wideTab ? 'calc(100dvh - 48px)' : undefined, maxHeight: 'calc(100dvh - 48px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Modal header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px 0' }}>
           <div>
@@ -159,16 +168,26 @@ export default function UserSettingsModal({ open, onClose }: Props) {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, padding: '16px 24px 0' }}>
+        <div className="finance-hide-scrollbar" style={{ display: 'flex', gap: 3, padding: '16px 24px 0', flexWrap: 'nowrap', overflowX: 'auto' }}>
           <TabBtn active={tab === 'profile'} onClick={() => setTab('profile')} icon={<User size={13} />} label={t('settings_tab_profile')} />
           <TabBtn active={tab === 'password'} onClick={() => setTab('password')} icon={<Lock size={13} />} label={t('settings_tab_password')} />
           <TabBtn active={tab === 'invites'} onClick={() => setTab('invites')} icon={<Gift size={13} />} label={t('settings_tab_invites')} />
+          {isAdmin && <TabBtn active={tab === 'users'} onClick={() => setTab('users')} icon={<Users size={13} />} label={t('sidebar_users')} />}
+          {isAdmin && <TabBtn active={tab === 'backup'} onClick={() => setTab('backup')} icon={<Database size={13} />} label={t('sidebar_backup')} />}
         </div>
 
         {/* Divider */}
         <div style={{ height: 1, backgroundColor: 'var(--color-border)', margin: '12px 0 0' }} />
 
-        <div style={{ padding: '20px 24px 24px', overflowY: 'auto', minHeight: 0, flex: 1 }}>
+        <div style={wideTab
+          ? { flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }
+          : { padding: '20px 24px 24px', overflowY: 'auto', minHeight: 0, flex: 1 }}>
+          {tab === 'users' && (
+            <Suspense fallback={<PanelFallback />}><UserManagementPanel /></Suspense>
+          )}
+          {tab === 'backup' && (
+            <Suspense fallback={<PanelFallback />}><BackupPanel /></Suspense>
+          )}
           {/* Profile tab */}
           {tab === 'profile' && (
             <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -432,11 +451,19 @@ function ThemeOption({ selected, onClick, icon, label }: { selected: boolean; on
   )
 }
 
+function PanelFallback() {
+  return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, color: 'var(--color-text-muted)', fontSize: 14 }}>
+      <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: 'var(--color-logo-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-logo-text)', fontWeight: 700, fontSize: 13 }}>A</div>
+    </div>
+  )
+}
+
 function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
     <button
       onClick={onClick}
-      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', backgroundColor: active ? 'var(--color-active)' : 'transparent', color: active ? 'var(--color-text)' : 'var(--color-text-muted)', fontSize: 13, fontWeight: active ? 600 : 400, transition: 'all 0.15s' }}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 9px', borderRadius: 8, border: 'none', cursor: 'pointer', backgroundColor: active ? 'var(--color-active)' : 'transparent', color: active ? 'var(--color-text)' : 'var(--color-text-muted)', fontSize: 13, fontWeight: active ? 600 : 400, whiteSpace: 'nowrap', flexShrink: 0, transition: 'all 0.15s' }}
     >
       {icon}{label}
     </button>

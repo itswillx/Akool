@@ -166,7 +166,7 @@ export default function PageHeader({ page, isMobile = false }: PageHeaderProps) 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
         {editingTitle && canEdit ? (
           <input
-            autoFocus
+            autoFocus={!isMobile}
             value={titleValue}
             onChange={e => setTitleValue(e.target.value)}
             onBlur={handleTitleBlur}

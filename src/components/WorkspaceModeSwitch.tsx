@@ -1,26 +1,43 @@
 import type { ReactNode } from 'react'
-import { LayoutGrid, PenTool, Wallet } from 'lucide-react'
+import { LayoutGrid, PenTool, Wallet, Files } from 'lucide-react'
 import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
 import type { WorkspaceMode } from '../contexts/WorkspaceModeContext'
+import { usePages } from '../contexts/PagesContext'
 import { useLanguage } from '../i18n/LanguageContext'
 
-// Compact 3-way segmented control rendered next to the "Akool" name in the top
-// bar. Each mode is a compact icon-logo; the active one also shows its label.
-// Hovering the finance segment prefetches the finance chunk so the first switch
-// feels instant.
+// Compact segmented control rendered next to the "Akool" name in the top bar.
+// Each mode is a compact icon-logo; the active one also shows its label. Hovering
+// the finance/documents segments prefetches their chunk so the first switch feels
+// instant.
 function prefetchFinance() {
   import('../modules/finance')
 }
 
+function prefetchDocuments() {
+  import('./DocumentsPanel')
+}
+
 export default function WorkspaceModeSwitch() {
   const { mode, setMode } = useWorkspaceMode()
+  const { setActivePanel, setActivePage } = usePages()
   const { t } = useLanguage()
 
   const items: { id: WorkspaceMode; icon: ReactNode; label: string; tooltip: string }[] = [
     { id: 'all', icon: <LayoutGrid size={15} />, label: t('mode_all'), tooltip: t('mode_all_tooltip') },
-    { id: 'projects', icon: <PenTool size={15} />, label: t('mode_projects'), tooltip: t('mode_projects_tooltip') },
     { id: 'finance', icon: <Wallet size={15} />, label: t('mode_finance'), tooltip: t('mode_finance_tooltip') },
+    { id: 'projects', icon: <PenTool size={15} />, label: t('mode_projects'), tooltip: t('mode_projects_tooltip') },
+    { id: 'documents', icon: <Files size={15} />, label: t('mode_documents'), tooltip: t('mode_documents_tooltip') },
   ]
+
+  // The top selector is the primary view switcher: each option navigates to its
+  // canonical surface so the content always matches the highlighted segment.
+  const handleSelect = (id: WorkspaceMode) => {
+    setMode(id)
+    if (id === 'projects') setActivePanel('projects')
+    else if (id === 'documents') setActivePanel('documents')
+    else if (id === 'all') { setActivePage(null); setActivePanel(null) }
+    // 'finance' is rendered by MainContent's finance-mode takeover.
+  }
 
   return (
     <div
@@ -38,8 +55,8 @@ export default function WorkspaceModeSwitch() {
           <button
             key={item.id}
             type="button"
-            onClick={() => setMode(item.id)}
-            onMouseEnter={item.id === 'finance' ? prefetchFinance : undefined}
+            onClick={() => handleSelect(item.id)}
+            onMouseEnter={item.id === 'finance' ? prefetchFinance : item.id === 'documents' ? prefetchDocuments : undefined}
             title={item.tooltip}
             aria-label={item.tooltip}
             aria-pressed={active}

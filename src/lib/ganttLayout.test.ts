@@ -20,6 +20,7 @@ function makeCard(overrides: Partial<ProjectCard> = {}): ProjectCard {
     completed: false,
     checklist: [],
     attachments: [],
+    links: [],
     sort_order: 0,
     created_at: '',
     updated_at: '',

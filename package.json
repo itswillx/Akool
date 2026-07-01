@@ -53,9 +53,10 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
+    "happy-dom": "^20.10.6",
+    "tsx": "^4.21.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
-    "tsx": "^4.21.0",
     "vite": "^8.0.10",
     "vitest": "^4.0.18"
   }

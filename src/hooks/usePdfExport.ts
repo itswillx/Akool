@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 import { exportToBlob as excalidrawExportToBlob } from '@excalidraw/excalidraw'
 import { supabase } from '../lib/supabase'
+import { formatBRL } from '../lib/money'
 import type { Page, FinanceTransaction, FinanceAccount, FinanceCategory, FinanceBudget, FinanceGoal, FinanceGoalContribution, FinanceRecurring } from '../types'
 
 const MARGIN = 15
@@ -24,6 +25,42 @@ function inlineText(content: unknown): string {
   return (content as any[]).map(c => c.text ?? '').join('')
 }
 
+const CARD_PRIORITY_LABELS: Record<string, string> = {
+  low: 'Baixa', medium: 'Média', high: 'Alta', urgent: 'Urgente',
+}
+
+// Serialises a `projectCard` block's snapshot into printable lines: title,
+// board · column context, priority/due meta, description and checklist.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractProjectCard(b: any): LineEntry[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let snap: any = {}
+  try { snap = JSON.parse(b.props?.snapshot || '{}') } catch { snap = {} }
+
+  const lines: LineEntry[] = []
+  lines.push({ text: snap.title || 'Card', style: 'h3' })
+
+  const context = [snap.boardName, snap.columnName].filter(Boolean).join(' · ')
+  if (context) lines.push({ text: context, style: 'p' })
+
+  const meta: string[] = []
+  if (snap.priority) meta.push(`Prioridade: ${CARD_PRIORITY_LABELS[snap.priority] ?? snap.priority}`)
+  if (snap.dueDate) meta.push(`Prazo: ${snap.dueDate}`)
+  if (snap.completed) meta.push('Concluído')
+  if (meta.length) lines.push({ text: meta.join('  |  '), style: 'p' })
+
+  if (snap.description) lines.push({ text: snap.description, style: 'p' })
+
+  if (Array.isArray(snap.checklist)) {
+    for (const item of snap.checklist) {
+      lines.push({ text: `${item?.completed ? '[x]' : '[ ]'} ${item?.text ?? ''}`, style: 'li' })
+    }
+  }
+
+  lines.push({ text: '', style: 'blank' })
+  return lines
+}
+
 function extractBlocks(blocks: unknown[]): LineEntry[] {
   const lines: LineEntry[] = []
   for (const block of blocks) {
@@ -42,6 +79,8 @@ function extractBlocks(blocks: unknown[]): LineEntry[] {
       lines.push({ text: `${checked} ${text}`, style: 'li' })
     } else if (type === 'codeBlock') {
       lines.push({ text, style: 'code' })
+    } else if (type === 'projectCard') {
+      lines.push(...extractProjectCard(b))
     } else if (type === 'image' || type === 'diagram') {
       // skip unsupported block types
     } else {
@@ -322,8 +361,9 @@ function finSafe(s: string): string {
   return s.replace(/[^\u0000-\u00FF]/g, '')
 }
 
-function finBRL(n: number): string {
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+// Stored amounts are integer cents; format via the shared helper.
+function finBRL(cents: number): string {
+  return formatBRL(cents)
 }
 
 function finMonthLabel(ym: string): string {

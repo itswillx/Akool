@@ -274,6 +274,12 @@ export interface ProjectCardAttachment {
   name: string
 }
 
+export interface ProjectCardLink {
+  id: string
+  url: string
+  title: string
+}
+
 export interface ProjectCard {
   id: string
   board_id: string
@@ -291,6 +297,7 @@ export interface ProjectCard {
   completed: boolean
   checklist: ProjectCardChecklistItem[]
   attachments: ProjectCardAttachment[]
+  links: ProjectCardLink[]
   sort_order: number
   created_at: string
   updated_at: string

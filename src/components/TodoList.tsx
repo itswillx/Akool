@@ -189,11 +189,11 @@ const TodoRow = memo(function TodoRow({ todo, onToggle, onUpdate, onDelete, read
   onDelete: () => void
   readOnly?: boolean
 }) {
+  const isMobile = useIsMobile()
   const [hov, setHov] = useState(false)
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(todo.text)
   const { t } = useLanguage()
-  const isMobile = useIsMobile()
 
   const commit = () => {
     setEditing(false)
@@ -215,7 +215,7 @@ const TodoRow = memo(function TodoRow({ todo, onToggle, onUpdate, onDelete, read
 
   const titleEl = editing ? (
     <input
-      autoFocus
+      autoFocus={!isMobile}
       value={text}
       onChange={e => setText(e.target.value)}
       onBlur={commit}

@@ -10,6 +10,8 @@ import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../i18n/LanguageContext'
+import ErrorBoundary from './ErrorBoundary'
+import { formatBRL } from '../lib/money'
 
 interface DashboardProps {
   isMobile?: boolean
@@ -46,8 +48,9 @@ function shortMonthLabel(ym: string, locale = 'pt-BR'): string {
   return new Date(y, m - 1).toLocaleString(locale, { month: 'short' })
 }
 
-function fmtCurrency(n: number): string {
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+// Stored amounts are integer cents; format via the shared helper.
+function fmtCurrency(cents: number): string {
+  return formatBRL(cents)
 }
 
 interface FinanceStats {
@@ -128,7 +131,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
   const notifRef = useRef<HTMLDivElement>(null)
   const ym = currentYM()
   // Finance widgets only appear in the "all" (everything) view; in "projects"
-  // mode they are hidden and their queries are skipped.
+  // and "documents" modes they are hidden and their queries are skipped.
   const showFinance = mode === 'all'
   const finance = useDashboardFinance(user?.id, showFinance)
 
@@ -267,7 +270,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
             <StatCard
               onClick={() => { localStorage.setItem('finance_active_tab', 'overview'); setActivePanel('finance') }}
               icon={<Wallet size={15} />} iconColor="#6366f1"
-              label="Finanças" sub={t('dashboard_finance_balance')}
+              label={t('sidebar_finance')} sub={t('dashboard_finance_balance')}
               value={fmtCurrency(finance.totalBalance)}
               valueColor={finance.totalBalance < 0 ? 'var(--color-error)' : 'var(--color-text)'}
               sparkline={finance.monthlyData}
@@ -292,7 +295,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
           />
         </div>
 
-        {showFinance && (<>
+        {showFinance && (<ErrorBoundary>
         {/* ── Finance overview cards ── */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 20 }}>
           <FinanceCard
@@ -315,8 +318,8 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
           <Panel title={t('dashboard_monthly_evolution')} icon={<TrendingUp size={13} />}>
             <MonthlyChart data={finance.monthlyData} />
             <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-              <LegendDot color="#10b981" label={t('finance_month_income') ?? 'Receitas'} />
-              <LegendDot color="#ef4444" label={t('finance_month_expense') ?? 'Despesas'} />
+              <LegendDot color="#10b981" label={t('finance_month_income')} />
+              <LegendDot color="#ef4444" label={t('finance_month_expense')} />
             </div>
           </Panel>
 
@@ -345,7 +348,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
             <SavingsRateBar rate={finance.savingsRate} />
           </Panel>
         </div>
-        </>)}
+        </ErrorBoundary>)}
 
         {/* ── Bottom row: recent + upcoming ── */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 1fr', gap: 14 }}>
@@ -583,6 +586,7 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
 }
 
 function MonthlyChart({ data }: { data: { month: string; income: number; expense: number }[] }) {
+  const { t } = useLanguage()
   if (data.length === 0) return <div style={{ height: 80 }} />
   const max = Math.max(...data.flatMap(d => [d.income, d.expense]), 1)
   const chartH = 80
@@ -596,8 +600,8 @@ function MonthlyChart({ data }: { data: { month: string; income: number; expense
         return (
           <div key={d.month} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, gap: 0 }}>
             <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: chartH }}>
-              <div title={`Receitas: ${fmtCurrency(d.income)}`} style={{ width: 9, height: incH, backgroundColor: '#10b981', borderRadius: '2px 2px 0 0', transition: 'height 0.3s' }} />
-              <div title={`Despesas: ${fmtCurrency(d.expense)}`} style={{ width: 9, height: expH, backgroundColor: '#ef4444', borderRadius: '2px 2px 0 0', transition: 'height 0.3s' }} />
+              <div title={`${t('finance_month_income')}: ${fmtCurrency(d.income)}`} style={{ width: 9, height: incH, backgroundColor: '#10b981', borderRadius: '2px 2px 0 0', transition: 'height 0.3s' }} />
+              <div title={`${t('finance_month_expense')}: ${fmtCurrency(d.expense)}`} style={{ width: 9, height: expH, backgroundColor: '#ef4444', borderRadius: '2px 2px 0 0', transition: 'height 0.3s' }} />
             </div>
             <span style={{ fontSize: 10, color: 'var(--color-text-muted)', textTransform: 'capitalize', marginTop: 3 }}>{lbl}</span>
           </div>
