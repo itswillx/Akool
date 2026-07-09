@@ -105,9 +105,9 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
     const { data: profile } = await serviceClient
-      .from("profiles")
+      .from("profile_secrets")
       .select("ai_provider, ai_api_key")
-      .eq("id", user.id)
+      .eq("user_id", user.id)
       .single();
 
     const body = await req.json();

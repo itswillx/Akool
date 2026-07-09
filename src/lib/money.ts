@@ -22,10 +22,20 @@ export function toCents(input: string | number): number {
       ? s.replace(/\./g, '').replace(',', '.')
       : s.replace(/,/g, '')
   } else if (lastComma > -1) {
-    // Only a comma: treat it as the decimal separator (pt-BR).
-    s = s.replace(',', '.')
+    // Only commas: a single one is the pt-BR decimal separator; more than one
+    // can only be en thousands grouping ("1,234,567").
+    s = s.indexOf(',') === lastComma ? s.replace(',', '.') : s.replace(/,/g, '')
+  } else if (lastDot > -1) {
+    // Only dots: more than one is pt-BR thousands grouping ("1.234.567" —
+    // parseFloat would silently stop at the second dot). A single dot followed
+    // by exactly 3 digits also reads as pt-BR thousands ("1.500" -> R$ 1.500,00),
+    // except with a leading zero ("0.500" stays half a real). Anything else
+    // keeps the dot as a decimal separator ("1234.56").
+    const firstDot = s.indexOf('.')
+    if (firstDot !== lastDot || /^-?[1-9]\d{0,2}\.\d{3}$/.test(s)) {
+      s = s.replace(/\./g, '')
+    }
   }
-  // Only a dot (or no separator) is already JS-parseable.
   const value = parseFloat(s)
   return Number.isFinite(value) ? Math.round(value * 100) : 0
 }

@@ -10,6 +10,7 @@ import {
   goalProgress,
   daysUntil,
   recurringDueDate,
+  missingRecurringDueDates,
 } from './financeCalc'
 
 // Minimal transaction factory (only the fields the calculations read).
@@ -125,5 +126,75 @@ describe('recurringDueDate', () => {
   })
   it('zero-pads month and day', () => {
     expect(recurringDueDate(2025, 3, 5)).toBe('2025-03-05')
+  })
+})
+
+describe('missingRecurringDueDates', () => {
+  const now = new Date('2025-06-15T12:00:00')
+  const item = (extra: Partial<Parameters<typeof missingRecurringDueDates>[0]> = {}) => ({
+    active: true,
+    day_of_month: 10,
+    total_installments: null,
+    created_at: '2025-06-01T09:00:00',
+    ...extra,
+  })
+
+  it('generates current and next month for a brand-new item', () => {
+    expect(missingRecurringDueDates(item(), [], now)).toEqual(['2025-06-10', '2025-07-10'])
+  })
+
+  it('backfills months in which the app was never opened', () => {
+    // Created in February, entries exist only for Feb and Mar.
+    const r = missingRecurringDueDates(
+      item({ created_at: '2025-02-03T09:00:00' }),
+      ['2025-02-10', '2025-03-10'],
+      now,
+    )
+    expect(r).toEqual(['2025-04-10', '2025-05-10', '2025-06-10', '2025-07-10'])
+  })
+
+  it('fills gaps in the middle of the series', () => {
+    const r = missingRecurringDueDates(
+      item({ created_at: '2025-01-05T09:00:00' }),
+      ['2025-01-10', '2025-04-10', '2025-06-10'],
+      now,
+    )
+    expect(r).toEqual(['2025-02-10', '2025-03-10', '2025-05-10', '2025-07-10'])
+  })
+
+  it('compares by month, so an edited day_of_month never duplicates a month', () => {
+    const r = missingRecurringDueDates(item({ day_of_month: 25 }), ['2025-06-10'], now)
+    expect(r).toEqual(['2025-07-25'])
+  })
+
+  it('respects total_installments chronologically', () => {
+    const r = missingRecurringDueDates(
+      item({ created_at: '2025-03-01T09:00:00', total_installments: 3 }),
+      ['2025-03-10'],
+      now,
+    )
+    expect(r).toEqual(['2025-04-10', '2025-05-10'])
+  })
+
+  it('returns nothing when all installments already exist', () => {
+    const r = missingRecurringDueDates(
+      item({ created_at: '2025-03-01T09:00:00', total_installments: 2 }),
+      ['2025-03-10', '2025-04-10'],
+      now,
+    )
+    expect(r).toEqual([])
+  })
+
+  it('returns nothing for an inactive item', () => {
+    expect(missingRecurringDueDates(item({ active: false }), [], now)).toEqual([])
+  })
+
+  it('clamps the due day in short months', () => {
+    const r = missingRecurringDueDates(
+      item({ created_at: '2025-01-15T09:00:00', day_of_month: 31 }),
+      [],
+      new Date('2025-02-10T12:00:00'),
+    )
+    expect(r).toEqual(['2025-01-31', '2025-02-28', '2025-03-31'])
   })
 })

@@ -16,6 +16,24 @@ describe('toCents', () => {
     expect(toCents('1234,56')).toBe(123456)
   })
 
+  it('reads dot-only grouping as pt-BR thousands', () => {
+    expect(toCents('1.500')).toBe(150000)
+    expect(toCents('2.500')).toBe(250000)
+    expect(toCents('1.234.567')).toBe(123456700)
+    expect(toCents('1.000.000')).toBe(100000000)
+  })
+
+  it('keeps a single dot as decimal when not a 3-digit group', () => {
+    expect(toCents('0.500')).toBe(50)
+    expect(toCents('2.50')).toBe(250)
+    expect(toCents('2.5')).toBe(250)
+    expect(toCents('1234.567')).toBe(123457)
+  })
+
+  it('reads comma-only grouping as en thousands', () => {
+    expect(toCents('1,234,567')).toBe(123456700)
+  })
+
   it('accepts a numeric value already in reais', () => {
     expect(toCents(12.34)).toBe(1234)
     expect(toCents(1000)).toBe(100000)

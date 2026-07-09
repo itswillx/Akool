@@ -3,7 +3,7 @@
 // amounts in one consistent unit (integer cents after the money migration).
 // Side-effect free and framework-agnostic.
 
-import type { FinanceTransaction, FinanceAccount } from '../types'
+import type { FinanceTransaction, FinanceAccount, FinanceRecurring } from '../types'
 
 type AmountTx = Pick<FinanceTransaction, 'type' | 'amount'>
 
@@ -99,4 +99,38 @@ export function recurringDueDate(year: number, month1to12: number, dayOfMonth: n
   const lastDay = new Date(year, month1to12, 0).getDate()
   const day = Math.min(dayOfMonth, lastDay)
   return `${year}-${String(month1to12).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+// Due dates a recurring item is missing, from its creation month through the
+// month after `now`. Iterating from the creation month backfills months in
+// which the app was never opened — the entry for a missed month must exist for
+// the bill to surface as overdue and for installment counts to stay correct.
+// Months are compared by YYYY-MM (not the exact day) so editing day_of_month
+// never duplicates a month, and `total_installments` caps existing + new
+// entries chronologically.
+export function missingRecurringDueDates(
+  item: Pick<FinanceRecurring, 'active' | 'day_of_month' | 'total_installments' | 'created_at'>,
+  existingDueDates: string[],
+  now: Date = new Date(),
+): string[] {
+  if (!item.active) return []
+  let budget = item.total_installments != null
+    ? item.total_installments - existingDueDates.length
+    : Infinity
+  if (budget <= 0) return []
+
+  const existingMonths = new Set(existingDueDates.map(d => d.slice(0, 7)))
+  const created = new Date(item.created_at)
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const out: string[] = []
+  for (let i = 0; budget > 0; i++) {
+    const cursor = new Date(created.getFullYear(), created.getMonth() + i, 1)
+    if (cursor > end) break
+    const due = recurringDueDate(cursor.getFullYear(), cursor.getMonth() + 1, item.day_of_month)
+    if (!existingMonths.has(due.slice(0, 7))) {
+      out.push(due)
+      budget--
+    }
+  }
+  return out
 }

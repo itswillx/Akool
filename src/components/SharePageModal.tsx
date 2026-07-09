@@ -163,13 +163,9 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
     if (!q.trim()) { setSearchResults([]); return }
     debounceRef.current = setTimeout(async () => {
       const term = sanitizeIlikeTerm(q)
-      if (!term) { setSearchResults([]); return }
+      if (term.length < 3) { setSearchResults([]); return }
       const existingIds = new Set([user?.id, ...shares.map(s => s.shared_with_user_id)])
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, email, display_name')
-        .or(`email.ilike.%${term}%,display_name.ilike.%${term}%`)
-        .limit(8)
+      const { data } = await supabase.rpc('search_users_for_share', { p_term: term })
       if (data) {
         setSearchResults((data as UserProfile[]).filter(p => !existingIds.has(p.id)))
       }

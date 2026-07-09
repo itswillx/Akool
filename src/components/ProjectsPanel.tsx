@@ -15,6 +15,8 @@ import { CSS } from '@dnd-kit/utilities'
 import type { ProjectBoard, ProjectColumn, ProjectCard, ProjectCardChecklistItem, ProjectCardAttachment, ProjectCardLink, ProjectShare, ProjectCardPriority, ProjectShareRole, Page } from '../types'
 import { supabase } from '../lib/supabase'
 import { sanitizeIlikeTerm } from '../lib/profileSearch'
+import { resolveSignedUrl } from '../lib/storageUrl'
+import { SignedImage } from './SignedImage'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { usePages } from '../contexts/PagesContext'
@@ -628,8 +630,8 @@ async function uploadCardImages(
       failedCount++
       continue
     }
-    const { data } = supabase.storage.from(CARD_IMAGES_BUCKET).getPublicUrl(path)
-    uploaded.push({ id: crypto.randomUUID(), url: data.publicUrl, name: p.file.name || `image.${ext}` })
+    // Bucket privado: persiste o path; a URL assinada e' gerada no render.
+    uploaded.push({ id: crypto.randomUUID(), url: path, name: p.file.name || `image.${ext}` })
     uploadedPendingIds.push(p.id)
   }
   return { uploaded, uploadedPendingIds, failedCount }
@@ -652,6 +654,7 @@ async function persistCardAttachments(
 
 function CardImageLightbox({ preview, onClose }: { preview: { url: string; name: string } | null; onClose: () => void }) {
   const { t } = useLanguage()
+  const [resolvedUrl, setResolvedUrl] = useState('')
 
   useEffect(() => {
     if (!preview) return
@@ -660,10 +663,17 @@ function CardImageLightbox({ preview, onClose }: { preview: { url: string; name:
     return () => window.removeEventListener('keydown', onKey)
   }, [preview, onClose])
 
+  useEffect(() => {
+    let active = true
+    if (preview) resolveSignedUrl(CARD_IMAGES_BUCKET, preview.url).then(u => { if (active) setResolvedUrl(u) })
+    else setResolvedUrl('')
+    return () => { active = false }
+  }, [preview])
+
   const handleDownload = async () => {
-    if (!preview) return
+    if (!preview || !resolvedUrl) return
     try {
-      const res = await fetch(preview.url)
+      const res = await fetch(resolvedUrl)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -673,7 +683,7 @@ function CardImageLightbox({ preview, onClose }: { preview: { url: string; name:
       a.click()
       URL.revokeObjectURL(url)
     } catch {
-      window.open(preview.url, '_blank')
+      window.open(resolvedUrl, '_blank')
     }
   }
 
@@ -702,7 +712,7 @@ function CardImageLightbox({ preview, onClose }: { preview: { url: string; name:
           </button>
         </div>
         <img
-          src={preview.url}
+          src={resolvedUrl}
           alt={preview.name}
           style={{ maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain', borderRadius: 8, display: 'block' }}
         />
@@ -760,7 +770,7 @@ function CardAttachmentsSection({
                 onClick={() => setPreview({ url: a.url, name: a.name })}
                 style={{ width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer', background: 'var(--color-hover)' }}
               >
-                <img src={a.url} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <SignedImage bucket={CARD_IMAGES_BUCKET} stored={a.url} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
               </button>
               {canEdit && (
                 <button
@@ -1558,9 +1568,9 @@ function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: () => vo
     if (!val.trim()) { setResults([]); return }
     debounce.current = setTimeout(async () => {
       const term = sanitizeIlikeTerm(val)
-      if (!term) { setResults([]); return }
+      if (term.length < 3) { setResults([]); return }
       const exclude = new Set([user?.id, board.user_id, ...shares.map(s => s.shared_with_user_id)])
-      const { data } = await supabase.from('profiles').select('id, email, display_name').or(`email.ilike.%${term}%,display_name.ilike.%${term}%`).limit(8)
+      const { data } = await supabase.rpc('search_users_for_share', { p_term: term })
       if (data) setResults((data as Member[]).filter(m => !exclude.has(m.id)))
     }, 300)
   }

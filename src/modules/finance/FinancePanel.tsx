@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown,
 import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceBudget, FinanceTxType, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceWorkspace, FinanceWorkspaceMember, FinanceWorkspaceInvite } from '../../types'
 import { supabase } from '../../lib/supabase'
 import { toCents, fromCents, formatBRL } from '../../lib/money'
+import { resolveSignedUrl } from '../../lib/storageUrl'
 import { sanitizeIlikeTerm } from '../../lib/profileSearch'
 import { downloadTransactionsCsv } from '../../lib/financeCsv'
 import { useAuth } from '../../contexts/AuthContext'
@@ -549,9 +550,9 @@ function UserPicker({ label, value, onChange, knownPartners }: {
 
   const doSearch = useCallback(async (q: string) => {
     const s = sanitizeIlikeTerm(q)
-    if (s.length < 2) { setResults([]); return }
+    if (s.length < 3) { setResults([]); return }
     setSearching(true)
-    const { data } = await supabase.from('profiles').select('id, email, display_name').or(`email.ilike.%${s}%,display_name.ilike.%${s}%`).limit(6)
+    const { data } = await supabase.rpc('search_users_for_share', { p_term: s })
     setResults((data as PartnerProfile[]) ?? [])
     setSearching(false)
   }, [])
@@ -631,10 +632,9 @@ function InviteAutocomplete({ value, onChange, onSubmit, sending, excludeIds }: 
 
   const doSearch = useCallback(async (q: string) => {
     const term = sanitizeIlikeTerm(q)
-    if (term.length < 2) { setResults([]); setSearching(false); return }
+    if (term.length < 3) { setResults([]); setSearching(false); return }
     setSearching(true)
-    const { data } = await supabase.from('profiles').select('id, email, display_name')
-      .or(`email.ilike.%${term}%,display_name.ilike.%${term}%`).limit(10)
+    const { data } = await supabase.rpc('search_users_for_share', { p_term: term })
     const filtered = ((data as PartnerProfile[]) ?? []).filter(p => p.id !== user?.id && !excludeIds.includes(p.id))
     setResults(filtered.slice(0, 6))
     setSearching(false)
@@ -741,8 +741,21 @@ function TransactionModal({
   const [showMore, setShowMore] = useState(false)
 
   const [photoFile, setPhotoFile] = useState<File | null>(null)
-  const [photoPreview, setPhotoPreview] = useState<string | null>(tx?.photo_url ?? null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [photoRemoved, setPhotoRemoved] = useState(false)
+
+  // Resolve o photo_url armazenado (path do bucket privado) para uma signed URL
+  // uma unica vez ao montar; escolha de arquivo novo sobrescreve via handlePhotoChange.
+  useEffect(() => {
+    let active = true
+    if (tx?.photo_url) {
+      resolveSignedUrl('transaction-photos', tx.photo_url).then(url => {
+        if (active) setPhotoPreview(url)
+      })
+    }
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [confirmRemovePhoto, setConfirmRemovePhoto] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
@@ -800,8 +813,8 @@ function TransactionModal({
         setSaving(false)
         return
       }
-      const { data } = supabase.storage.from('transaction-photos').getPublicUrl(path)
-      photoUrl = data.publicUrl
+      // Bucket privado: persiste o path; a URL assinada e' gerada no render.
+      photoUrl = path
     } else if (photoRemoved) {
       photoUrl = null
     } else {

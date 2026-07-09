@@ -7,6 +7,7 @@ import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
 import { FolderKanban } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { resolveSignedUrl } from '../lib/storageUrl'
 import { DiagramBlock } from './DiagramBlock'
 import { ProjectCardBlock } from './blocks/ProjectCardBlock'
 import ImportProjectCardsModal from './ImportProjectCardsModal'
@@ -143,13 +144,19 @@ function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appThem
       .from('note-images')
       .upload(path, file, { contentType: file.type, upsert: false })
     if (error) throw new Error(error.message)
-    const { data } = supabase.storage.from('note-images').getPublicUrl(path)
-    return data.publicUrl
+    // Bucket privado: persiste o path; a URL assinada e' gerada no render.
+    return path
   }, [pageId])
+
+  const resolveFileUrl = useCallback(
+    (url: string) => resolveSignedUrl('note-images', url),
+    [],
+  )
 
   const editor = useCreateBlockNote({
     schema,
     uploadFile,
+    resolveFileUrl,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ...(initialContent.length > 0 ? { initialContent: initialContent as any } : {}),
   })
