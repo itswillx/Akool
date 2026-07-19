@@ -6,7 +6,7 @@ import {
   GripVertical, Check,
 } from 'lucide-react'
 import {
-  DndContext, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors, useDroppable,
+  DndContext, DragOverlay, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable,
   pointerWithin, rectIntersection,
 } from '@dnd-kit/core'
 import type { CollisionDetection, DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core'
@@ -52,6 +52,8 @@ const VIEW_KEY = 'projects_view'
 const COMPACT_COLUMN_KEY = 'projects_compact_column:'
 const CARD_DRAFT_PREFIX = 'projects_card_draft:'
 const CARD_MODAL_STATE_KEY = 'projects_card_modal_state'
+// Set by the dashboard (quick-note chips / due-soon list) to deep-open a card.
+const OPEN_CARD_KEY = 'projects_open_card'
 const AUTOSAVE_DEBOUNCE_MS = 800
 
 function todayStr() {
@@ -256,7 +258,7 @@ function SortableCard({
     cursor: 'pointer', color: 'var(--color-text-muted)', padding: 0, flexShrink: 0,
   }
   return (
-    <div ref={setNodeRef} style={{ ...style, touchAction: canEdit ? 'pan-y' : 'auto' }} {...attributes} {...(canEdit ? listeners : {})}>
+    <div ref={setNodeRef} style={{ ...style, touchAction: 'manipulation' }} {...attributes} {...(canEdit ? listeners : {})}>
       {variant === 'compact' && canEdit && (showMovePrev || showMoveNext) && (
         <div
           style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}
@@ -337,6 +339,7 @@ function Column({
         </span>
         {canEdit && (
           <>
+            <button onClick={onAddCard} title={t('projects_add_card')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2 }}><Plus size={13} /></button>
             <button onClick={onRename} title={t('projects_rename_column')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2 }}><Pencil size={12} /></button>
             <button onClick={onDelete} title={t('projects_delete_column')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2 }}><Trash2 size={12} /></button>
           </>
@@ -1976,9 +1979,11 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
   const canEdit = !!activeBoard && (activeBoard.user_id === user?.id || activeBoard.share_role === 'editor' || activeBoard.share_role === 'owner')
   const isOwner = !!activeBoard && activeBoard.user_id === user?.id
 
+  // MouseSensor ignora eventos de toque — no touch, só o long-press do TouchSensor
+  // inicia o drag; deslizar o dedo continua sendo scroll.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
   )
   const pLabel = (p: ProjectCardPriority) => t(`projects_priority_${p}` as 'projects_priority_low')
 
@@ -2061,6 +2066,18 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
 
   useEffect(() => {
     if (modalRestoredRef.current || boardLoading || !activeBoardId || cardModal.open) return
+    const openCardId = localStorage.getItem(OPEN_CARD_KEY)
+    if (openCardId) {
+      // Consume unconditionally: if the card was deleted or access was revoked
+      // (RLS filters it out of `cards`), the key must not linger.
+      localStorage.removeItem(OPEN_CARD_KEY)
+      const requested = cards.find(c => c.id === openCardId)
+      if (requested) {
+        modalRestoredRef.current = true
+        setCardModal({ open: true, card: requested })
+        return
+      }
+    }
     const saved = loadCardModalState()
     if (!saved?.open || saved.boardId !== activeBoardId) return
     modalRestoredRef.current = true
@@ -2570,11 +2587,6 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
                   <Trash2 size={13} />
                 </button>
               </>
-            )}
-            {boards.length > 0 && (
-              <button onClick={() => setBoardModal({ open: true, board: null })} title={t('projects_new_board')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? 8 : '6px 11px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-                <Plus size={14} />{!isMobile && t('projects_new_board')}
-              </button>
             )}
           </div>
         </div>

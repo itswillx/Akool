@@ -314,6 +314,30 @@ export interface ProjectShare {
   profile?: { email: string; display_name: string | null }
 }
 
+// ─── Quick Notes (dashboard sticky notes) ────────────────────────────────────
+
+export type QuickNoteColor = 'yellow' | 'green' | 'pink' | 'blue' | 'purple'
+
+export interface QuickNoteLinkedItem {
+  id: string
+  type: 'page' | 'card'
+  targetId: string
+  // Title/board are snapshots taken when the link is created; access is
+  // re-validated at navigation time (RLS may have revoked it since).
+  title: string
+  boardId?: string
+}
+
+export interface QuickNote {
+  id: string
+  user_id: string
+  content: string
+  color: QuickNoteColor
+  linked_items: QuickNoteLinkedItem[]
+  created_at: string
+  updated_at: string
+}
+
 export interface SiteBackup {
   id: string
   created_at: string

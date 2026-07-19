@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import {
   FileText, Pencil, Layers, CheckSquare, Star, ArrowRight,
-  TrendingUp, Wallet, Bell, Check, X, Users,
+  TrendingUp, Wallet, Bell, Check, X, Users, FolderKanban,
 } from 'lucide-react'
+import QuickNotes from './QuickNotes'
+import DashboardProjects, { useDashboardProjects } from './DashboardProjects'
 import type { Page, PageType, Todo, FinanceAccount, FinanceTransaction, FinanceCategory } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -134,6 +136,8 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
   // and "documents" modes they are hidden and their queries are skipped.
   const showFinance = mode === 'all'
   const finance = useDashboardFinance(user?.id, showFinance)
+  const showProjects = mode !== 'finance'
+  const projects = useDashboardProjects(user?.id, showProjects)
 
   useEffect(() => {
     if (!notifOpen) return
@@ -203,7 +207,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
   const displayName = profile?.display_name ?? user?.email?.split('@')[0] ?? ''
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', backgroundColor: 'var(--color-bg-tertiary)' }}>
+    <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', backgroundColor: 'var(--color-bg-tertiary)' }}>
       <div style={{ maxWidth: 1160, margin: '0 auto', padding: isMobile ? '20px 16px 60px' : '32px 32px 80px' }}>
 
         {/* ── Header ── */}
@@ -265,7 +269,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
         </div>
 
         {/* ── Top stat cards ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : (showFinance ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)'), gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
           {showFinance && (
             <StatCard
               onClick={() => { localStorage.setItem('finance_active_tab', 'overview'); setActivePanel('finance') }}
@@ -289,15 +293,32 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
           />
           <StatCard
             icon={<CheckSquare size={15} />} iconColor="#f59e0b"
-            label="Tarefas" sub={t('dashboard_tasks_stat')}
+            label={t('dashboard_tasks_label')} sub={t('dashboard_tasks_stat')}
             value={`${todoStats.completion}%`}
             secondaryValue={`${todoStats.done}/${todoStats.total}`}
           />
+          {showProjects && (
+            <StatCard
+              onClick={() => setActivePanel('projects')}
+              icon={<FolderKanban size={15} />} iconColor="#6366f1"
+              label={t('dashboard_projects_section')} sub={t('dashboard_stat_projects')}
+              value={String(projects.boards.length)}
+              secondaryValue={`${projects.totalOpen}/${projects.totalCards}`}
+            />
+          )}
         </div>
+
+        {/* ── Notas rápidas (sticky notes) ── */}
+        <div style={{ marginTop: 20 }}>
+          <QuickNotes isMobile={isMobile} />
+        </div>
+
+        {/* ── Visão de projetos ── */}
+        {showProjects && <DashboardProjects data={projects} isMobile={isMobile} />}
 
         {showFinance && (<ErrorBoundary>
         {/* ── Finance overview cards ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginBottom: 20 }}>
           <FinanceCard
             label={t('dashboard_finance_income')}
             value={fmtCurrency(finance.monthIncome)}
@@ -313,7 +334,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
         </div>
 
         {/* ── Charts row ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap: 14, marginBottom: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 14, marginBottom: 14 }}>
           {/* Monthly evolution */}
           <Panel title={t('dashboard_monthly_evolution')} icon={<TrendingUp size={13} />}>
             <MonthlyChart data={finance.monthlyData} />
@@ -351,7 +372,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
         </ErrorBoundary>)}
 
         {/* ── Bottom row: recent + upcoming ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 1fr', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: 14 }}>
           <Panel title={t('dashboard_recent_favorites')} icon={<FileText size={13} />}>
             {recent.length === 0 && favorites.length === 0 ? (
               <Empty text={t('dashboard_empty_recent')} />
@@ -409,7 +430,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
-const listStyle: React.CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 1 }
+export const listStyle: React.CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 1 }
 
 function NotificationItem({ notification: n, onRead, onClose }: {
   notification: import('../types').AppNotification
@@ -573,9 +594,9 @@ function FinanceCard({ label, value, color, icon }: { label: string; value: stri
   )
 }
 
-function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+export function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div style={{ padding: '14px 16px', borderRadius: 12, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+    <div style={{ padding: '14px 16px', borderRadius: 12, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', minWidth: 0, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12, color: 'var(--color-text)' }}>
         {icon}
         <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{title}</h3>
@@ -690,7 +711,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   )
 }
 
-function Empty({ text }: { text: string }) {
+export function Empty({ text }: { text: string }) {
   return <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)', padding: '6px 0' }}>{text}</p>
 }
 
