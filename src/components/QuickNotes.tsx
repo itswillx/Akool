@@ -6,6 +6,7 @@ import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import ItemPicker, { type PickedItem } from './ItemPicker'
+import ConfirmDeleteModal from './ConfirmDeleteModal'
 import type { Page } from '../types'
 
 const COLORS: QuickNoteColor[] = ['yellow', 'green', 'pink', 'blue', 'purple']
@@ -35,6 +36,9 @@ export default function QuickNotes({ isMobile = false }: { isMobile?: boolean })
   const { notes, createNote, updateNote, deleteNote } = useQuickNotes(user?.id)
   const [draft, setDraft] = useState('')
   const [draftColor, setDraftColor] = useState<QuickNoteColor>('yellow')
+  // Delete asks for confirmation; beforeDelete lets the card cancel its
+  // pending autosave only once the user actually confirms.
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; beforeDelete: () => void } | null>(null)
 
   const submit = async () => {
     const content = draft.trim()
@@ -86,20 +90,38 @@ export default function QuickNotes({ isMobile = false }: { isMobile?: boolean })
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? 150 : 210}px, 1fr))`, gap: 10 }}>
           {notes.map(n => (
-            <QuickNoteCard key={n.id} note={n} onUpdate={updateNote} onDelete={deleteNote} />
+            <QuickNoteCard
+              key={n.id}
+              note={n}
+              onUpdate={updateNote}
+              onRequestDelete={(id, beforeDelete) => setConfirmDelete({ id, beforeDelete })}
+            />
           ))}
         </div>
       )}
+
+      <ConfirmDeleteModal
+        open={!!confirmDelete}
+        title={t('quick_notes_delete_title')}
+        message={t('quick_notes_delete_message')}
+        onConfirm={() => {
+          if (!confirmDelete) return
+          confirmDelete.beforeDelete()
+          deleteNote(confirmDelete.id)
+          setConfirmDelete(null)
+        }}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   )
 }
 
 // ─── Single sticky note ───────────────────────────────────────────────────────
 
-function QuickNoteCard({ note, onUpdate, onDelete }: {
+function QuickNoteCard({ note, onUpdate, onRequestDelete }: {
   note: QuickNote
   onUpdate: (id: string, patch: Partial<Pick<QuickNote, 'content' | 'color' | 'linked_items'>>) => Promise<void>
-  onDelete: (id: string) => Promise<void>
+  onRequestDelete: (id: string, beforeDelete: () => void) => void
 }) {
   const { t } = useLanguage()
   const { pages, sharedPages, setActivePage, setActivePanel } = usePages()
@@ -129,9 +151,12 @@ function QuickNoteCard({ note, onUpdate, onDelete }: {
   useEffect(() => flush, []) // flush pending edit on unmount
 
   const handleDelete = () => {
-    latestRef.current.deleted = true
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
-    onDelete(note.id)
+    // Only mark deleted / drop the pending autosave once the user confirms;
+    // cancelling the dialog keeps the note (and its debounced edit) alive.
+    onRequestDelete(note.id, () => {
+      latestRef.current.deleted = true
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    })
   }
 
   const openLinked = (item: QuickNoteLinkedItem) => {

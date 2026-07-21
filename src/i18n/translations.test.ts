@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { getT } from './translations'
+import { getT, translations } from './translations'
+
+describe('translations key parity', () => {
+  it('pt-BR and en declare exactly the same keys', () => {
+    const pt = Object.keys(translations['pt-BR']).sort()
+    const en = Object.keys(translations['en']).sort()
+    const missingInEn = pt.filter(k => !en.includes(k))
+    const missingInPt = en.filter(k => !pt.includes(k))
+    expect(missingInEn, `keys missing in en: ${missingInEn.join(', ')}`).toEqual([])
+    expect(missingInPt, `keys missing in pt-BR: ${missingInPt.join(', ')}`).toEqual([])
+  })
+})
 
 describe('getT', () => {
   it('returns Portuguese strings for pt-BR', () => {

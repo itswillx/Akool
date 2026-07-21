@@ -338,6 +338,77 @@ export interface QuickNote {
   updated_at: string
 }
 
+// ─── Study Module ("Estudos") ────────────────────────────────────────────────
+
+export type StudyTopicStatus = 'planned' | 'studying' | 'paused' | 'completed'
+
+export interface StudyCheckpoint {
+  id: string
+  text: string
+  completed: boolean
+}
+
+export interface StudyResource {
+  id: string
+  title: string
+  url: string
+}
+
+// Stored in Portuguese as data (same rationale as STUDY_LEVELS — the value is
+// embedded in the parsed .md); the UI translates via i18n.
+export type StudyQuizAnswer = 'certo' | 'errado'
+
+export interface StudyQuizQuestion {
+  id: string
+  statement: string
+  answer: StudyQuizAnswer
+  // null = not answered yet; persisted so the score survives reloads.
+  userAnswer: StudyQuizAnswer | null
+}
+
+export interface StudyTopic {
+  id: string
+  user_id: string
+  title: string
+  area: string
+  level: string
+  objective: string
+  status: StudyTopicStatus
+  // 'YYYY-MM-DD' — compared as a local date string, never via new Date()
+  // (UTC parsing would shift the day in UTC-3).
+  target_date: string | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface StudyCard {
+  id: string
+  user_id: string
+  topic_id: string
+  title: string
+  description: string
+  // "Por que agora" — why this roadmap step follows the previous one; '' when unset.
+  rationale: string
+  checkpoints: StudyCheckpoint[]
+  resources: StudyResource[]
+  quiz: StudyQuizQuestion[]
+  sort_order: number
+  // 'YYYY-MM-DD' — same local date-string comparison rule as target_date.
+  due_date: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface StudyLog {
+  id: string
+  user_id: string
+  topic_id: string
+  content: string
+  created_at: string
+}
+
 export interface SiteBackup {
   id: string
   created_at: string
