@@ -346,6 +346,8 @@ export interface StudyCheckpoint {
   id: string
   text: string
   completed: boolean
+  // Free-form user annotation shown under the checkpoint; absent = no note.
+  note?: string
 }
 
 export interface StudyResource {

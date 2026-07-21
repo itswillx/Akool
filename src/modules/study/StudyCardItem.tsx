@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { CalendarClock, Check, ChevronDown, ChevronUp, Link2, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
-import type { StudyCard, StudyQuizAnswer } from '../../types'
+import { CalendarClock, Check, ChevronDown, ChevronUp, Link2, Pencil, Plus, RotateCcw, StickyNote, Trash2, X } from 'lucide-react'
+import type { StudyCard, StudyCheckpoint, StudyQuizAnswer } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { MarkdownText } from '../../components/MarkdownText'
 import { cardProgress } from '../../lib/studyProgress'
@@ -20,6 +20,9 @@ interface StudyCardItemProps {
   onUpdate: (patch: StudyCardPatch) => void
   onToggleCheckpoint: (checkpointId: string) => void
   onRequestDelete: () => void
+  // Checkpoint removal is confirmed by the caller (ConfirmDeleteModal in
+  // StudySection), same flow as card/log deletion.
+  onRequestRemoveCheckpoint: (checkpoint: StudyCheckpoint) => void
   isMobile?: boolean
   embedded?: boolean
 }
@@ -32,11 +35,13 @@ function normalizeUrl(raw: string): string | null {
   return null
 }
 
-export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRequestDelete, isMobile = false, embedded = false }: StudyCardItemProps) {
+export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRequestDelete, onRequestRemoveCheckpoint, isMobile = false, embedded = false }: StudyCardItemProps) {
   const { t, lang } = useLanguage()
   const [editingDescription, setEditingDescription] = useState(false)
   const [editingDue, setEditingDue] = useState(false)
   const [editingCheckpointId, setEditingCheckpointId] = useState<string | null>(null)
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [pointsExpanded, setPointsExpanded] = useState(true)
   const [newPoint, setNewPoint] = useState('')
   const [addingResource, setAddingResource] = useState(false)
   // Collapsed by default: 5-15 questions per card would dominate the layout.
@@ -59,14 +64,21 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
     const current = card.checkpoints.find(p => p.id === id)
     if (!current || current.text === trimmed) return
     if (!trimmed) {
-      onUpdate({ checkpoints: card.checkpoints.filter(p => p.id !== id) })
+      // Blanking the text is a removal — goes through the same confirmation
+      // as the X button (cancelling keeps the point with its old text).
+      onRequestRemoveCheckpoint(current)
       return
     }
     onUpdate({ checkpoints: card.checkpoints.map(p => (p.id === id ? { ...p, text: trimmed } : p)) })
   }
 
-  const removeCheckpoint = (id: string) => {
-    onUpdate({ checkpoints: card.checkpoints.filter(p => p.id !== id) })
+  // Empty note removes the field (undefined is dropped by JSON serialization,
+  // so the JSONB row stays clean).
+  const updateCheckpointNote = (id: string, raw: string) => {
+    const note = raw.trim()
+    const current = card.checkpoints.find(p => p.id === id)
+    if (!current || (current.note ?? '') === note) return
+    onUpdate({ checkpoints: card.checkpoints.map(p => (p.id === id ? { ...p, note: note || undefined } : p)) })
   }
 
   const addResource = () => {
@@ -215,12 +227,25 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
         </div>
       )}
 
-      <SectionLabel>{t('study_checkpoints')}</SectionLabel>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setPointsExpanded(prev => !prev)}
+        onKeyDown={e => { if (e.key === 'Enter') setPointsExpanded(prev => !prev) }}
+        style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', cursor: 'pointer' }}
+      >
+        <SectionLabel>{t('study_checkpoints')}</SectionLabel>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', whiteSpace: 'nowrap', marginBottom: 8 }}>
+          {progress.done}/{progress.total}
+          {pointsExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        </span>
+      </div>
+      {pointsExpanded && (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {card.checkpoints.map(point => (
           <div
             key={point.id}
-            style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '5px 2px', minHeight: isMobile ? 34 : undefined }}
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '5px 2px', minHeight: isMobile ? 34 : undefined, opacity: point.completed ? 0.55 : 1 }}
           >
             <input
               type="checkbox"
@@ -228,60 +253,119 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
               onChange={() => onToggleCheckpoint(point.id)}
               style={{ marginTop: 3, width: 15, height: 15, accentColor: '#6366f1', cursor: 'pointer', flexShrink: 0 }}
             />
-            {editingCheckpointId === point.id ? (
-              // Auto-growing borderless textarea styled like the display text
-              // (no layout jump); Enter commits, Shift+Enter breaks the line.
-              <textarea
-                autoFocus
-                rows={1}
-                defaultValue={point.text}
-                ref={el => {
-                  if (el) {
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {editingCheckpointId === point.id ? (
+                // Auto-growing borderless textarea styled like the display text
+                // (no layout jump); Enter commits, Shift+Enter breaks the line.
+                <textarea
+                  autoFocus
+                  rows={1}
+                  defaultValue={point.text}
+                  ref={el => {
+                    if (el) {
+                      el.style.height = 'auto'
+                      el.style.height = `${el.scrollHeight}px`
+                    }
+                  }}
+                  onInput={e => {
+                    const el = e.currentTarget
                     el.style.height = 'auto'
                     el.style.height = `${el.scrollHeight}px`
-                  }
-                }}
-                onInput={e => {
-                  const el = e.currentTarget
-                  el.style.height = 'auto'
-                  el.style.height = `${el.scrollHeight}px`
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    e.currentTarget.blur()
-                  }
-                }}
-                onBlur={e => {
-                  updateCheckpointText(point.id, e.target.value)
-                  setEditingCheckpointId(null)
-                }}
-                style={{
-                  flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent',
-                  resize: 'none', overflow: 'hidden', fontSize: 13, lineHeight: 1.45,
-                  fontFamily: 'inherit', padding: 0, color: 'var(--color-text)',
-                }}
-              />
-            ) : (
-              // Wrapping display so long checkpoint texts stay fully readable
-              // (the old single-line input truncated them on mobile).
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setEditingCheckpointId(point.id)}
-                onKeyDown={e => { if (e.key === 'Enter') setEditingCheckpointId(point.id) }}
-                style={{
-                  flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.45, cursor: 'text',
-                  overflowWrap: 'anywhere', whiteSpace: 'pre-wrap',
-                  color: point.completed ? 'var(--color-text-muted)' : 'var(--color-text)',
-                  textDecoration: point.completed ? 'line-through' : 'none',
-                }}
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      e.currentTarget.blur()
+                    }
+                  }}
+                  onBlur={e => {
+                    updateCheckpointText(point.id, e.target.value)
+                    setEditingCheckpointId(null)
+                  }}
+                  style={{
+                    width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', background: 'transparent',
+                    resize: 'none', overflow: 'hidden', fontSize: 13, lineHeight: 1.45,
+                    fontFamily: 'inherit', padding: 0, color: 'var(--color-text)', display: 'block',
+                  }}
+                />
+              ) : (
+                // Wrapping display so long checkpoint texts stay fully readable
+                // (the old single-line input truncated them on mobile).
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setEditingCheckpointId(point.id)}
+                  onKeyDown={e => { if (e.key === 'Enter') setEditingCheckpointId(point.id) }}
+                  style={{
+                    fontSize: 13, lineHeight: 1.45, cursor: 'text',
+                    overflowWrap: 'anywhere', whiteSpace: 'pre-wrap',
+                    color: point.completed ? 'var(--color-text-muted)' : 'var(--color-text)',
+                    textDecoration: point.completed ? 'line-through' : 'none',
+                  }}
+                >
+                  {point.text}
+                </div>
+              )}
+              {editingNoteId === point.id ? (
+                <textarea
+                  autoFocus
+                  rows={1}
+                  defaultValue={point.note ?? ''}
+                  placeholder={t('study_checkpoint_note_placeholder')}
+                  ref={el => {
+                    if (el) {
+                      el.style.height = 'auto'
+                      el.style.height = `${el.scrollHeight}px`
+                    }
+                  }}
+                  onInput={e => {
+                    const el = e.currentTarget
+                    el.style.height = 'auto'
+                    el.style.height = `${el.scrollHeight}px`
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      e.currentTarget.blur()
+                    }
+                  }}
+                  onBlur={e => {
+                    updateCheckpointNote(point.id, e.target.value)
+                    setEditingNoteId(null)
+                  }}
+                  style={{
+                    width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', background: 'transparent',
+                    resize: 'none', overflow: 'hidden', fontSize: 12, lineHeight: 1.45, fontStyle: 'italic',
+                    fontFamily: 'inherit', padding: 0, marginTop: 2, color: 'var(--color-text-muted)', display: 'block',
+                  }}
+                />
+              ) : point.note ? (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setEditingNoteId(point.id)}
+                  onKeyDown={e => { if (e.key === 'Enter') setEditingNoteId(point.id) }}
+                  style={{
+                    fontSize: 12, lineHeight: 1.45, cursor: 'text', marginTop: 2, fontStyle: 'italic',
+                    overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', color: 'var(--color-text-muted)',
+                  }}
+                >
+                  {point.note}
+                </div>
+              ) : null}
+            </div>
+            {!point.note && editingNoteId !== point.id && (
+              <button
+                onClick={() => setEditingNoteId(point.id)}
+                title={t('study_checkpoint_note_add')}
+                type="button"
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, marginTop: 2, flexShrink: 0 }}
               >
-                {point.text}
-              </div>
+                <StickyNote size={12} />
+              </button>
             )}
             <button
-              onClick={() => removeCheckpoint(point.id)}
+              onClick={() => onRequestRemoveCheckpoint(point)}
               type="button"
               style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, marginTop: 2, flexShrink: 0 }}
             >
@@ -301,6 +385,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
           />
         </div>
       </div>
+      )}
 
       <div style={{ marginTop: 12 }}>
         <SectionLabel>{t('study_resources')}</SectionLabel>
@@ -429,7 +514,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                 )
               }
               return (
-                <div key={question.id} style={{ padding: '5px 2px' }}>
+                <div key={question.id} style={{ padding: '5px 2px', opacity: answered ? 0.7 : 1 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', marginTop: 1, flexShrink: 0, minWidth: 18, textAlign: 'right' }}>
                       {index + 1}.

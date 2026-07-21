@@ -245,6 +245,11 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
                 t('study_delete_card_message', { title: card.title || t('study_card_untitled') }),
                 () => store.deleteCard(card.id),
               )}
+              onRequestRemoveCheckpoint={point => requestDelete(
+                t('study_delete_checkpoint_title'),
+                t('study_delete_checkpoint_message', { text: point.text.length > 80 ? `${point.text.slice(0, 80)}…` : point.text }),
+                () => store.updateCard(card.id, { checkpoints: card.checkpoints.filter(p => p.id !== point.id) }),
+              )}
             />
           ))}
         </div>

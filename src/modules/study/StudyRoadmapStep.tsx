@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { CalendarClock, Check, ChevronDown, ChevronUp, Lock, Milestone, Pencil } from 'lucide-react'
-import type { StudyCard } from '../../types'
+import type { StudyCard, StudyCheckpoint } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { cardProgress, type StudyStepState } from '../../lib/studyProgress'
 import { isCardOverdue } from '../../lib/studySchedule'
@@ -22,11 +22,12 @@ interface StudyRoadmapStepProps {
   onUpdate: (patch: StudyCardPatch) => void
   onToggleCheckpoint: (checkpointId: string) => void
   onRequestDelete: () => void
+  onRequestRemoveCheckpoint: (checkpoint: StudyCheckpoint) => void
   isMobile?: boolean
 }
 
 export default function StudyRoadmapStep({
-  card, index, isLast, state, onUpdate, onToggleCheckpoint, onRequestDelete, isMobile = false,
+  card, index, isLast, state, onUpdate, onToggleCheckpoint, onRequestDelete, onRequestRemoveCheckpoint, isMobile = false,
 }: StudyRoadmapStepProps) {
   const { t, lang } = useLanguage()
   // null = "auto": expanded iff this is the current step. Completing the
@@ -169,6 +170,7 @@ export default function StudyRoadmapStep({
                 onUpdate={onUpdate}
                 onToggleCheckpoint={onToggleCheckpoint}
                 onRequestDelete={onRequestDelete}
+                onRequestRemoveCheckpoint={onRequestRemoveCheckpoint}
               />
             </div>
           )}
