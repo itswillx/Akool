@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { supabase } from '../lib/supabase'
+import { supabase, recoveryLinkError } from '../lib/supabase'
 import { getT } from '../i18n/translations'
 import type { Lang } from '../i18n/translations'
 
 export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginRequired?: boolean }) {
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, sendPasswordReset } = useAuth()
   const storedLang = (localStorage.getItem('excalinotion_auth_lang') ?? 'pt-BR') as Lang
   const t = getT(storedLang)
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+  // An expired/used recovery link redirects here with an error hash — open
+  // straight on the forgot form so the user can request a fresh link.
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(recoveryLinkError ? 'forgot' : 'signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [inviteCode, setInviteCode] = useState('')
@@ -22,7 +24,11 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
     setSuccess('')
     setLoading(true)
 
-    if (mode === 'signin') {
+    if (mode === 'forgot') {
+      const { error } = await sendPasswordReset(email)
+      if (error) setError(error)
+      else setSuccess(t('auth_forgot_sent'))
+    } else if (mode === 'signin') {
       const { error } = await signIn(email, password)
       if (error) setError(error.message)
     } else {
@@ -70,14 +76,20 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
         {dailyLoginRequired && (
           <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, backgroundColor: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>⏰</span>
-            <span>Sessão expirada. Faça login diariamente para continuar.</span>
+            <span>{t('auth_daily_login_required')}</span>
+          </div>
+        )}
+        {recoveryLinkError && mode === 'forgot' && !success && (
+          <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, backgroundColor: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>⚠️</span>
+            <span>{t('auth_recovery_expired')}</span>
           </div>
         )}
         <h2 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text)', margin: '0 0 4px' }}>
-          {mode === 'signin' ? t('auth_welcome') : t('auth_create_account')}
+          {mode === 'signin' ? t('auth_welcome') : mode === 'signup' ? t('auth_create_account') : t('auth_forgot_title')}
         </h2>
         <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: '0 0 24px' }}>
-          {mode === 'signin' ? t('auth_signin_subtitle') : t('auth_signup_subtitle')}
+          {mode === 'signin' ? t('auth_signin_subtitle') : mode === 'signup' ? t('auth_signup_subtitle') : t('auth_forgot_subtitle')}
         </p>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -94,6 +106,7 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
               onBlur={e => (e.target.style.borderColor = 'var(--color-border)')}
             />
           </div>
+          {mode !== 'forgot' && (
           <div>
             <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 }}>{t('auth_password')}</label>
             <input
@@ -106,7 +119,17 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
               onFocus={e => (e.target.style.borderColor = 'var(--color-text)')}
               onBlur={e => (e.target.style.borderColor = 'var(--color-border)')}
             />
+            {mode === 'signin' && (
+              <button
+                type="button"
+                onClick={() => { setMode('forgot'); setError(''); setSuccess('') }}
+                style={{ marginTop: 6, padding: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 12.5, textDecoration: 'underline' }}
+              >
+                {t('auth_forgot_link')}
+              </button>
+            )}
           </div>
+          )}
 
           {mode === 'signup' && (
             <div>
@@ -132,17 +155,17 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
             disabled={loading}
             style={{ width: '100%', backgroundColor: loading ? 'var(--color-text-muted)' : 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', padding: '11px', borderRadius: 8, fontSize: 14, fontWeight: 600, border: 'none', cursor: loading ? 'not-allowed' : 'pointer', transition: 'background-color 0.15s', marginTop: 4 }}
           >
-            {loading ? t('auth_loading') : mode === 'signin' ? t('auth_signin_btn') : t('auth_signup_btn')}
+            {loading ? t('auth_loading') : mode === 'signin' ? t('auth_signin_btn') : mode === 'forgot' ? t('auth_forgot_btn') : t('auth_signup_btn')}
           </button>
         </form>
 
         <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--color-text-muted)', marginTop: 24 }}>
-          {mode === 'signin' ? t('auth_no_account') : t('auth_has_account')}
+          {mode === 'signin' ? t('auth_no_account') : mode === 'signup' ? t('auth_has_account') : null}
           <button
             onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setSuccess('') }}
             style={{ color: 'var(--color-text)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}
           >
-            {mode === 'signin' ? t('auth_signup_link') : t('auth_signin_link')}
+            {mode === 'signin' ? t('auth_signup_link') : mode === 'signup' ? t('auth_signin_link') : t('auth_back_to_login')}
           </button>
         </p>
       </div>

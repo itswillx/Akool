@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
-import { X, User, Lock, Check, Eye, EyeOff, Shield, Sun, Moon, Gift, Copy, CheckCheck, Users, Database } from 'lucide-react'
+import { X, User, Lock, Check, Shield, Sun, Moon, Gift, Copy, CheckCheck, Users, Database } from 'lucide-react'
+import { PasswordInput, PasswordStrengthMeter } from './PasswordFields'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
@@ -78,14 +79,25 @@ export default function UserSettingsModal({ open, onClose }: Props) {
     setInvitesLoading(false)
   }, [])
 
+  // Reset only when the modal OPENS. This must NOT depend on `profile`:
+  // changePassword re-authenticates, which fires SIGNED_IN → loadProfile →
+  // new profile object — depending on it here reset the tab back to
+  // "profile" mid password change and swallowed the feedback message.
   useEffect(() => {
     if (open) {
-      setDisplayName(profile?.display_name ?? '')
-      setLanguage(profile?.language ?? 'pt-BR')
       setTab('profile')
       setProfileMsg(null)
       setPwdMsg(null)
       setCurrentPwd(''); setNewPwd(''); setConfirmPwd('')
+    }
+  }, [open])
+
+  // Keep the profile form in sync with the loaded profile (it may arrive
+  // after the modal is already open) without touching the active tab.
+  useEffect(() => {
+    if (open) {
+      setDisplayName(profile?.display_name ?? '')
+      setLanguage(profile?.language ?? 'pt-BR')
     }
   }, [open, profile])
 
@@ -135,7 +147,10 @@ export default function UserSettingsModal({ open, onClose }: Props) {
     if (newPwd !== confirmPwd) { setPwdMsg({ type: 'error', text: t('settings_pwd_mismatch') }); return }
     setPwdLoading(true)
     const { error } = await changePassword(currentPwd, newPwd)
-    if (error) { setPwdMsg({ type: 'error', text: error }) }
+    if (error === 'wrong_password') { setPwdMsg({ type: 'error', text: t('settings_pwd_wrong') }) }
+    else if (error === 'same_password') { setPwdMsg({ type: 'error', text: t('settings_pwd_same') }) }
+    else if (error === 'weak_password') { setPwdMsg({ type: 'error', text: t('auth_password_weak') }) }
+    else if (error) { setPwdMsg({ type: 'error', text: error }) }
     else {
       setPwdMsg({ type: 'success', text: t('settings_pwd_changed') })
       setCurrentPwd(''); setNewPwd(''); setConfirmPwd('')
@@ -299,7 +314,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
               </FieldLabel>
 
               {newPwd.length > 0 && (
-                <PasswordStrength password={newPwd} />
+                <PasswordStrengthMeter password={newPwd} t={t} />
               )}
 
               <FieldLabel label={t('settings_confirm_password')}>
@@ -477,68 +492,6 @@ function FieldLabel({ label, children }: { label: string; children: React.ReactN
       {children}
     </div>
   )
-}
-
-function PasswordInput({ value, onChange, show, onToggleShow, placeholder }: {
-  value: string
-  onChange: (v: string) => void
-  show: boolean
-  onToggleShow: () => void
-  placeholder?: string
-}) {
-  return (
-    <div style={{ position: 'relative' }}>
-      <input
-        type={show ? 'text' : 'password'}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        style={{ ...inputStyle, paddingRight: 40 }}
-        onFocus={e => (e.target.style.borderColor = 'var(--color-text)')}
-        onBlur={e => (e.target.style.borderColor = 'var(--color-border)')}
-      />
-      <button
-        type="button"
-        onClick={onToggleShow}
-        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: 0, display: 'flex', alignItems: 'center' }}
-      >
-        {show ? <EyeOff size={15} /> : <Eye size={15} />}
-      </button>
-    </div>
-  )
-}
-
-function PasswordStrength({ password }: { password: string }) {
-  const { t } = useLanguage()
-  const score = getStrength(password)
-  const labels = [
-    t('settings_strength_very_weak'),
-    t('settings_strength_weak'),
-    t('settings_strength_fair'),
-    t('settings_strength_strong'),
-    t('settings_strength_very_strong'),
-  ]
-  const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#16a34a']
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ display: 'flex', gap: 3 }}>
-        {[0, 1, 2, 3, 4].map(i => (
-          <div key={i} style={{ flex: 1, height: 4, borderRadius: 999, backgroundColor: i <= score ? colors[score] : '#e9e9e7', transition: 'background-color 0.2s' }} />
-        ))}
-      </div>
-      <span style={{ fontSize: 11, color: colors[score] }}>{labels[score]}</span>
-    </div>
-  )
-}
-
-function getStrength(pwd: string): number {
-  let score = 0
-  if (pwd.length >= 6) score++
-  if (pwd.length >= 10) score++
-  if (/[A-Z]/.test(pwd)) score++
-  if (/[0-9]/.test(pwd)) score++
-  if (/[^A-Za-z0-9]/.test(pwd)) score++
-  return Math.min(score, 4)
 }
 
 function FeedbackBanner({ type, text }: { type: 'success' | 'error'; text: string }) {

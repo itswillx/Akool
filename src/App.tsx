@@ -8,6 +8,7 @@ import { LanguageProvider } from './i18n/LanguageContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { WorkspaceModeProvider } from './contexts/WorkspaceModeContext'
 import AuthPage from './pages/AuthPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import Sidebar from './components/Sidebar'
 import MainContent from './components/MainContent'
 import WorkspaceModeSwitch from './components/WorkspaceModeSwitch'
@@ -18,7 +19,7 @@ import { getT } from './i18n/translations'
 import type { Lang } from './i18n/translations'
 
 function AppInner() {
-  const { user, profile, loading, signOut, justSignedIn } = useAuth()
+  const { user, profile, loading, signOut, justSignedIn, recoveryMode } = useAuth()
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
@@ -26,7 +27,9 @@ function AppInner() {
   const mountTimeRef = useRef(Date.now())
 
   useEffect(() => {
-    if (!loading && user && profile && !justSignedIn) {
+    // recoveryMode: a user arriving from the recovery email link hasn't
+    // "logged in today" yet — signing them out here would kill the reset flow.
+    if (!loading && user && profile && !justSignedIn && !recoveryMode) {
       const today = new Date().toISOString().split('T')[0]
       const secondsSinceMount = (Date.now() - mountTimeRef.current) / 1000
       if (profile.last_login_date !== today && secondsSinceMount > 5) {
@@ -34,7 +37,7 @@ function AppInner() {
         signOut()
       }
     }
-  }, [loading, user, profile, justSignedIn])
+  }, [loading, user, profile, justSignedIn, recoveryMode])
 
   const storedLang = (localStorage.getItem('excalinotion_auth_lang') ?? 'pt-BR') as Lang
   const tFallback = getT(storedLang)
@@ -49,6 +52,10 @@ function AppInner() {
       </div>
     )
   }
+
+  // Recovery link flow: show the set-new-password screen even while `user`
+  // is momentarily null (the page handles the missing-session case itself).
+  if (recoveryMode) return <ResetPasswordPage />
 
   if (!user) return <AuthPage dailyLoginRequired={dailyLoginRequired} />
 

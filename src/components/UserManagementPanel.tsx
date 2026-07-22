@@ -237,8 +237,11 @@ export default function UserManagementPanel() {
     const { error } = await supabase.auth.resetPasswordForEmail(u.email, {
       redirectTo: window.location.origin,
     })
-    if (error) showFeedback('error', error.message)
-    else showFeedback('success', t('admin_feedback_reset', { email: u.email }))
+    if (error) {
+      showFeedback('error', error.code === 'over_email_send_rate_limit' ? t('admin_reset_rate_limited') : error.message)
+    } else {
+      showFeedback('success', t('admin_feedback_reset', { email: u.email }))
+    }
     setActionLoading(null)
   }
 
