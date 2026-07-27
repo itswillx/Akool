@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   ChevronDown, ChevronRight, Search,
-  LogOut, X, LayoutDashboard, FileDown,
+  X, LayoutDashboard, FileDown,
   Wallet, HelpCircle, FolderKanban, MoreHorizontal, Files,
 } from 'lucide-react'
 import type { PageType } from '../types'
@@ -56,11 +56,12 @@ function setFooterExpanded(val: boolean): void {
   localStorage.setItem(FOOTER_EXPANDED_KEY, String(val))
 }
 
+// Sign out is NOT here anymore: it moved into UserSettingsModal, next to the
+// rest of the account info (opened by clicking the user in the topbar).
 function SidebarFooterMenu({
   activePanel,
   setActivePanel,
   setShowExport,
-  signOut,
   onNavigate,
   mode,
   setMode,
@@ -68,7 +69,6 @@ function SidebarFooterMenu({
   activePanel: string | null
   setActivePanel: (panel: 'users' | 'finance' | 'projects' | 'help' | 'backup' | 'documents' | null) => void
   setShowExport: (v: boolean) => void
-  signOut: () => void
   onNavigate?: () => void
   mode: WorkspaceMode
   setMode: (mode: WorkspaceMode) => void
@@ -112,9 +112,6 @@ function SidebarFooterMenu({
           </SidebarAction>
           <SidebarAction onClick={() => navPanel('help')} active={mode !== 'finance' && activePanel === 'help'}>
             <HelpCircle size={13} /><span>{t('sidebar_help')}</span>
-          </SidebarAction>
-          <SidebarAction onClick={signOut}>
-            <LogOut size={13} /><span>{t('sidebar_signout')}</span>
           </SidebarAction>
         </div>
       )}
@@ -191,7 +188,7 @@ interface SidebarProps {
 
 export default function Sidebar({ onNavigate }: SidebarProps = {}) {
   const { pages, sharedPages, createPage, setActivePage, activePage, activePanel, setActivePanel } = usePages()
-  const { user, profile, signOut } = useAuth()
+  const { user, profile } = useAuth()
   const { mode, setMode } = useWorkspaceMode()
   const { t } = useLanguage()
   const isMobile = useIsMobile()
@@ -339,7 +336,6 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
         activePanel={activePanel}
         setActivePanel={setActivePanel}
         setShowExport={setShowExport}
-        signOut={signOut}
         onNavigate={onNavigate}
         mode={mode}
         setMode={setMode}

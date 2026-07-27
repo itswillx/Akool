@@ -12,41 +12,68 @@ import {
   stepState,
   topicProgress,
 } from './studyProgress'
-import type { StudyCheckpoint, StudyTopic } from '../types'
+import type { StudyCheckpoint, StudyQuizBooleanQuestion, StudyTopic } from '../types'
 
 function cp(completed: boolean): StudyCheckpoint {
   return { id: crypto.randomUUID(), text: 'x', completed }
 }
 
+// Legacy-shaped boolean question (no `kind`), answered right or wrong via `ok`.
+function qz(ok: boolean | null): StudyQuizBooleanQuestion {
+  return {
+    id: crypto.randomUUID(),
+    statement: 'x',
+    answer: 'certo',
+    userAnswer: ok === null ? null : ok ? 'certo' : 'errado',
+  }
+}
+
 describe('cardProgress / topicProgress', () => {
   it('returns 0% for empty checkpoint lists', () => {
-    expect(cardProgress({ checkpoints: [] })).toEqual({ done: 0, total: 0, pct: 0 })
+    expect(cardProgress({ checkpoints: [], quiz: [] })).toEqual({ done: 0, total: 0, pct: 0 })
     expect(topicProgress([])).toEqual({ done: 0, total: 0, pct: 0 })
   })
 
   it('rounds percentages (1/3 → 33)', () => {
-    const p = cardProgress({ checkpoints: [cp(true), cp(false), cp(false)] })
+    const p = cardProgress({ checkpoints: [cp(true), cp(false), cp(false)], quiz: [] })
     expect(p).toEqual({ done: 1, total: 3, pct: 33 })
+  })
+
+  it('counts correct quiz answers toward the bar alongside checkpoints', () => {
+    const p = cardProgress({ checkpoints: [cp(true)], quiz: [qz(true), qz(false), qz(null)] })
+    expect(p).toEqual({ done: 2, total: 4, pct: 50 })
   })
 
   it('aggregates across cards', () => {
     const p = topicProgress([
-      { checkpoints: [cp(true), cp(true)] },
-      { checkpoints: [cp(false), cp(true)] },
+      { checkpoints: [cp(true), cp(true)], quiz: [] },
+      { checkpoints: [cp(false), cp(true)], quiz: [qz(true)] },
     ])
-    expect(p).toEqual({ done: 3, total: 4, pct: 75 })
+    expect(p).toEqual({ done: 4, total: 5, pct: 80 })
   })
 })
 
 describe('roadmap step progression', () => {
-  const done = { checkpoints: [cp(true), cp(true)] }
-  const open = { checkpoints: [cp(true), cp(false)] }
-  const empty = { checkpoints: [] }
+  const done = { checkpoints: [cp(true), cp(true)], quiz: [] }
+  const open = { checkpoints: [cp(true), cp(false)], quiz: [] }
+  const empty = { checkpoints: [], quiz: [] }
 
   it('treats empty-checkpoint cards as complete (never blocks the trail)', () => {
     expect(isCardComplete(empty)).toBe(true)
     expect(isCardComplete(done)).toBe(true)
     expect(isCardComplete(open)).toBe(false)
+  })
+
+  it('requires a passed quiz (all answered, >= 70% right) to complete a card', () => {
+    const cps = [cp(true)]
+    // Unanswered question → incomplete even with checkpoints done.
+    expect(isCardComplete({ checkpoints: cps, quiz: [qz(true), qz(null)] })).toBe(false)
+    // 2/3 = 66% → below the bar.
+    expect(isCardComplete({ checkpoints: cps, quiz: [qz(true), qz(true), qz(false)] })).toBe(false)
+    // 3/3 → passed.
+    expect(isCardComplete({ checkpoints: cps, quiz: [qz(true), qz(true), qz(true)] })).toBe(true)
+    // No quiz → checkpoints alone decide (legacy/manual cards).
+    expect(isCardComplete({ checkpoints: cps, quiz: [] })).toBe(true)
   })
 
   it('finds the first non-complete card as the current step', () => {
@@ -123,9 +150,9 @@ describe('progressByArea', () => {
     const b = topic({ id: 'b', area: ' Frontend ' })
     const c = topic({ id: 'c', area: '' })
     const rows = progressByArea([a, b, c], {
-      a: [{ checkpoints: [cp(true), cp(false)] }],
-      b: [{ checkpoints: [cp(true)] }],
-      c: [{ checkpoints: [cp(false)] }],
+      a: [{ checkpoints: [cp(true), cp(false)], quiz: [] }],
+      b: [{ checkpoints: [cp(true)], quiz: [] }],
+      c: [{ checkpoints: [cp(false)], quiz: [] }],
     })
     expect(rows).toHaveLength(2)
     const frontend = rows.find(r => r.area === 'Frontend')

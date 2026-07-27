@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react'
-import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, User, Link2, FileDown, Camera, Download, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal, Search, Zap, PanelLeft, PanelTop } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, User, Link2, FileDown, Camera, Download, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal, Search, Zap, PanelLeft, PanelTop, HardHat } from 'lucide-react'
 import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceBudget, FinanceTxType, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceWorkspace, FinanceWorkspaceMember, FinanceWorkspaceInvite } from '../../types'
 import { supabase } from '../../lib/supabase'
 import { toCents, fromCents, formatBRL } from '../../lib/money'
@@ -9,18 +9,34 @@ import { downloadTransactionsCsv } from '../../lib/financeCsv'
 import { useAuth } from '../../contexts/AuthContext'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import { UserAvatar } from '../../components/UserAvatar'
 
-// ─── Mobile context ────────────────────────────────────────────────────────────
-// Lets nested components (modals, tabs) adapt their layout without threading an
-// `isMobile` prop through every call site.
+// Shared primitives (modal/drawer/emoji picker, mobile context, design tokens)
+// live in ./ui so the works submodule reuses them instead of duplicating.
+import {
+  Modal, Drawer, EmojiInput,
+  FinanceMobileContext, useFinanceMobile, MOBILE_NAV_HEIGHT,
+  inputStyle, labelStyle, tabularNums, segTrackStyle, segBtnStyle,
+  primaryBtnStyle, ghostBtnStyle, cardSurfaceStyle, sectionCaptionStyle,
+  FIN_ACCENT, FIN_ACCENT_TEXT, FIN_POS, FIN_NEG, FIN_POS_SOFT, FIN_NEG_SOFT, FIN_WARN,
+} from './ui'
 
-const FinanceMobileContext = createContext(false)
-const useFinanceMobile = () => useContext(FinanceMobileContext)
+const FinanceProjectsTab = lazy(() => import('./projects'))
 
-// Height reserved for the fixed mobile bottom navigation (incl. elevated FAB).
-const MOBILE_NAV_HEIGHT = 64
+// Imported from the file rather than the './projects' barrel on purpose: the
+// barrel re-exports the tab component, which would pull the whole submodule
+// into the main chunk and defeat the lazy split above.
+import { useProjectsSummary } from './projects/useProjectsSummary'
 
-type TabId = 'overview' | 'transactions' | 'budgets' | 'accounts' | 'goals' | 'categories' | 'recurring'
+// Single source of truth for the tabs: the union, the localStorage validator and
+// the CustomEvent whitelist below all derive from this array, so adding a tab in
+// one place can't silently desync the other two.
+const TAB_IDS = ['overview', 'transactions', 'budgets', 'accounts', 'goals', 'categories', 'recurring', 'projects'] as const
+type TabId = typeof TAB_IDS[number]
+
+function isTabId(value: unknown): value is TabId {
+  return typeof value === 'string' && (TAB_IDS as readonly string[]).includes(value)
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -69,272 +85,6 @@ const ACCOUNT_TYPE_ICONS: Record<string, string> = {
   cash: '💵',
 }
 
-// ─── Input styles ─────────────────────────────────────────────────────────────
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 10px',
-  border: '1px solid var(--color-border)',
-  borderRadius: 6,
-  fontSize: 14,
-  backgroundColor: 'var(--color-bg)',
-  color: 'var(--color-text)',
-  outline: 'none',
-  boxSizing: 'border-box',
-}
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 600,
-  color: 'var(--color-text-muted)',
-  marginBottom: 4,
-  display: 'block',
-}
-
-// ─── Finance palette ────────────────────────────────────────────────────────
-// Maps the "Controle Financeiro" design tokens onto the site's CSS variables so
-// the module keeps the same contrast as the rest of the app (decision: graphite
-// accent, income green, expense red). Use these instead of hardcoded hexes.
-const FIN_ACCENT = 'var(--color-btn-primary)'          // primary buttons / active emphasis (graphite)
-const FIN_ACCENT_TEXT = 'var(--color-btn-primary-text)'
-const FIN_POS = 'var(--color-done)'                    // income
-const FIN_NEG = 'var(--color-error)'                   // expense
-const FIN_POS_SOFT = 'rgba(16,185,129,0.13)'
-const FIN_NEG_SOFT = 'rgba(239,68,68,0.13)'
-const FIN_WARN = '#f59e0b'                             // attention / overdue (kept semantic)
-
-// Numeric figures use tabular-nums so columns of money align (design parity).
-const tabularNums: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' }
-
-// ─── Segmented control (pill toggle) ──────────────────────────────────────────
-// Matches the design's Família/Individual, Lateral/Topo, Todos/Receitas/Despesas
-// toggles: a subtle track with a raised "surface" pill for the active option.
-const segTrackStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  background: 'var(--color-bg-secondary)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 8,
-  padding: 3,
-}
-
-function segBtnStyle(active: boolean, opts?: { wide?: boolean }): React.CSSProperties {
-  return {
-    flex: opts?.wide ? 1 : undefined,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    border: 'none',
-    background: active ? 'var(--color-surface)' : 'transparent',
-    color: active ? 'var(--color-text)' : 'var(--color-text-subtle)',
-    fontSize: opts?.wide ? 13.5 : 12.5,
-    fontWeight: active ? 600 : 500,
-    padding: opts?.wide ? '8px 12px' : '5px 12px',
-    borderRadius: 6,
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-    boxShadow: active ? '0 1px 2px rgba(0,0,0,0.12)' : 'none',
-    transition: 'background 0.12s, color 0.12s',
-  }
-}
-
-// Primary (graphite) call-to-action button.
-const primaryBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  border: 'none',
-  background: FIN_ACCENT,
-  color: FIN_ACCENT_TEXT,
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '9px 14px',
-  borderRadius: 8,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-}
-
-// Subtle/secondary outlined button.
-const ghostBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  border: '1px solid var(--color-border)',
-  background: 'var(--color-surface)',
-  color: 'var(--color-text-subtle)',
-  fontSize: 13,
-  fontWeight: 500,
-  padding: '8px 12px',
-  borderRadius: 8,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-}
-
-// Card surface used across the redesigned tabs.
-const cardSurfaceStyle: React.CSSProperties = {
-  background: 'var(--color-surface)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 12,
-}
-
-// Uppercase section caption (e.g. "EVOLUÇÃO MENSAL").
-const sectionCaptionStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 600,
-  letterSpacing: '0.05em',
-  textTransform: 'uppercase',
-  color: 'var(--color-text-muted)',
-  margin: 0,
-}
-
-// ─── Modal wrapper ────────────────────────────────────────────────────────────
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  const isMobile = useFinanceMobile()
-
-  if (isMobile) {
-    return (
-      <div
-        className="finance-sheet-overlay"
-        onClick={onClose}
-        style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
-      >
-        <div
-          className="finance-sheet-panel finance-safe-bottom"
-          onClick={e => e.stopPropagation()}
-          style={{ backgroundColor: 'var(--color-bg)', borderTop: '1px solid var(--color-border)', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: '8px 18px 20px', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 -8px 32px rgba(0,0,0,0.3)', WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'] }}
-        >
-          {/* Drag handle */}
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 12px' }}>
-            <div style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: 'var(--color-border)' }} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, position: 'sticky', top: 0 }}>
-            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--color-text)' }}>{title}</h3>
-            <button onClick={onClose} style={{ border: 'none', background: 'var(--color-surface)', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, width: 36, height: 36, flexShrink: 0 }}>
-              <X size={18} />
-            </button>
-          </div>
-          {children}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div
-      className="finance-sheet-overlay"
-      onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}
-    >
-      <div
-        className="finance-modal-panel"
-        onClick={e => e.stopPropagation()}
-        style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 24, width: 420, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>{title}</h3>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, padding: 4 }}>
-            <X size={16} />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-// ─── Right-side drawer (desktop transaction create/edit) ──────────────────────
-
-function Drawer({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
-  return (
-    <div
-      className="finance-drawer-overlay"
-      onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(16,20,24,0.4)', display: 'flex', justifyContent: 'flex-end' }}
-    >
-      <div
-        className="finance-drawer-panel"
-        onClick={e => e.stopPropagation()}
-        style={{ width: 430, maxWidth: '100%', height: '100%', background: 'var(--color-surface)', display: 'flex', flexDirection: 'column', boxShadow: '-14px 0 44px rgba(0,0,0,0.22)' }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text)' }}>{title}</div>
-          <button onClick={onClose} style={{ width: 32, height: 32, border: 'none', background: 'transparent', borderRadius: 7, color: 'var(--color-text-subtle)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <X size={20} />
-          </button>
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>{children}</div>
-        {footer && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid var(--color-border)', flexShrink: 0 }}>{footer}</div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Emoji Input ──────────────────────────────────────────────────────────────
-
-const EMOJI_QUICK_PICKS = [
-  '🍔','🍕','☕','🛒','🍺','🍽️','🥗','🍰',
-  '🚗','✈️','🚌','⛽','🚂','🛵','🚲','🛺',
-  '🏠','💡','🔑','🛋️','🧹','🏡','🪴','🛁',
-  '❤️','💊','🏥','💪','🧘','🏋️','🩺','🧬',
-  '🎮','🎬','🎵','📺','🎸','🎭','🎲','🃏',
-  '📚','🎓','💻','📝','🔬','📐','🖊️','📖',
-  '👕','👟','💍','🛍️','👜','🧴','🧣','💄',
-  '💰','💵','💳','📈','🐷','🏦','💼','📊',
-  '🎯','🏆','🌴','🚀','⭐','🌟','🎁','🎊',
-  '📦','🌿','🧩','🎪','🪙','🔧','🏗️','⚡',
-]
-
-function EmojiInput({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
-  const { t } = useLanguage()
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div>
-      <label style={labelStyle}>{label}</label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, backgroundColor: 'var(--color-surface)', flexShrink: 0 }}>
-          {value || '?'}
-        </div>
-        <input
-          style={{ ...inputStyle, flex: 1 }}
-          type="text"
-          value={value}
-          onChange={e => onChange(e.target.value.trim())}
-          placeholder={t('finance_emoji_placeholder')}
-          maxLength={8}
-        />
-        <button
-          type="button"
-          onClick={() => setOpen(o => !o)}
-          style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 12, flexShrink: 0 }}
-        >
-          {open ? '▲' : '▼'}
-        </button>
-      </div>
-      {open && (
-        <div style={{ marginTop: 8, padding: 10, border: '1px solid var(--color-border)', borderRadius: 8, backgroundColor: 'var(--color-surface)' }}>
-          <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--color-text-muted)', fontWeight: 600 }}>{t('finance_emoji_suggestions')}</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {EMOJI_QUICK_PICKS.map(em => (
-              <button
-                key={em}
-                type="button"
-                onClick={() => { onChange(em); setOpen(false) }}
-                style={{ width: 32, height: 32, border: value === em ? '2px solid var(--color-text)' : '1px solid var(--color-border)', borderRadius: 6, backgroundColor: value === em ? 'var(--color-active)' : 'transparent', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}
-              >
-                {em}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── Recurring entry generation ───────────────────────────────────────────────
 
 async function ensureRecurringEntries(
@@ -373,7 +123,14 @@ async function ensureRecurringEntries(
 
 // ─── Partner profile type ─────────────────────────────────────────────────────
 
-interface PartnerProfile { id: string; email: string; display_name: string | null }
+interface PartnerProfile {
+  id: string
+  email: string
+  display_name: string | null
+  avatar_emoji?: string | null
+  avatar_color?: string | null
+  avatar_url?: string | null
+}
 
 // ─── Data hook ────────────────────────────────────────────────────────────────
 
@@ -402,30 +159,38 @@ function useFinanceData() {
   const [familyCategories, setFamilyCategories] = useState<FinanceCategory[]>([])
   const [loading, setLoading] = useState(true)
 
+  // Keyed by the fields actually read, not by the `user` object: supabase-js
+  // re-emits SIGNED_IN whenever the tab regains focus, handing AuthContext a
+  // brand-new `user` instance for the same account. Depending on the object
+  // would re-run this load, flip `loading` back to true and unmount every tab
+  // below it — wiping their local state (see the auth callback in AuthContext).
+  const userId = user?.id
+  const userEmail = user?.email
+
   const load = useCallback(async () => {
-    if (!user) return
+    if (!userId) return
     setLoading(true)
-    await supabase.rpc('bootstrap_finance_categories', { p_user_id: user.id })
+    await supabase.rpc('bootstrap_finance_categories', { p_user_id: userId })
     const [accs, cats, txs, buds, gls, ctbs, recs, rEnts, ownedShares, incShares, shTxs, shBuds] = await Promise.all([
-      supabase.from('finance_accounts').select('*').eq('user_id', user.id).order('created_at'),
-      supabase.from('finance_categories').select('*').eq('user_id', user.id).is('workspace_id', null).order('type').order('name'),
-      supabase.from('finance_transactions').select('*').eq('user_id', user.id).order('date', { ascending: false }).order('created_at', { ascending: false }),
-      supabase.from('finance_budgets').select('*').eq('user_id', user.id),
+      supabase.from('finance_accounts').select('*').eq('user_id', userId).order('created_at'),
+      supabase.from('finance_categories').select('*').eq('user_id', userId).is('workspace_id', null).order('type').order('name'),
+      supabase.from('finance_transactions').select('*').eq('user_id', userId).order('date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('finance_budgets').select('*').eq('user_id', userId),
       supabase.from('finance_goals').select('*').order('deadline'),
       supabase.from('finance_goal_contributions').select('*').order('date', { ascending: false }),
-      supabase.from('finance_recurring').select('*').eq('user_id', user.id).order('created_at'),
-      supabase.from('finance_recurring_entries').select('*').eq('user_id', user.id).order('due_date'),
-      supabase.from('finance_goal_shares').select('*').eq('owner_id', user.id),
-      supabase.from('finance_goal_shares').select('*').eq('shared_with_user_id', user.id),
-      supabase.from('finance_transactions').select('*').eq('shared_with_user_id', user.id).order('date', { ascending: false }).order('created_at', { ascending: false }),
-      supabase.from('finance_budgets').select('*').eq('shared_with_user_id', user.id),
+      supabase.from('finance_recurring').select('*').eq('user_id', userId).order('created_at'),
+      supabase.from('finance_recurring_entries').select('*').eq('user_id', userId).order('due_date'),
+      supabase.from('finance_goal_shares').select('*').eq('owner_id', userId),
+      supabase.from('finance_goal_shares').select('*').eq('shared_with_user_id', userId),
+      supabase.from('finance_transactions').select('*').eq('shared_with_user_id', userId).order('date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('finance_budgets').select('*').eq('shared_with_user_id', userId),
     ])
 
     // Load workspace data
     const { data: memberRow } = await supabase
       .from('finance_workspace_members')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .maybeSingle()
 
     let ws: FinanceWorkspace | null = null
@@ -462,23 +227,23 @@ function useFinanceData() {
       .from('finance_workspace_invites')
       .select('*')
       .eq('status', 'pending')
-      .or(`invited_user_id.eq.${user.id},invited_email.eq.${user.email}`)
+      .or(`invited_user_id.eq.${userId},invited_email.eq.${userEmail}`)
 
     // Collect all partner IDs (include workspace members)
     const partnerIdSet = new Set<string>()
     ;(ownedShares.data ?? []).forEach((s: Record<string, string>) => partnerIdSet.add(s.shared_with_user_id))
     ;(incShares.data ?? []).forEach((s: Record<string, string>) => partnerIdSet.add(s.owner_id))
-    ;(ctbs.data ?? []).forEach((c: Record<string, string>) => { if (c.user_id !== user.id) partnerIdSet.add(c.user_id) })
+    ;(ctbs.data ?? []).forEach((c: Record<string, string>) => { if (c.user_id !== userId) partnerIdSet.add(c.user_id) })
     ;(shTxs.data ?? []).forEach((tx: Record<string, string>) => partnerIdSet.add(tx.user_id))
     ;(shBuds.data ?? []).forEach((b: Record<string, string>) => partnerIdSet.add(b.user_id))
-    wsMembers.forEach(m => { if (m.user_id !== user.id) partnerIdSet.add(m.user_id) })
-    wsTxs.forEach(tx => { if (tx.user_id !== user.id) partnerIdSet.add(tx.user_id) })
-    wsInvites.forEach(inv => { if (inv.invited_by !== user.id) partnerIdSet.add(inv.invited_by) })
-    partnerIdSet.delete(user.id)
+    wsMembers.forEach(m => { if (m.user_id !== userId) partnerIdSet.add(m.user_id) })
+    wsTxs.forEach(tx => { if (tx.user_id !== userId) partnerIdSet.add(tx.user_id) })
+    wsInvites.forEach(inv => { if (inv.invited_by !== userId) partnerIdSet.add(inv.invited_by) })
+    partnerIdSet.delete(userId)
 
     let profilesMap = new Map<string, PartnerProfile>()
     if (partnerIdSet.size > 0) {
-      const { data: profs } = await supabase.from('profiles').select('id, email, display_name').in('id', [...partnerIdSet])
+      const { data: profs } = await supabase.from('profiles').select('id, email, display_name, avatar_emoji, avatar_color, avatar_url').in('id', [...partnerIdSet])
       ;(profs ?? []).forEach((p: PartnerProfile) => profilesMap.set(p.id, p))
     }
 
@@ -489,7 +254,7 @@ function useFinanceData() {
     setGoals((gls.data as FinanceGoal[]) ?? [])
     setContributions(
       ((ctbs.data ?? []) as FinanceGoalContribution[]).map(c =>
-        ({ ...c, contributor_profile: c.user_id !== user.id ? (profilesMap.get(c.user_id) ?? undefined) : undefined })
+        ({ ...c, contributor_profile: c.user_id !== userId ? (profilesMap.get(c.user_id) ?? undefined) : undefined })
       )
     )
     setGoalShares(
@@ -503,7 +268,7 @@ function useFinanceData() {
     setPartnerProfiles([...profilesMap.values()])
 
     setWorkspace(ws)
-    setWorkspaceMembers(wsMembers.map(m => ({ ...m, profile: m.user_id === user.id ? { email: user.email ?? '', display_name: null } : (profilesMap.get(m.user_id) ?? undefined) })))
+    setWorkspaceMembers(wsMembers.map(m => ({ ...m, profile: m.user_id === userId ? { email: userEmail ?? '', display_name: null } : (profilesMap.get(m.user_id) ?? undefined) })))
     setWorkspaceInvites(wsInvites.map(inv => ({ ...inv, inviter_profile: profilesMap.get(inv.invited_by) ?? undefined })))
     setPendingInvitesForMe((myPendingInvites as FinanceWorkspaceInvite[]) ?? [])
     setFamilyTransactions(wsTxs)
@@ -515,15 +280,15 @@ function useFinanceData() {
     setRecurring(recItems)
     let entries = (rEnts.data as FinanceRecurringEntry[]) ?? []
     if (recItems.length > 0) {
-      const added = await ensureRecurringEntries(recItems, entries, user.id)
+      const added = await ensureRecurringEntries(recItems, entries, userId)
       if (added > 0) {
-        const { data: fresh } = await supabase.from('finance_recurring_entries').select('*').eq('user_id', user.id).order('due_date')
+        const { data: fresh } = await supabase.from('finance_recurring_entries').select('*').eq('user_id', userId).order('due_date')
         entries = (fresh as FinanceRecurringEntry[]) ?? entries
       }
     }
     setRecurringEntries(entries)
     setLoading(false)
-  }, [user])
+  }, [userId, userEmail])
 
   useEffect(() => { load() }, [load])
 
@@ -562,9 +327,7 @@ function UserPicker({ label, value, onChange, knownPartners }: {
       <label style={labelStyle}>{label}</label>
       {selected ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: 6, backgroundColor: 'var(--color-bg)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: 'var(--color-active)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'var(--color-text)', flexShrink: 0 }}>
-            {displayName(selected).charAt(0).toUpperCase()}
-          </div>
+          <UserAvatar name={displayName(selected)} seed={selected.email} emoji={selected.avatar_emoji} color={selected.avatar_color} url={selected.avatar_url} size={28} />
           <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text)' }}>{displayName(selected)}</span>
           <button type="button" onClick={() => onChange('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', borderRadius: 4, padding: 2 }}><X size={14} /></button>
         </div>
@@ -575,9 +338,7 @@ function UserPicker({ label, value, onChange, knownPartners }: {
               {knownPartners.map(p => (
                 <button type="button" key={p.id} onClick={() => onChange(p.id)}
                   style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', fontSize: 12, color: 'var(--color-text)' }}>
-                  <div style={{ width: 18, height: 18, borderRadius: '50%', backgroundColor: 'var(--color-active)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'var(--color-text)' }}>
-                    {displayName(p).charAt(0).toUpperCase()}
-                  </div>
+                  <UserAvatar name={displayName(p)} seed={p.email} emoji={p.avatar_emoji} color={p.avatar_color} url={p.avatar_url} size={18} />
                   {displayName(p)}
                 </button>
               ))}
@@ -592,9 +353,7 @@ function UserPicker({ label, value, onChange, knownPartners }: {
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: 'none', backgroundColor: 'transparent', cursor: 'pointer', textAlign: 'left' }}
                   onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-hover)')}
                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: 'var(--color-active)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'var(--color-text)', flexShrink: 0 }}>
-                    {displayName(p).charAt(0).toUpperCase()}
-                  </div>
+                  <UserAvatar name={displayName(p)} seed={p.email} emoji={p.avatar_emoji} color={p.avatar_color} url={p.avatar_url} size={28} />
                   <div>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--color-text)' }}>{displayName(p)}</p>
                     <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)' }}>{p.email}</p>
@@ -674,9 +433,7 @@ function InviteAutocomplete({ value, onChange, onSubmit, sending, excludeIds }: 
               style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: 'none', backgroundColor: 'transparent', cursor: 'pointer', textAlign: 'left' }}
               onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-hover)')}
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: 'var(--color-active)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'var(--color-text)', flexShrink: 0 }}>
-                {(p.display_name || p.email).charAt(0).toUpperCase()}
-              </div>
+              <UserAvatar name={p.display_name || p.email} seed={p.email} emoji={p.avatar_emoji} color={p.avatar_color} url={p.avatar_url} size={28} />
               <div style={{ minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.display_name || p.email}</p>
                 <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</p>
@@ -1353,8 +1110,10 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
   onNavigate: (tab: TabId) => void
 }) {
   const { t } = useLanguage()
+  const { user } = useAuth()
   const isMobile = useFinanceMobile()
   const [confirm, setConfirm] = useState<{ entryId: string; action: 'pay' | 'skip' } | null>(null)
+  const projectsSummary = useProjectsSummary(user?.id)
   const monthTxs = transactions.filter(tx => tx.date.startsWith(month))
 
   const income = monthTxs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0)
@@ -1486,7 +1245,7 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
       </div>
 
       {/* Sector shortcuts */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: 14 }}>
         {sectorCard('accounts', <CreditCard size={16} />, t('finance_tab_accounts'),
           fmt(accountsBalance),
           accounts.length === 1 ? t('finance_overview_accounts_sub', { n: accounts.length }) : t('finance_overview_accounts_sub_plural', { n: accounts.length }),
@@ -1503,6 +1262,14 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
           upcomingEntries.length > 0 ? String(upcomingEntries.length) : '—',
           upcomingEntries.length === 1 ? t('finance_overview_recurring_sub', { n: upcomingEntries.length }) : t('finance_overview_recurring_sub_plural', { n: upcomingEntries.length }),
           'recurring')}
+        {/* Works spending never becomes a transaction — this consolidated total
+            is the only place the cash flow sees it. */}
+        {sectorCard('projects', <HardHat size={16} />, t('finance_tab_projects'),
+          projectsSummary.total > 0 ? fmt(projectsSummary.total) : '—',
+          projectsSummary.count === 1
+            ? t('finance_overview_projects_sub', { n: projectsSummary.count })
+            : t('finance_overview_projects_sub_plural', { n: projectsSummary.count }),
+          'projects')}
       </div>
 
       {/* Monthly evolution */}
@@ -2437,9 +2204,7 @@ function GoalShareModal({ goal, shares, onClose, onAddShare, onRemoveShare, part
                 const name = p?.display_name || p?.email || s.shared_with_user_id
                 return (
                   <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
-                    <div style={{ width: 30, height: 30, borderRadius: '50%', backgroundColor: 'var(--color-active)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: 'var(--color-text)', flexShrink: 0 }}>
-                      {name.charAt(0).toUpperCase()}
-                    </div>
+                    <UserAvatar name={name} seed={p?.email} emoji={p?.avatar_emoji} color={p?.avatar_color} url={p?.avatar_url} size={30} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--color-text)' }}>{name}</p>
                       {p?.email && p.display_name && <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)' }}>{p.email}</p>}
@@ -3212,6 +2977,7 @@ const FINANCE_NAV: { id: TabId; icon: React.ReactNode }[] = [
   { id: 'goals', icon: <Star size={18} /> },
   { id: 'categories', icon: <Tag size={18} /> },
   { id: 'recurring', icon: <RefreshCw size={18} /> },
+  { id: 'projects', icon: <HardHat size={18} /> },
 ]
 
 function tabLabelKey(id: TabId): `finance_tab_${TabId}` {
@@ -3267,7 +3033,7 @@ function FinanceSidebar({ tab, onSelect, accountsBalance, accountCount }: {
   )
 }
 
-const MORE_TABS: TabId[] = ['accounts', 'goals', 'categories', 'recurring']
+const MORE_TABS: TabId[] = ['accounts', 'goals', 'categories', 'recurring', 'projects']
 
 function MobileBottomNav({ tab, onSelect, onMore, onQuickAdd }: {
   tab: TabId
@@ -3316,14 +3082,18 @@ function MoreMenuSheet({ current, onSelect, onClose }: {
   onClose: () => void
 }) {
   const { t } = useLanguage()
-  const items: { id: TabId; icon: React.ReactNode; label: string }[] = [
-    { id: 'accounts', icon: <CreditCard size={20} />, label: t('finance_tab_accounts') },
-    { id: 'goals', icon: <Star size={20} />, label: t('finance_tab_goals') },
-    { id: 'categories', icon: <Tag size={20} />, label: t('finance_tab_categories') },
-    { id: 'recurring', icon: <RefreshCw size={20} />, label: t('finance_tab_recurring') },
-  ]
+  // Derived from MORE_TABS/FINANCE_NAV instead of a parallel hardcoded list:
+  // a tab added to MORE_TABS but forgotten here becomes unreachable on mobile,
+  // since it is not in the bottom bar either.
+  const items = MORE_TABS.map(id => ({
+    id,
+    icon: FINANCE_NAV.find(n => n.id === id)?.icon,
+    label: t(tabLabelKey(id)),
+  }))
   return (
-    <Modal title={t('finance_nav_more')} onClose={onClose}>
+    // A navigation sheet, not a form: there is nothing typed to lose, and
+    // tapping the backdrop to dismiss is the expected bottom-sheet gesture.
+    <Modal title={t('finance_nav_more')} onClose={onClose} dismissOnBackdrop>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         {items.map(it => {
           const active = current === it.id
@@ -3509,9 +3279,7 @@ function WorkspaceModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {members.map(m => (
                 <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 8, backgroundColor: 'var(--color-surface)' }}>
-                  <div style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: m.role === 'owner' ? '#f59e0b18' : 'var(--color-active)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14, fontWeight: 700, color: m.role === 'owner' ? '#f59e0b' : 'var(--color-text)' }}>
-                    {getMemberName(m).charAt(0).toUpperCase()}
-                  </div>
+                  <UserAvatar name={getMemberName(m)} seed={m.profile?.email} emoji={m.profile?.avatar_emoji} color={m.profile?.avatar_color} url={m.profile?.avatar_url} size={32} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {getMemberName(m)} {m.user_id === user?.id && <span style={{ fontSize: 10, color: 'var(--color-text)', fontWeight: 600 }}>(você)</span>}
@@ -3655,7 +3423,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   const [wsModalOpen, setWsModalOpen] = useState(false)
   const [tab, setTab] = useState<TabId>(() => {
     const saved = localStorage.getItem('finance_active_tab')
-    return (saved === 'overview' || saved === 'transactions' || saved === 'budgets' || saved === 'accounts' || saved === 'goals' || saved === 'categories' || saved === 'recurring') ? saved as TabId : 'overview'
+    return isTabId(saved) ? saved : 'overview'
   })
 
   // Desktop navigation layout: 'side' (Lateral) or 'top' (Topo). Persisted.
@@ -3680,8 +3448,8 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   // Listen for tab change events dispatched by sidebar
   useEffect(() => {
     const handler = (e: Event) => {
-      const tabId = (e as CustomEvent<string>).detail as TabId
-      if (['overview','transactions','budgets','accounts','goals','categories','recurring'].includes(tabId)) {
+      const tabId = (e as CustomEvent<string>).detail
+      if (isTabId(tabId)) {
         setTab(tabId)
       }
     }
@@ -3882,7 +3650,9 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     await reload()
   }
 
-  const monthNavVisible = tab !== 'goals' && tab !== 'categories' && tab !== 'recurring'
+  // Works ("Obras") spans the whole project lifetime, so a month selector would
+  // be misleading there — same reasoning as goals/categories/recurring.
+  const monthNavVisible = tab !== 'goals' && tab !== 'categories' && tab !== 'recurring' && tab !== 'projects'
 
   // Desktop nav arrangement (mobile always uses the bottom nav).
   const showSidebar = !isMobile && direction === 'side'
@@ -4105,6 +3875,14 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                 onMarkPaid={handleMarkPaid}
                 onSkip={skipEntry}
               />
+            )}
+            {tab === 'projects' && (
+              <Suspense fallback={<div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>}>
+                {/* The real workspace, regardless of the Individual/Family view
+                    toggle — sharing an obra is decided per obra in its form,
+                    and tying it to the view mode made obras silently private. */}
+                <FinanceProjectsTab workspaceId={workspace?.id ?? null} accounts={activeAccounts} />
+              </Suspense>
             )}
           </>
         )}

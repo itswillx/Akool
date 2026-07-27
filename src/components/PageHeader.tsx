@@ -3,9 +3,10 @@ import { FileText, Pencil, Layers, ChevronDown, CheckSquare, UserPlus, FileDown 
 import type { Page, PageType } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
-import { usePagePresence } from '../hooks/usePagePresence'
+import { usePagePresence, type PresenceUser } from '../hooks/usePagePresence'
 import { useLanguage } from '../i18n/LanguageContext'
 import SharePageModal from './SharePageModal'
+import { UserAvatar } from './UserAvatar'
 
 const ICONS = [
   '📄','📝','📋','📊','📈','📉','🗒️','🗂️','📁','📂',
@@ -40,30 +41,24 @@ function useTypeOptions() {
   ]
 }
 
-function PresenceAvatar({ name, email }: { name: string | null; email: string }) {
-  const label = name || email
-  const initial = label[0]?.toUpperCase() ?? '?'
+function PresenceAvatar({ user: presence }: { user: PresenceUser }) {
+  const label = presence.display_name || presence.email
   const [hovered, setHovered] = useState(false)
   const { t } = useLanguage()
 
-  const colors = ['#4f6ef7', '#e96c6c', '#43c59e', '#f0a500', '#9b59b6']
-  const colorIndex = (email.charCodeAt(0) + email.charCodeAt(email.length - 1)) % colors.length
-  const bg = colors[colorIndex]
-
   return (
-    <div style={{ position: 'relative' }}
+    <div style={{ position: 'relative', borderRadius: '50%', border: '2px solid var(--color-bg)' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div style={{
-        width: 28, height: 28, borderRadius: '50%',
-        backgroundColor: bg, display: 'flex', alignItems: 'center',
-        justifyContent: 'center', fontSize: 12, fontWeight: 700,
-        color: '#fff', border: '2px solid var(--color-bg)', cursor: 'default',
-        flexShrink: 0,
-      }}>
-        {initial}
-      </div>
+      <UserAvatar
+        name={label}
+        seed={presence.email}
+        emoji={presence.avatar_emoji}
+        color={presence.avatar_color}
+        url={presence.avatar_url}
+        size={28}
+      />
       {hovered && (
         <div style={{
           position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%',
@@ -188,7 +183,7 @@ export default function PageHeader({ page, isMobile = false }: PageHeaderProps) 
           {activeUsers.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: -4 }}>
               {activeUsers.slice(0, 5).map(u => (
-                <PresenceAvatar key={u.user_id} name={u.display_name} email={u.email} />
+                <PresenceAvatar key={u.user_id} user={u} />
               ))}
               {activeUsers.length > 5 && (
                 <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: 'var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', border: '2px solid var(--color-bg)' }}>

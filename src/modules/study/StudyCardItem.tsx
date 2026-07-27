@@ -4,6 +4,7 @@ import type { StudyCard, StudyCheckpoint, StudyQuizAnswer } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { MarkdownText } from '../../components/MarkdownText'
 import { cardProgress } from '../../lib/studyProgress'
+import { isQuizAnswered, isQuizCorrect, isQuizPassed, quizScore } from '../../lib/studyQuiz'
 import { isCardOverdue } from '../../lib/studySchedule'
 import type { StudyCardPatch } from './useStudyTopics'
 import { ProgressBar, SectionLabel } from './StudyBits'
@@ -95,20 +96,29 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
     onUpdate({ resources: card.resources.filter(r => r.id !== id) })
   }
 
-  // Answers lock after the first pick (retry = clear all), so the score can't
+  // Answers lock after the first pick (retry = clear), so the score can't
   // be gamed by flipping until it turns green.
-  const answerQuiz = (id: string, answer: StudyQuizAnswer) => {
+  const answerBoolean = (id: string, answer: StudyQuizAnswer) => {
     const question = card.quiz.find(q => q.id === id)
     if (!question || question.userAnswer !== null) return
-    onUpdate({ quiz: card.quiz.map(q => (q.id === id ? { ...q, userAnswer: answer } : q)) })
+    onUpdate({ quiz: card.quiz.map(q => (q.id === id && q.kind !== 'choice' ? { ...q, userAnswer: answer } : q)) })
+  }
+
+  const answerChoice = (id: string, optionIndex: number) => {
+    const question = card.quiz.find(q => q.id === id)
+    if (!question || question.userAnswer !== null) return
+    onUpdate({ quiz: card.quiz.map(q => (q.id === id && q.kind === 'choice' ? { ...q, userAnswer: optionIndex } : q)) })
   }
 
   const resetQuiz = () => {
     onUpdate({ quiz: card.quiz.map(q => ({ ...q, userAnswer: null })) })
   }
 
-  const quizAnswered = card.quiz.filter(q => q.userAnswer !== null).length
-  const quizRight = card.quiz.filter(q => q.userAnswer !== null && q.userAnswer === q.answer).length
+  const resetWrongQuiz = () => {
+    onUpdate({ quiz: card.quiz.map(q => (isQuizCorrect(q) ? q : { ...q, userAnswer: null })) })
+  }
+
+  const { answered: quizAnswered, right: quizRight } = quizScore(card.quiz)
 
   return (
     <div style={embedded
@@ -480,39 +490,27 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
               {quizExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </span>
           </div>
+          {quizExpanded && quizAnswered > 0 && !isQuizPassed(card.quiz) && (
+            <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginBottom: 6 }}>
+              {t('study_quiz_pass_hint')}
+            </div>
+          )}
           {quizExpanded && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {card.quiz.map((question, index) => {
-              const answered = question.userAnswer !== null
-              const gotIt = answered && question.userAnswer === question.answer
-              const pill = (option: StudyQuizAnswer) => {
-                const chosen = question.userAnswer === option
-                const isCorrectOption = question.answer === option
-                const highlightCorrect = answered && !gotIt && isCorrectOption
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    disabled={answered}
-                    onClick={() => answerQuiz(question.id, option)}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 11px', borderRadius: 999,
-                      fontSize: 11.5, fontWeight: 600, cursor: answered ? 'default' : 'pointer',
-                      border: chosen
-                        ? `1px solid ${gotIt ? '#22c55e' : '#ef4444'}`
-                        : highlightCorrect ? '1px solid #22c55e' : '1px solid var(--color-border)',
-                      backgroundColor: chosen ? (gotIt ? '#22c55e1c' : '#ef44441c') : 'transparent',
-                      color: chosen
-                        ? (gotIt ? '#22c55e' : '#ef4444')
-                        : highlightCorrect ? '#22c55e' : answered ? 'var(--color-text-muted)' : 'var(--color-text)',
-                      opacity: answered && !chosen && !highlightCorrect ? 0.55 : 1,
-                    }}
-                  >
-                    {option === 'certo' ? <Check size={11} /> : <X size={11} />}
-                    {option === 'certo' ? t('study_quiz_true') : t('study_quiz_false')}
-                  </button>
-                )
-              }
+              const answered = isQuizAnswered(question)
+              const gotIt = isQuizCorrect(question)
+              const feedback = (wrongText: string) => (
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: gotIt ? '#22c55e' : '#ef4444' }}>
+                  {gotIt ? t('study_quiz_feedback_right') : wrongText}
+                </span>
+              )
+              const explanation = answered && question.explanation && (
+                <div style={{ marginTop: 5, padding: '6px 9px', borderRadius: 8, backgroundColor: 'var(--color-hover)', fontSize: 12, lineHeight: 1.45, color: 'var(--color-text-muted)', overflowWrap: 'anywhere' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{t('study_quiz_explanation')}: </span>
+                  {question.explanation}
+                </div>
+              )
               return (
                 <div key={question.id} style={{ padding: '5px 2px', opacity: answered ? 0.7 : 1 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
@@ -523,17 +521,80 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                       <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--color-text)', overflowWrap: 'anywhere' }}>
                         {question.statement}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-                        {pill('certo')}
-                        {pill('errado')}
-                        {answered && (
-                          <span style={{ fontSize: 11.5, fontWeight: 600, color: gotIt ? '#22c55e' : '#ef4444' }}>
-                            {gotIt
-                              ? t('study_quiz_feedback_right')
-                              : t('study_quiz_feedback_wrong', { answer: question.answer === 'certo' ? t('study_quiz_true') : t('study_quiz_false') })}
-                          </span>
-                        )}
-                      </div>
+                      {question.kind === 'choice' ? (
+                        <>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, marginTop: 5 }}>
+                            {question.options.map((option, optionIndex) => {
+                              const chosen = question.userAnswer === optionIndex
+                              const highlightCorrect = answered && !gotIt && question.answer === optionIndex
+                              return (
+                                <button
+                                  key={optionIndex}
+                                  type="button"
+                                  disabled={answered}
+                                  onClick={() => answerChoice(question.id, optionIndex)}
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'flex-start', gap: 6, padding: '4px 11px', borderRadius: 10,
+                                    fontSize: 12, fontWeight: 600, textAlign: 'left', cursor: answered ? 'default' : 'pointer',
+                                    border: chosen
+                                      ? `1px solid ${gotIt ? '#22c55e' : '#ef4444'}`
+                                      : highlightCorrect ? '1px solid #22c55e' : '1px solid var(--color-border)',
+                                    backgroundColor: chosen ? (gotIt ? '#22c55e1c' : '#ef44441c') : 'transparent',
+                                    color: chosen
+                                      ? (gotIt ? '#22c55e' : '#ef4444')
+                                      : highlightCorrect ? '#22c55e' : answered ? 'var(--color-text-muted)' : 'var(--color-text)',
+                                    opacity: answered && !chosen && !highlightCorrect ? 0.55 : 1,
+                                  }}
+                                >
+                                  <span style={{ flexShrink: 0 }}>{String.fromCharCode(65 + optionIndex)})</span>
+                                  <span style={{ overflowWrap: 'anywhere' }}>{option}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                          {answered && (
+                            <div style={{ marginTop: 5 }}>
+                              {feedback(t('study_quiz_feedback_wrong_choice', {
+                                answer: `${String.fromCharCode(65 + question.answer)}) ${question.options[question.answer]}`,
+                              }))}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+                          {(['certo', 'errado'] as const).map(option => {
+                            const chosen = question.userAnswer === option
+                            const highlightCorrect = answered && !gotIt && question.answer === option
+                            return (
+                              <button
+                                key={option}
+                                type="button"
+                                disabled={answered}
+                                onClick={() => answerBoolean(question.id, option)}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 11px', borderRadius: 999,
+                                  fontSize: 11.5, fontWeight: 600, cursor: answered ? 'default' : 'pointer',
+                                  border: chosen
+                                    ? `1px solid ${gotIt ? '#22c55e' : '#ef4444'}`
+                                    : highlightCorrect ? '1px solid #22c55e' : '1px solid var(--color-border)',
+                                  backgroundColor: chosen ? (gotIt ? '#22c55e1c' : '#ef44441c') : 'transparent',
+                                  color: chosen
+                                    ? (gotIt ? '#22c55e' : '#ef4444')
+                                    : highlightCorrect ? '#22c55e' : answered ? 'var(--color-text-muted)' : 'var(--color-text)',
+                                  opacity: answered && !chosen && !highlightCorrect ? 0.55 : 1,
+                                }}
+                              >
+                                {option === 'certo' ? <Check size={11} /> : <X size={11} />}
+                                {option === 'certo' ? t('study_quiz_true') : t('study_quiz_false')}
+                              </button>
+                            )
+                          })}
+                          {answered && feedback(t('study_quiz_feedback_wrong', {
+                            answer: question.answer === 'certo' ? t('study_quiz_true') : t('study_quiz_false'),
+                          }))}
+                        </div>
+                      )}
+                      {explanation}
                     </div>
                   </div>
                 </div>
@@ -542,14 +603,26 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
           </div>
           )}
           {quizExpanded && quizAnswered > 0 && (
-            <button
-              onClick={resetQuiz}
-              type="button"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 11.5, fontWeight: 600, padding: 0 }}
-            >
-              <RotateCcw size={11} />
-              {t('study_quiz_retry')}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 6 }}>
+              <button
+                onClick={resetQuiz}
+                type="button"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 11.5, fontWeight: 600, padding: 0 }}
+              >
+                <RotateCcw size={11} />
+                {t('study_quiz_retry')}
+              </button>
+              {quizAnswered === card.quiz.length && quizRight < quizAnswered && (
+                <button
+                  onClick={resetWrongQuiz}
+                  type="button"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11.5, fontWeight: 600, padding: 0 }}
+                >
+                  <RotateCcw size={11} />
+                  {t('study_quiz_retry_wrong')}
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}

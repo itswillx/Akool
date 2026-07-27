@@ -1,4 +1,9 @@
-import type { StudyCard, StudyCheckpoint, StudyLog, StudyTopic, StudyTopicStatus } from '../types'
+import type { StudyCard, StudyLog, StudyTopic, StudyTopicStatus } from '../types'
+import { isQuizCorrect, isQuizPassed } from './studyQuiz'
+
+// The slice of a card that progress math needs — quiz answers count toward
+// the bar alongside checkpoints.
+type ProgressCard = Pick<StudyCard, 'checkpoints' | 'quiz'>
 
 export interface StudyProgress {
   done: number
@@ -6,46 +11,50 @@ export interface StudyProgress {
   pct: number
 }
 
-function progressOf(lists: StudyCheckpoint[][]): StudyProgress {
+function progressOf(cards: ProgressCard[]): StudyProgress {
   let done = 0
   let total = 0
-  for (const list of lists) {
-    total += list.length
-    for (const item of list) if (item.completed) done++
+  for (const card of cards) {
+    total += card.checkpoints.length + card.quiz.length
+    for (const item of card.checkpoints) if (item.completed) done++
+    for (const question of card.quiz) if (isQuizCorrect(question)) done++
   }
   return { done, total, pct: total === 0 ? 0 : Math.round((done / total) * 100) }
 }
 
-export function cardProgress(card: Pick<StudyCard, 'checkpoints'>): StudyProgress {
-  return progressOf([card.checkpoints])
+export function cardProgress(card: ProgressCard): StudyProgress {
+  return progressOf([card])
 }
 
-export function topicProgress(cards: Pick<StudyCard, 'checkpoints'>[]): StudyProgress {
-  return progressOf(cards.map(c => c.checkpoints))
+export function topicProgress(cards: ProgressCard[]): StudyProgress {
+  return progressOf(cards)
 }
 
 // ─── Roadmap step progression ────────────────────────────────────────────────
 
 export type StudyStepState = 'completed' | 'current' | 'locked'
 
-// A card with no checkpoints counts as COMPLETE for roadmap progression
-// (nothing actionable inside it must not block the trail forever). NOTE:
-// intentionally different from studySchedule.isCardOverdue, which treats an
-// empty past-due card as incomplete — overdue is an attention signal,
-// progression is navigation.
-export function isCardComplete(card: Pick<StudyCard, 'checkpoints'>): boolean {
-  return card.checkpoints.every(p => p.completed)
+// A card with no checkpoints and no quiz counts as COMPLETE for roadmap
+// progression (nothing actionable inside it must not block the trail
+// forever). With a quiz, completion also requires passing it (all questions
+// answered, >= QUIZ_PASS_PCT correct) — so a step can show as completed while
+// its progress bar sits below 100% (passed with 70-99%; "retry wrong ones"
+// closes the gap). NOTE: intentionally different from
+// studySchedule.isCardOverdue, which treats an empty past-due card as
+// incomplete — overdue is an attention signal, progression is navigation.
+export function isCardComplete(card: ProgressCard): boolean {
+  return card.checkpoints.every(p => p.completed) && isQuizPassed(card.quiz)
 }
 
 // Index of the first non-complete card ("current step"); -1 when every card
 // is complete or there are no cards.
-export function currentStepIndex(cards: Pick<StudyCard, 'checkpoints'>[]): number {
+export function currentStepIndex(cards: ProgressCard[]): number {
   return cards.findIndex(card => !isCardComplete(card))
 }
 
 // Completed wins even after the current index, so out-of-order completion
 // still shows green; everything else past the current step is locked.
-export function stepState(index: number, cards: Pick<StudyCard, 'checkpoints'>[]): StudyStepState {
+export function stepState(index: number, cards: ProgressCard[]): StudyStepState {
   if (isCardComplete(cards[index])) return 'completed'
   return index === currentStepIndex(cards) ? 'current' : 'locked'
 }
@@ -98,7 +107,7 @@ export interface AreaProgress {
 
 export function progressByArea(
   topics: Pick<StudyTopic, 'id' | 'area'>[],
-  cardsByTopic: Record<string, Pick<StudyCard, 'checkpoints'>[]>,
+  cardsByTopic: Record<string, ProgressCard[]>,
 ): AreaProgress[] {
   const map = new Map<string, { topics: number; done: number; total: number }>()
   for (const topic of topics) {

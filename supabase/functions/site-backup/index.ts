@@ -7,6 +7,22 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
   .map((o: string) => o.trim())
   .filter(Boolean);
 
+// Every public-schema table the backup captures, in FK dependency order:
+// restore inserts in this order and clears in reverse, so referenced tables
+// (e.g. study_topics) must come before their dependents (study_cards/logs).
+// Tables that exist in the database but are deliberately NOT listed:
+// - site_backups / site_backup_settings: the backup system's own registry and
+//   config — clearing/rewriting them mid-restore would corrupt the very
+//   backup being restored.
+// - profile_secrets: plaintext AI credentials (see migration 20260708100000).
+//   Copying secrets into backup archives would leak them; the table is locked
+//   to service role and users can re-enter keys after a restore.
+// - page_presence: ephemeral realtime presence rows; stale by definition,
+//   nothing to restore.
+// - mindmap_contents / finance_statements: legacy tables with zero references
+//   in the app code — the current app can neither read nor write them, so
+//   their data is dead weight and their exact schema is unmanaged here.
+//   Decide to drop or re-integrate them before adding to this list.
 const BACKUP_TABLES = [
   "profiles",
   "invite_codes",
@@ -31,10 +47,23 @@ const BACKUP_TABLES = [
   "finance_goal_contributions",
   "finance_recurring_entries",
   "finance_workspace_invites",
+  "finance_projects",
+  "finance_project_stages",
+  "finance_suppliers",
+  "finance_project_items",
+  "finance_project_quotes",
+  "finance_project_expenses",
   "notifications",
+  "quick_notes",
+  "study_topics",
+  "study_cards",
+  "study_logs",
 ] as const;
 
-const STORAGE_BUCKETS = ["note-images", "project-card-images", "transaction-photos"] as const;
+// All buckets the app writes to (verified against src usages and the bucket
+// migrations). The site-backups bucket itself is the backup destination and
+// is intentionally not copied into itself.
+const STORAGE_BUCKETS = ["note-images", "project-card-images", "transaction-photos", "project-expense-files", "avatars"] as const;
 const BACKUP_BUCKET = "site-backups";
 const MAX_BACKUPS = 10;
 const STORAGE_PAGE_SIZE = 1000;

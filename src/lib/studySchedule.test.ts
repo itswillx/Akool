@@ -73,13 +73,20 @@ describe('distributeDueDates', () => {
 
 describe('isCardOverdue', () => {
   it('is overdue only past due with unfinished checkpoints', () => {
-    expect(isCardOverdue({ due_date: '2026-07-19', checkpoints: [cp(false)] }, '2026-07-20')).toBe(true)
-    expect(isCardOverdue({ due_date: '2026-07-19', checkpoints: [cp(true), cp(true)] }, '2026-07-20')).toBe(false)
-    expect(isCardOverdue({ due_date: '2026-07-20', checkpoints: [cp(false)] }, '2026-07-20')).toBe(false)
-    expect(isCardOverdue({ due_date: null, checkpoints: [cp(false)] }, '2026-07-20')).toBe(false)
+    expect(isCardOverdue({ due_date: '2026-07-19', checkpoints: [cp(false)], quiz: [] }, '2026-07-20')).toBe(true)
+    expect(isCardOverdue({ due_date: '2026-07-19', checkpoints: [cp(true), cp(true)], quiz: [] }, '2026-07-20')).toBe(false)
+    expect(isCardOverdue({ due_date: '2026-07-20', checkpoints: [cp(false)], quiz: [] }, '2026-07-20')).toBe(false)
+    expect(isCardOverdue({ due_date: null, checkpoints: [cp(false)], quiz: [] }, '2026-07-20')).toBe(false)
   })
 
   it('treats an empty past-due card as overdue', () => {
-    expect(isCardOverdue({ due_date: '2026-07-19', checkpoints: [] }, '2026-07-20')).toBe(true)
+    expect(isCardOverdue({ due_date: '2026-07-19', checkpoints: [], quiz: [] }, '2026-07-20')).toBe(true)
+  })
+
+  it('counts unanswered or wrong quiz questions as unfinished work', () => {
+    const quiz = [{ id: 'q1', statement: 'x', answer: 'certo' as const, userAnswer: null }]
+    expect(isCardOverdue({ due_date: '2026-07-19', checkpoints: [cp(true)], quiz }, '2026-07-20')).toBe(true)
+    const rightQuiz = [{ ...quiz[0], userAnswer: 'certo' as const }]
+    expect(isCardOverdue({ due_date: '2026-07-19', checkpoints: [cp(true)], quiz: rightQuiz }, '2026-07-20')).toBe(false)
   })
 })

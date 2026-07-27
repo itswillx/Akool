@@ -6,11 +6,15 @@ import { supabase } from '../lib/supabase'
 import { sanitizeIlikeTerm } from '../lib/profileSearch'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
+import { UserAvatar } from './UserAvatar'
 
 interface UserProfile {
   id: string
   email: string
   display_name: string | null
+  avatar_emoji?: string | null
+  avatar_color?: string | null
+  avatar_url?: string | null
 }
 
 interface SharePageModalProps {
@@ -136,7 +140,7 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
     setLoadingShares(true)
     const { data } = await supabase
       .from('page_shares')
-      .select('*, profiles!page_shares_shared_with_user_id_profiles_fkey(email, display_name)')
+      .select('*, profiles!page_shares_shared_with_user_id_profiles_fkey(email, display_name, avatar_emoji, avatar_color, avatar_url)')
       .eq('page_id', pageId)
       .order('created_at', { ascending: true })
     if (data) {
@@ -212,14 +216,6 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
   const displayName = (s: PageShare) =>
     s.profile?.display_name || s.profile?.email || t('share_untitled_user')
 
-  const avatarInitial = (s: PageShare) =>
-    (s.profile?.display_name || s.profile?.email || '?')[0].toUpperCase()
-
-  const avatarColor = (email: string) => {
-    const colors = ['#4f6ef7', '#e96c6c', '#43c59e', '#f0a500', '#9b59b6']
-    return colors[(email.charCodeAt(0) + email.charCodeAt(email.length - 1)) % colors.length]
-  }
-
   return (
     <>
       <div
@@ -285,9 +281,7 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
                   key={p.id}
                   style={{ display: 'flex', alignItems: 'center', padding: '9px 14px', borderBottom: '1px solid var(--color-border)', gap: 10 }}
                 >
-                  <div style={{ width: 30, height: 30, borderRadius: '50%', backgroundColor: avatarColor(p.email), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                    {(p.display_name || p.email)[0].toUpperCase()}
-                  </div>
+                  <UserAvatar name={p.display_name || p.email} seed={p.email} emoji={p.avatar_emoji} color={p.avatar_color} url={p.avatar_url} size={30} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {p.display_name && <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.display_name}</p>}
                     <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</p>
@@ -334,15 +328,7 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
                 key={s.id}
                 style={{ display: 'flex', alignItems: 'center', padding: '9px 20px', gap: 10 }}
               >
-                {/* Avatar */}
-                <div style={{
-                  width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
-                  backgroundColor: avatarColor(s.profile?.email ?? ''),
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 13, fontWeight: 700, color: '#fff',
-                }}>
-                  {avatarInitial(s)}
-                </div>
+                <UserAvatar name={displayName(s)} seed={s.profile?.email} emoji={s.profile?.avatar_emoji} color={s.profile?.avatar_color} url={s.profile?.avatar_url} size={34} />
 
                 {/* Name + email */}
                 <div style={{ flex: 1, minWidth: 0 }}>

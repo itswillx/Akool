@@ -51,6 +51,13 @@ const QUIZ_MARKER_RE = /^#{0,4}\s*\*{0,2}Quiz(?:\s*\([^)]*\))?\s*:?\s*\*{0,2}\s*
 const QUIZ_ITEM_RE = /^[-*]\s+\[\s*(C|E|V|F|Certo|Errado|Verdadeiro|Falso)\s*\]\s+(.+)$/i
 // Fallback: "- afirmação (Certo)" / "- afirmação — Errado" at end of line.
 const QUIZ_ITEM_SUFFIX_RE = /^[-*]\s+(.+?)\s*(?:[—–-]\s*|\(\s*)(Certo|Errado|Verdadeiro|Falso)\s*\)?\s*$/i
+// "- [Q] pergunta" — opens a multiple-choice question; its alternatives
+// follow as checkbox sub-items ("- [ ] opção" / "- [x] correta").
+const QUIZ_CHOICE_STEM_RE = /^[-*]\s+\[\s*Q\s*\]\s+(.+)$/i
+const QUIZ_OPTION_RE = /^[-*]\s+\[([ xX])\]\s+(.+)$/
+// "Justificativa: ...", "> Explicação: ...", "**Justificativa:** ..." —
+// attaches to the preceding quiz question.
+const QUIZ_EXPLANATION_RE = /^(?:>\s*)?\*{0,2}(?:Justificativa|Explica[cç][aã]o)\s*:?\s*\*{0,2}\s*:?\s*(.+)$/i
 
 function normalizeQuizAnswer(raw: string): StudyQuizAnswer {
   return /^(c|v|certo|verdadeiro)$/i.test(raw.trim()) ? 'certo' : 'errado'
@@ -117,10 +124,37 @@ function parseCardBlock(title: string, lines: string[], warnings: string[]): Par
   let sawQuizMarker = false
   let section: 'description' | 'checkpoints' | 'resources' | 'quiz' = 'description'
 
+  // Multiple-choice question being assembled ("- [Q] stem" seen, collecting
+  // its "- [ ]"/"- [x]" alternatives until the next question or section).
+  let pendingChoice: { statement: string; options: string[]; correctIndex: number | null; explanation?: string } | null = null
+
+  const flushPendingChoice = () => {
+    if (!pendingChoice) return
+    const { statement, options, correctIndex, explanation } = pendingChoice
+    pendingChoice = null
+    if (options.length < 2) {
+      warnings.push(`"${title}": pergunta de múltipla escolha ignorada (menos de 2 alternativas): ${statement}`)
+      return
+    }
+    if (correctIndex === null) {
+      warnings.push(`"${title}": pergunta de múltipla escolha ignorada (nenhuma alternativa marcada com [x]): ${statement}`)
+      return
+    }
+    quiz.push({
+      kind: 'choice',
+      id: crypto.randomUUID(),
+      statement,
+      options,
+      answer: correctIndex,
+      userAnswer: null,
+      ...(explanation ? { explanation } : {}),
+    })
+  }
+
   for (const rawLine of lines) {
     const line = rawLine.trim()
-    if (CHECKPOINTS_MARKER_RE.test(line)) { section = 'checkpoints'; continue }
-    if (RESOURCES_MARKER_RE.test(line)) { section = 'resources'; continue }
+    if (CHECKPOINTS_MARKER_RE.test(line)) { flushPendingChoice(); section = 'checkpoints'; continue }
+    if (RESOURCES_MARKER_RE.test(line)) { flushPendingChoice(); section = 'resources'; continue }
     if (QUIZ_MARKER_RE.test(line)) { section = 'quiz'; sawQuizMarker = true; continue }
 
     if (section === 'description') {
@@ -153,16 +187,56 @@ function parseCardBlock(title: string, lines: string[], warnings: string[]): Par
     }
 
     if (section === 'quiz') {
-      const quizMatch = line.match(QUIZ_ITEM_RE) ?? line.match(QUIZ_ITEM_SUFFIX_RE)
-      if (quizMatch) {
-        // QUIZ_ITEM_RE captures (answer, statement); the suffix fallback
-        // captures (statement, answer) — disambiguated by normalizing group 1.
-        const [first, second] = [quizMatch[1], quizMatch[2]]
-        const isPrefix = /^(c|e|v|f|certo|errado|verdadeiro|falso)$/i.test(first.trim())
+      // Order matters: explanations are plain lines; "[Q]" must win over the
+      // C/E item regex; "[ ]/[x]" options must be claimed before the
+      // suffix fallback can misread them.
+      const explanationMatch = line.match(QUIZ_EXPLANATION_RE)
+      if (explanationMatch) {
+        const text = explanationMatch[1].trim()
+        if (pendingChoice) pendingChoice.explanation = text
+        else if (quiz.length > 0) quiz[quiz.length - 1].explanation = text
+        continue
+      }
+      const stemMatch = line.match(QUIZ_CHOICE_STEM_RE)
+      if (stemMatch) {
+        flushPendingChoice()
+        pendingChoice = { statement: stemMatch[1].trim(), options: [], correctIndex: null }
+        continue
+      }
+      const booleanMatch = line.match(QUIZ_ITEM_RE)
+      if (booleanMatch) {
+        flushPendingChoice()
         quiz.push({
           id: crypto.randomUUID(),
-          statement: (isPrefix ? second : first).trim(),
-          answer: normalizeQuizAnswer(isPrefix ? first : second),
+          statement: booleanMatch[2].trim(),
+          answer: normalizeQuizAnswer(booleanMatch[1]),
+          userAnswer: null,
+        })
+        continue
+      }
+      const optionMatch = line.match(QUIZ_OPTION_RE)
+      if (optionMatch) {
+        if (!pendingChoice) {
+          warnings.push(`"${title}": alternativa de quiz fora de uma pergunta [Q], ignorada: ${line}`)
+          continue
+        }
+        if (/x/i.test(optionMatch[1])) {
+          if (pendingChoice.correctIndex !== null) {
+            warnings.push(`"${title}": mais de uma alternativa marcada com [x] em "${pendingChoice.statement}" — a primeira foi mantida`)
+          } else {
+            pendingChoice.correctIndex = pendingChoice.options.length
+          }
+        }
+        pendingChoice.options.push(optionMatch[2].trim())
+        continue
+      }
+      const suffixMatch = line.match(QUIZ_ITEM_SUFFIX_RE)
+      if (suffixMatch) {
+        flushPendingChoice()
+        quiz.push({
+          id: crypto.randomUUID(),
+          statement: suffixMatch[1].trim(),
+          answer: normalizeQuizAnswer(suffixMatch[2]),
           userAnswer: null,
         })
         continue
@@ -184,27 +258,36 @@ function parseCardBlock(title: string, lines: string[], warnings: string[]): Par
       resources.push({ id: crypto.randomUUID(), title: bareMatch[2]?.trim() || bareMatch[1], url: bareMatch[1] })
       continue
     }
-    // A "- [C] ..." item right after the resources means the model forgot the
-    // "Quiz:" marker — recover by switching sections (once, with a warning).
+    // A "- [C] ..." or "- [Q] ..." item right after the resources means the
+    // model forgot the "Quiz:" marker — recover by switching sections (once,
+    // with a warning). Bare checkboxes are NOT a trigger: stray "- [ ]" lines
+    // among resources stay ignored.
     const strayQuizMatch = line.match(QUIZ_ITEM_RE)
-    if (strayQuizMatch) {
+    const strayStemMatch = strayQuizMatch ? null : line.match(QUIZ_CHOICE_STEM_RE)
+    if (strayQuizMatch || strayStemMatch) {
       section = 'quiz'
       if (!sawQuizMarker) {
         sawQuizMarker = true
         warnings.push(`"${title}": quiz encontrado sem o marcador "Quiz:"`)
       }
-      quiz.push({
-        id: crypto.randomUUID(),
-        statement: strayQuizMatch[2].trim(),
-        answer: normalizeQuizAnswer(strayQuizMatch[1]),
-        userAnswer: null,
-      })
+      if (strayQuizMatch) {
+        quiz.push({
+          id: crypto.randomUUID(),
+          statement: strayQuizMatch[2].trim(),
+          answer: normalizeQuizAnswer(strayQuizMatch[1]),
+          userAnswer: null,
+        })
+      } else if (strayStemMatch) {
+        pendingChoice = { statement: strayStemMatch[1].trim(), options: [], correctIndex: null }
+      }
       continue
     }
     if (PLAIN_BULLET_RE.test(line)) {
       warnings.push(`Recurso ignorado (sem URL http/https): ${line}`)
     }
   }
+
+  flushPendingChoice()
 
   const description = descriptionLines.join('\n').trim()
 

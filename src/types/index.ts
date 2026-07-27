@@ -1,5 +1,15 @@
 export type PageType = 'note' | 'drawing' | 'both' | 'todo'
 
+// Slice of another user's profile attached to shares/members/presence rows.
+// Avatar fields are optional so older query results keep type-checking.
+export interface ProfileBadge {
+  email: string
+  display_name: string | null
+  avatar_emoji?: string | null
+  avatar_color?: string | null
+  avatar_url?: string | null
+}
+
 // ─── Finance Module ──────────────────────────────────────────────────────────
 
 export type FinanceAccountType = 'checking' | 'savings' | 'credit' | 'cash'
@@ -77,7 +87,7 @@ export interface FinanceGoalShare {
   owner_id: string
   shared_with_user_id: string
   created_at: string
-  profile?: { email: string; display_name: string | null }
+  profile?: ProfileBadge
 }
 
 export interface FinanceGoalContribution {
@@ -88,7 +98,7 @@ export interface FinanceGoalContribution {
   note: string
   date: string
   created_at: string
-  contributor_profile?: { email: string; display_name: string | null }
+  contributor_profile?: ProfileBadge
 }
 
 export interface FinanceRecurring {
@@ -138,7 +148,7 @@ export interface FinanceWorkspaceMember {
   user_id: string
   role: WorkspaceMemberRole
   joined_at: string
-  profile?: { email: string; display_name: string | null }
+  profile?: ProfileBadge
 }
 
 export interface FinanceWorkspaceInvite {
@@ -150,7 +160,135 @@ export interface FinanceWorkspaceInvite {
   status: WorkspaceInviteStatus
   created_at: string
   responded_at: string | null
-  inviter_profile?: { email: string; display_name: string | null }
+  inviter_profile?: ProfileBadge
+}
+
+// ─── Finance Projects / Obras ───────────────────────────────────────────────
+// Controle de gastos de obra (construção/reforma). Entidade PRÓPRIA de
+// finanças: `finance_projects` não tem nenhuma relação com `ProjectBoard`/
+// `ProjectCard` (o kanban do módulo de projetos) — ver
+// src/modules/finance/projects/README.md. Valores monetários em centavos.
+
+export type FinanceProjectStatus = 'planning' | 'active' | 'paused' | 'done' | 'cancelled'
+export type FinanceProjectItemStatus = 'planned' | 'quoted' | 'purchased' | 'cancelled'
+export type FinanceProjectItemPriority = 'low' | 'normal' | 'high'
+export type FinancePaymentMethod =
+  | 'cash' | 'pix' | 'debit' | 'credit' | 'boleto' | 'transfer' | 'financing'
+
+// Coleção embutida (jsonb) apontando para objetos do bucket privado
+// `project-expense-files`. `path` é a chave do Storage, resolvida sob demanda
+// com resolveSignedUrl().
+export interface FinanceAttachment {
+  id: string
+  path: string
+  name: string
+  mime: string
+  size: number
+  uploaded_at: string
+}
+
+export interface FinanceProject {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  name: string
+  description: string
+  icon: string
+  color: string
+  status: FinanceProjectStatus
+  /** Teto geral em centavos. 0 = sem teto definido. */
+  budget_total: number
+  started_on: string | null
+  target_end_on: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceProjectStage {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  project_id: string
+  name: string
+  icon: string
+  color: string
+  /** Teto da etapa em centavos. 0 = sem teto. */
+  budget_amount: number
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceSupplier {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  name: string
+  phone: string
+  website: string
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceProjectItem {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  project_id: string
+  stage_id: string | null
+  name: string
+  notes: string
+  /** Decimal (60.5 m²), diferente das colunas de dinheiro. */
+  quantity: number
+  unit: string
+  /** Preço unitário estimado em centavos. */
+  estimated_unit_price: number
+  status: FinanceProjectItemStatus
+  priority: FinanceProjectItemPriority
+  chosen_quote_id: string | null
+  attachments: FinanceAttachment[]
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceProjectQuote {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  item_id: string
+  supplier_id: string | null
+  /** Nome livre da loja quando o fornecedor não foi cadastrado. */
+  supplier_name: string
+  unit_price: number
+  /** Preço fechado da loja (centavos). Vence quantity × unit_price quando presente. */
+  total_price: number | null
+  quoted_on: string | null
+  url: string
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceProjectExpense {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  project_id: string
+  stage_id: string | null
+  item_id: string | null
+  supplier_id: string | null
+  account_id: string | null
+  description: string
+  /** Valor TOTAL pago em centavos (não o valor da parcela). */
+  amount: number
+  date: string
+  payment_method: FinancePaymentMethod
+  installments: number
+  attachments: FinanceAttachment[]
+  created_at: string
+  updated_at: string
 }
 
 // ─── Notifications ──────────────────────────────────────────────────────────
@@ -184,10 +322,7 @@ export interface PageShare {
   shared_with_user_id: string
   role: PageShareRole
   created_at: string
-  profile?: {
-    email: string
-    display_name: string | null
-  }
+  profile?: ProfileBadge
 }
 
 export interface PagePresence {
@@ -301,7 +436,7 @@ export interface ProjectCard {
   sort_order: number
   created_at: string
   updated_at: string
-  assignee_profile?: { email: string; display_name: string | null }
+  assignee_profile?: ProfileBadge
 }
 
 export interface ProjectShare {
@@ -311,7 +446,7 @@ export interface ProjectShare {
   shared_with_user_id: string
   role: ProjectShareRole
   created_at: string
-  profile?: { email: string; display_name: string | null }
+  profile?: ProfileBadge
 }
 
 // ─── Quick Notes (dashboard sticky notes) ────────────────────────────────────
@@ -360,13 +495,33 @@ export interface StudyResource {
 // embedded in the parsed .md); the UI translates via i18n.
 export type StudyQuizAnswer = 'certo' | 'errado'
 
-export interface StudyQuizQuestion {
+// Certo/Errado question. `kind` is optional so rows saved before the mixed
+// format (which have no `kind` in the JSONB) deserialize as-is — absence
+// means 'boolean'.
+export interface StudyQuizBooleanQuestion {
+  kind?: 'boolean'
   id: string
   statement: string
   answer: StudyQuizAnswer
   // null = not answered yet; persisted so the score survives reloads.
   userAnswer: StudyQuizAnswer | null
+  // Short rationale shown after answering; absent in legacy quizzes.
+  explanation?: string
 }
+
+export interface StudyQuizChoiceQuestion {
+  kind: 'choice'
+  id: string
+  statement: string
+  // 2-5 alternatives in generated order (typically 4, rendered A-D).
+  options: string[]
+  // Index of the correct alternative in `options`.
+  answer: number
+  userAnswer: number | null
+  explanation?: string
+}
+
+export type StudyQuizQuestion = StudyQuizBooleanQuestion | StudyQuizChoiceQuestion
 
 export interface StudyTopic {
   id: string

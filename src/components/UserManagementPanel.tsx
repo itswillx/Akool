@@ -6,6 +6,7 @@ import { useLanguage } from '../i18n/LanguageContext'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { UserProfile } from '../contexts/AuthContext'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
+import { UserAvatar } from './UserAvatar'
 
 interface UserRow extends UserProfile {
   last_sign_in?: string | null
@@ -82,7 +83,7 @@ export default function UserManagementPanel() {
     setLoading(true)
     const { data: profiles, error } = await supabase
       .from('profiles')
-      .select('id, email, display_name, role, is_active, language, created_at, invite_slots_remaining, last_login_date')
+      .select('id, email, display_name, role, is_active, language, created_at, invite_slots_remaining, last_login_date, avatar_emoji, avatar_color, avatar_url')
       .order('created_at', { ascending: true })
 
     if (error) { showFeedback('error', error.message); setLoading(false); return }  
@@ -664,9 +665,7 @@ const UserTableRow = memo(function UserTableRow({
       >
         {/* User info */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: u.role === 'admin' ? '#fef3c7' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: u.role === 'admin' ? '#d97706' : '#6b7280' }}>
-            {u.role === 'admin' ? <Crown size={16} /> : <User size={16} />}
-          </div>
+          <UserAvatar name={u.display_name || u.email} seed={u.email} emoji={u.avatar_emoji} color={u.avatar_color} url={u.avatar_url} size={36} />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -708,9 +707,7 @@ const UserTableRow = memo(function UserTableRow({
     >
       {/* User info */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: u.role === 'admin' ? '#fef3c7' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: u.role === 'admin' ? '#d97706' : '#6b7280' }}>
-          {u.role === 'admin' ? <Crown size={15} /> : <User size={15} />}
-        </div>
+        <UserAvatar name={u.display_name || u.email} seed={u.email} emoji={u.avatar_emoji} color={u.avatar_color} url={u.avatar_url} size={32} />
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

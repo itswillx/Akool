@@ -26,7 +26,12 @@ function normalizeCard(row: StudyCard): StudyCard {
     rationale: row.rationale ?? '',
     checkpoints: (row.checkpoints ?? []) as StudyCard['checkpoints'],
     resources: (row.resources ?? []) as StudyCard['resources'],
-    quiz: ((row.quiz ?? []) as StudyCard['quiz']).map(q => ({ ...q, userAnswer: q.userAnswer ?? null })),
+    // Branch per quiz kind so TS keeps each member's userAnswer type narrow.
+    quiz: ((row.quiz ?? []) as StudyCard['quiz']).map(q =>
+      q.kind === 'choice'
+        ? { ...q, userAnswer: q.userAnswer ?? null }
+        : { ...q, userAnswer: q.userAnswer ?? null },
+    ),
   }
 }
 

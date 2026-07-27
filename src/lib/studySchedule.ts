@@ -50,12 +50,14 @@ export function distributeDueDates(startISO: string, targetISO: string, count: n
 }
 
 // A card is overdue when its due date passed and the card is not complete.
-// "Complete" here requires at least one checkpoint, all done — an empty
-// past-due card still demands attention. NOTE: intentionally different from
-// studyProgress.isCardComplete (roadmap progression), where an empty card
-// counts as complete so it never blocks the trail.
+// "Complete" here requires at least one checkpoint or quiz question, all
+// done/correct — an empty past-due card still demands attention, and a
+// past-due card with unanswered (or wrong) quiz questions counts as overdue.
+// NOTE: intentionally different from studyProgress.isCardComplete (roadmap
+// progression), where an empty card counts as complete so it never blocks
+// the trail.
 export function isCardOverdue(
-  card: Pick<StudyCard, 'due_date' | 'checkpoints'>,
+  card: Pick<StudyCard, 'due_date' | 'checkpoints' | 'quiz'>,
   todayISO: string = localDateISO(),
 ): boolean {
   if (!card.due_date || card.due_date >= todayISO) return false

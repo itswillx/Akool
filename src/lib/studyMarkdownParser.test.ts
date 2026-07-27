@@ -387,10 +387,136 @@ describe('parseStudyMarkdown', () => {
     expect(result.warnings).toEqual(['"Data centers": quiz encontrado sem o marcador "Quiz:"'])
   })
 
+  it('parses multiple-choice [Q] questions with options, correct index and explanations', () => {
+    const doc = [
+      '# Estudo: Geografia',
+      '| **Área** | Humanas |',
+      '## Card: Capitais',
+      '**Pontos de estudo:**',
+      '- [ ] Algo',
+      '**Recursos:**',
+      '- [Docs](https://example.com)',
+      '**Quiz:**',
+      '- [C] O Brasil fica na América do Sul.',
+      '  Justificativa: Localização continental básica.',
+      '- [Q] Qual é a capital do Brasil?',
+      '  - [ ] São Paulo',
+      '  - [x] Brasília',
+      '  - [ ] Rio de Janeiro',
+      '  - [ ] Salvador',
+      '  Justificativa: Brasília é a capital desde 1960.',
+    ].join('\n')
+    const result = parseStudyMarkdown(doc)
+    expect(result.warnings).toEqual([])
+    expect(result.cards[0].quiz).toHaveLength(2)
+
+    const [bool, choice] = result.cards[0].quiz
+    expect(bool).toEqual(expect.objectContaining({
+      statement: 'O Brasil fica na América do Sul.',
+      answer: 'certo',
+      userAnswer: null,
+      explanation: 'Localização continental básica.',
+    }))
+    expect(choice).toEqual(expect.objectContaining({
+      kind: 'choice',
+      statement: 'Qual é a capital do Brasil?',
+      options: ['São Paulo', 'Brasília', 'Rio de Janeiro', 'Salvador'],
+      answer: 1,
+      userAnswer: null,
+      explanation: 'Brasília é a capital desde 1960.',
+    }))
+  })
+
+  it('accepts explanation label variants (Explicação, bold, blockquote)', () => {
+    const doc = [
+      '# Estudo: Química',
+      '| **Área** | Exatas |',
+      '## Card: Água',
+      '**Pontos de estudo:**',
+      '- [ ] Algo',
+      '**Recursos:**',
+      '- [Docs](https://example.com)',
+      '**Quiz:**',
+      '- [C] A água é H2O.',
+      '> **Explicação:** Dois hidrogênios e um oxigênio.',
+    ].join('\n')
+    const quiz = parseStudyMarkdown(doc).cards[0].quiz
+    expect(quiz[0].explanation).toBe('Dois hidrogênios e um oxigênio.')
+  })
+
+  it('discards invalid [Q] questions with a warning (no [x], <2 options) and keeps the first of duplicate [x]', () => {
+    const doc = [
+      '# Estudo: História',
+      '| **Área** | Humanas |',
+      '## Card: Descobrimento',
+      '**Pontos de estudo:**',
+      '- [ ] Algo',
+      '**Recursos:**',
+      '- [Docs](https://example.com)',
+      '**Quiz:**',
+      '- [Q] Pergunta sem correta?',
+      '  - [ ] Opção A',
+      '  - [ ] Opção B',
+      '- [Q] Pergunta com uma só alternativa?',
+      '  - [x] Única',
+      '- [Q] Pergunta com duas marcadas?',
+      '  - [x] Primeira correta',
+      '  - [x] Segunda marcada',
+      '  - [ ] Errada',
+    ].join('\n')
+    const result = parseStudyMarkdown(doc)
+    expect(result.warnings.some(w => w.includes('nenhuma alternativa marcada com [x]'))).toBe(true)
+    expect(result.warnings.some(w => w.includes('menos de 2 alternativas'))).toBe(true)
+    expect(result.warnings.some(w => w.includes('mais de uma alternativa marcada com [x]'))).toBe(true)
+    expect(result.cards[0].quiz).toHaveLength(1)
+    expect(result.cards[0].quiz[0]).toEqual(expect.objectContaining({ kind: 'choice', answer: 0 }))
+  })
+
+  it('warns on checkbox options outside a [Q] question and ignores them', () => {
+    const doc = [
+      '# Estudo: Física',
+      '| **Área** | Exatas |',
+      '## Card: Luz',
+      '**Pontos de estudo:**',
+      '- [ ] Algo',
+      '**Recursos:**',
+      '- [Docs](https://example.com)',
+      '**Quiz:**',
+      '- [C] A luz tem velocidade finita.',
+      '- [x] alternativa órfã',
+    ].join('\n')
+    const result = parseStudyMarkdown(doc)
+    expect(result.cards[0].quiz).toHaveLength(1)
+    expect(result.warnings.some(w => w.includes('alternativa de quiz fora de uma pergunta [Q]'))).toBe(true)
+  })
+
+  it('recovers a [Q] question that appears after the resources without a Quiz marker', () => {
+    const doc = [
+      '# Estudo: Biologia',
+      '| **Área** | Ciências |',
+      '## Card: Células',
+      '**Pontos de estudo:**',
+      '- [ ] Algo',
+      '**Recursos:**',
+      '- [Docs](https://example.com)',
+      '- [Q] Qual organela produz energia?',
+      '  - [x] Mitocôndria',
+      '  - [ ] Ribossomo',
+    ].join('\n')
+    const result = parseStudyMarkdown(doc)
+    expect(result.cards[0].resources).toHaveLength(1)
+    expect(result.cards[0].quiz).toHaveLength(1)
+    expect(result.cards[0].quiz[0]).toEqual(expect.objectContaining({ kind: 'choice', answer: 0 }))
+    expect(result.warnings).toEqual(['"Células": quiz encontrado sem o marcador "Quiz:"'])
+  })
+
   it('adds the quiz contract and rule to the prompt only when quizCount is given', () => {
     const withQuiz = buildStudyPrompt({ title: 'Rust', quizCount: 10 })
     expect(withQuiz).toContain('**Quiz:**')
     expect(withQuiz).toContain('- [C]')
+    expect(withQuiz).toContain('- [Q]')
+    expect(withQuiz).toContain('- [x]')
+    expect(withQuiz).toContain('Justificativa:')
     expect(withQuiz).toContain('exatamente 10')
 
     expect(buildStudyPrompt({ title: 'Rust' })).not.toContain('Quiz')

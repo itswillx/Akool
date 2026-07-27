@@ -14,6 +14,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy, horizontalLi
 import { CSS } from '@dnd-kit/utilities'
 import type { ProjectBoard, ProjectColumn, ProjectCard, ProjectCardChecklistItem, ProjectCardAttachment, ProjectCardLink, ProjectShare, ProjectCardPriority, ProjectShareRole, Page } from '../types'
 import { supabase } from '../lib/supabase'
+import { UserAvatar } from './UserAvatar'
 import { sanitizeIlikeTerm } from '../lib/profileSearch'
 import { resolveSignedUrl } from '../lib/storageUrl'
 import { SignedImage } from './SignedImage'
@@ -156,14 +157,14 @@ function GhostBtn({ onClick, children }: { onClick: () => void; children: React.
   )
 }
 
-function initials(name: string) { return (name || '?').trim()[0]?.toUpperCase() ?? '?' }
-function avatarColor(seed: string) {
-  const colors = ['#4f6ef7', '#e96c6c', '#43c59e', '#f0a500', '#9b59b6', '#06b6d4']
-  const code = (seed.charCodeAt(0) || 0) + (seed.charCodeAt(seed.length - 1) || 0)
-  return colors[code % colors.length]
+interface Member {
+  id: string
+  email: string
+  display_name: string | null
+  avatar_emoji?: string | null
+  avatar_color?: string | null
+  avatar_url?: string | null
 }
-
-interface Member { id: string; email: string; display_name: string | null }
 
 // ─── Priority badge ───────────────────────────────────────────────────────────
 
@@ -229,8 +230,16 @@ function CardView({ card, priorityLabel, dragging, onClick }: { card: ProjectCar
         )}
         {card.linked_page_id && <Link2 size={12} style={{ color: '#6366f1' }} />}
         {card.assignee_profile && (
-          <span title={card.assignee_profile.display_name || card.assignee_profile.email} style={{ marginLeft: 'auto', width: 20, height: 20, borderRadius: '50%', backgroundColor: avatarColor(card.assignee_profile.email), color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {initials(card.assignee_profile.display_name || card.assignee_profile.email)}
+          <span style={{ marginLeft: 'auto', display: 'inline-flex' }}>
+            <UserAvatar
+              name={card.assignee_profile.display_name || card.assignee_profile.email}
+              seed={card.assignee_profile.email}
+              emoji={card.assignee_profile.avatar_emoji}
+              color={card.assignee_profile.avatar_color}
+              url={card.assignee_profile.avatar_url}
+              size={20}
+              title={card.assignee_profile.display_name || card.assignee_profile.email}
+            />
           </span>
         )}
       </div>
@@ -1554,7 +1563,7 @@ function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: () => vo
   const load = useCallback(async () => {
     const { data } = await supabase
       .from('project_shares')
-      .select('*, profiles!project_shares_shared_with_user_id_fkey(email, display_name)')
+      .select('*, profiles!project_shares_shared_with_user_id_fkey(email, display_name, avatar_emoji, avatar_color, avatar_url)')
       .eq('board_id', board.id)
       .order('created_at', { ascending: true })
     if (data) {
@@ -1603,7 +1612,7 @@ function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: () => vo
         <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
           {results.map(m => (
             <button key={m.id} onClick={() => add(m)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>
-              <span style={{ width: 26, height: 26, borderRadius: '50%', backgroundColor: avatarColor(m.email), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{initials(m.display_name || m.email)}</span>
+              <UserAvatar name={m.display_name || m.email} seed={m.email} emoji={m.avatar_emoji} color={m.avatar_color} url={m.avatar_url} size={26} />
               <span style={{ fontSize: 13, color: 'var(--color-text)' }}>{m.display_name || m.email}</span>
             </button>
           ))}
@@ -1613,7 +1622,7 @@ function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: () => vo
         {shares.length === 0 && <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>{t('projects_share_none')}</p>}
         {shares.map(s => (
           <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px' }}>
-            <span style={{ width: 30, height: 30, borderRadius: '50%', backgroundColor: avatarColor(s.profile?.email ?? '?'), color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{initials(s.profile?.display_name || s.profile?.email || '?')}</span>
+            <UserAvatar name={s.profile?.display_name || s.profile?.email || '?'} seed={s.profile?.email} emoji={s.profile?.avatar_emoji} color={s.profile?.avatar_color} url={s.profile?.avatar_url} size={30} />
             <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text)' }}>{s.profile?.display_name || s.profile?.email}</span>
             <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{s.role === 'editor' ? t('projects_share_role_editor') : t('projects_share_role_viewer')}</span>
             <button onClick={() => remove(s.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444', display: 'flex', padding: 4 }}><Trash2 size={14} /></button>
@@ -1707,7 +1716,9 @@ function OverviewView({ columns, cards, members }: { columns: ProjectColumn[]; c
               const w = (a.count / maxAssignee) * 100
               return (
                 <div key={a.id ?? 'none'} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: m ? avatarColor(m.email) : 'var(--color-hover)', color: m ? '#fff' : 'var(--color-text-muted)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{m ? initials(name) : '–'}</span>
+                  {m
+                    ? <UserAvatar name={name} seed={m.email} emoji={m.avatar_emoji} color={m.avatar_color} url={m.avatar_url} size={22} />
+                    : <span style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: 'var(--color-hover)', color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>–</span>}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 3 }}>
                       <span style={{ fontSize: 12.5, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
@@ -2034,7 +2045,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
     try {
       const [{ data: cols }, { data: cds }] = await Promise.all([
         supabase.from('project_columns').select('*').eq('board_id', boardId).order('sort_order', { ascending: true }),
-        supabase.from('project_cards').select('*, assignee:profiles!project_cards_assignee_user_id_fkey(email, display_name)').eq('board_id', boardId).order('sort_order', { ascending: true }),
+        supabase.from('project_cards').select('*, assignee:profiles!project_cards_assignee_user_id_fkey(email, display_name, avatar_emoji, avatar_color, avatar_url)').eq('board_id', boardId).order('sort_order', { ascending: true }),
       ])
       setColumns((cols as ProjectColumn[]) ?? [])
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2052,7 +2063,7 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
       if (board) memberIds.add(board.user_id)
       const { data: sh } = await supabase.from('project_shares').select('shared_with_user_id').eq('board_id', boardId)
       if (sh) sh.forEach((s: { shared_with_user_id: string }) => memberIds.add(s.shared_with_user_id))
-      const { data: profs } = await supabase.from('profiles').select('id, email, display_name').in('id', [...memberIds])
+      const { data: profs } = await supabase.from('profiles').select('id, email, display_name, avatar_emoji, avatar_color, avatar_url').in('id', [...memberIds])
       setMembers((profs as Member[]) ?? [])
     } finally {
       if (!silent) setBoardLoading(false)

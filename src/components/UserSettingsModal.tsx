@@ -1,12 +1,21 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
-import { X, User, Lock, Check, Shield, Sun, Moon, Gift, Copy, CheckCheck, Users, Database } from 'lucide-react'
+import { X, User, Lock, Check, Sun, Moon, Gift, Copy, CheckCheck, Users, Database, LogOut, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { PasswordInput, PasswordStrengthMeter } from './PasswordFields'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
+import { AVATAR_BUCKET, UserAvatar } from './UserAvatar'
+import { AVATAR_COLORS } from '../lib/avatar'
 import type { Lang } from '../i18n/translations'
+
+// Curated picks that read well at avatar sizes (faces, people, symbols).
+const AVATAR_EMOJIS = [
+  '😀', '😎', '🤓', '😇', '🥳', '🤠', '👻', '🤖',
+  '🦊', '🐱', '🐶', '🐼', '🦁', '🐸', '🦉', '🐝',
+  '🌟', '⚡', '🔥', '🌈', '🌻', '🍀', '🏗️', '🎯',
+]
 
 const UserManagementPanel = lazy(() => import('./UserManagementPanel'))
 const BackupPanel = lazy(() => import('../modules/backup'))
@@ -29,7 +38,7 @@ interface InviteCode {
 }
 
 export default function UserSettingsModal({ open, onClose }: Props) {
-  const { user, profile, isAdmin, changePassword, updateProfile, refreshProfile } = useAuth()
+  const { user, profile, isAdmin, changePassword, updateProfile, refreshProfile, signOut } = useAuth()
   const { t } = useLanguage()
   const { theme, setTheme } = useTheme()
   const isMobile = useIsMobile()
@@ -39,6 +48,12 @@ export default function UserSettingsModal({ open, onClose }: Props) {
   // Profile tab state
   const [displayName, setDisplayName] = useState('')
   const [language, setLanguage] = useState<Lang>('pt-BR')
+  const [avatarEmoji, setAvatarEmoji] = useState<string | null>(null)
+  const [avatarColor, setAvatarColor] = useState<string | null>(null)
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  // The emoji/color grid is collapsed by default so the profile card stays
+  // short; the avatar preview and the customize button both toggle it.
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileMsg, setProfileMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -98,8 +113,41 @@ export default function UserSettingsModal({ open, onClose }: Props) {
     if (open) {
       setDisplayName(profile?.display_name ?? '')
       setLanguage(profile?.language ?? 'pt-BR')
+      setAvatarEmoji(profile?.avatar_emoji ?? null)
+      setAvatarColor(profile?.avatar_color ?? null)
+    } else {
+      setPickerOpen(false)
     }
   }, [open, profile])
+
+  // Photo actions are self-contained (not part of the form submit): the object
+  // upload and the profile column change move together, so a picked photo can
+  // never end up orphaned in the bucket by closing the modal without saving.
+  const handlePhotoPick = async (file: File | null) => {
+    if (!file || !user || !file.type.startsWith('image/')) return
+    setAvatarBusy(true)
+    const previous = profile?.avatar_url ?? null
+    const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg'
+    const path = `${user.id}/${crypto.randomUUID()}.${ext}`
+    const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, file)
+    if (upErr) {
+      setProfileMsg({ type: 'error', text: upErr.message })
+    } else {
+      const { error } = await updateProfile({ avatar_url: path })
+      if (error) setProfileMsg({ type: 'error', text: error })
+      else if (previous) await supabase.storage.from(AVATAR_BUCKET).remove([previous])
+    }
+    setAvatarBusy(false)
+  }
+
+  const handlePhotoRemove = async () => {
+    if (!profile?.avatar_url) return
+    setAvatarBusy(true)
+    const { error } = await updateProfile({ avatar_url: null })
+    if (error) setProfileMsg({ type: 'error', text: error })
+    else await supabase.storage.from(AVATAR_BUCKET).remove([profile.avatar_url])
+    setAvatarBusy(false)
+  }
 
   useEffect(() => {
     if (open && tab === 'invites') loadInvites()
@@ -135,7 +183,12 @@ export default function UserSettingsModal({ open, onClose }: Props) {
     e.preventDefault()
     setProfileLoading(true)
     setProfileMsg(null)
-    const { error } = await updateProfile({ display_name: displayName.trim() || null, language })
+    const { error } = await updateProfile({
+      display_name: displayName.trim() || null,
+      language,
+      avatar_emoji: avatarEmoji,
+      avatar_color: avatarColor,
+    })
     setProfileMsg(error ? { type: 'error', text: error } : { type: 'success', text: t('settings_saved') })
     setProfileLoading(false)
   }
@@ -206,19 +259,72 @@ export default function UserSettingsModal({ open, onClose }: Props) {
           {/* Profile tab */}
           {tab === 'profile' && (
             <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* Avatar / role badge */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', backgroundColor: 'var(--color-bg-secondary)', borderRadius: 10 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: isAdmin ? '#fef3c7' : 'var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isAdmin ? '#d97706' : 'var(--color-text-muted)', flexShrink: 0 }}>
-                  {isAdmin ? <Shield size={20} /> : <User size={20} />}
+              {/* Avatar picker: live preview + emoji grid + color swatches + photo */}
+              <div style={{ padding: '14px 16px', backgroundColor: 'var(--color-bg-secondary)', borderRadius: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                  <button type="button" onClick={() => setPickerOpen(o => !o)} title={t('settings_avatar_customize')}
+                    style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', display: 'flex' }}>
+                    <UserAvatar
+                      name={profile?.display_name || user?.email || '?'}
+                      seed={user?.email}
+                      emoji={avatarEmoji}
+                      color={avatarColor}
+                      url={profile?.avatar_url}
+                      size={52}
+                    />
+                  </button>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>
+                      {profile?.display_name || user?.email?.split('@')[0]}
+                    </p>
+                    <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 7px', borderRadius: 6, backgroundColor: isAdmin ? '#fef3c7' : 'var(--color-border)', color: isAdmin ? '#d97706' : 'var(--color-text-muted)', display: 'inline-block', marginTop: 2 }}>
+                      {isAdmin ? t('settings_role_admin') : t('settings_role_standard')}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>
-                    {profile?.display_name || user?.email?.split('@')[0]}
-                  </p>
-                  <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 7px', borderRadius: 6, backgroundColor: isAdmin ? '#fef3c7' : 'var(--color-border)', color: isAdmin ? '#d97706' : 'var(--color-text-muted)', display: 'inline-block', marginTop: 2 }}>
-                    {isAdmin ? t('settings_role_admin') : t('settings_role_standard')}
-                  </span>
+
+                {/* The photo (when set) wins over emoji/color in every render. */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => setPickerOpen(o => !o)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, padding: '7px 11px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: pickerOpen ? 'var(--color-active)' : 'var(--color-surface)', color: 'var(--color-text)', cursor: 'pointer' }}>
+                    {pickerOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    {t('settings_avatar_customize')}
+                  </button>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, padding: '7px 11px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', cursor: 'pointer', opacity: avatarBusy ? 0.6 : 1 }}>
+                    <Camera size={13} />
+                    {t('settings_avatar_photo')}
+                    <input type="file" accept="image/*" hidden disabled={avatarBusy}
+                      onChange={e => { handlePhotoPick(e.target.files?.[0] ?? null); e.target.value = '' }} />
+                  </label>
+                  {profile?.avatar_url && (
+                    <button type="button" onClick={handlePhotoRemove} disabled={avatarBusy}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, padding: '7px 11px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-error)', cursor: 'pointer', opacity: avatarBusy ? 0.6 : 1 }}>
+                      <Trash2 size={13} />{t('settings_avatar_photo_remove')}
+                    </button>
+                  )}
                 </div>
+
+                {pickerOpen && (
+                  <div style={{ marginTop: 12 }}>
+                    <p style={{ margin: '0 0 6px', fontSize: 11.5, fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('settings_avatar_emoji_hint')}</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 10 }}>
+                      {AVATAR_EMOJIS.map(em => (
+                        <button key={em} type="button"
+                          onClick={() => setAvatarEmoji(prev => (prev === em ? null : em))}
+                          style={{ width: 28, height: 28, borderRadius: 7, fontSize: 15, lineHeight: 1, cursor: 'pointer', border: avatarEmoji === em ? '2px solid var(--color-text)' : '1px solid var(--color-border)', backgroundColor: avatarEmoji === em ? 'var(--color-active)' : 'transparent' }}>
+                          {em}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {AVATAR_COLORS.map(c => (
+                        <button key={c} type="button"
+                          onClick={() => setAvatarColor(prev => (prev === c ? null : c))}
+                          style={{ width: 24, height: 24, borderRadius: '50%', background: c, cursor: 'pointer', border: avatarColor === c ? '2.5px solid var(--color-text)' : '1px solid var(--color-border)' }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <FieldLabel label={t('settings_display_name')}>
@@ -420,6 +526,19 @@ export default function UserSettingsModal({ open, onClose }: Props) {
               )}
             </div>
           )}
+        </div>
+
+        {/* Fixed footer, outside the scrolling body: sign out lives with the
+            account info (moved here from the sidebar's "More options"). */}
+        <div style={{ borderTop: '1px solid var(--color-border)', padding: '12px 24px', flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => { onClose(); signOut() }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-error)', fontSize: 13, fontWeight: 600, padding: '6px 4px' }}
+          >
+            <LogOut size={14} />
+            {t('sidebar_signout')}
+          </button>
         </div>
       </div>
     </div>

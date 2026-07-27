@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase, createEphemeralAuthClient, recoveryLinkDetected } from '../lib/supabase'
@@ -13,6 +13,10 @@ export interface UserProfile {
   theme: 'light' | 'dark'
   invite_slots_remaining: number
   last_login_date: string | null
+  avatar_emoji: string | null
+  avatar_color: string | null
+  /** Storage PATH in the private `avatars` bucket, resolved via signed URL. */
+  avatar_url: string | null
 }
 
 interface AuthContextType {
@@ -35,7 +39,7 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<{ error: string | null }>
   completePasswordReset: (newPassword: string) => Promise<{ error: string | null }>
   cancelPasswordReset: () => Promise<void>
-  updateProfile: (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme'>>) => Promise<{ error: string | null }>
+  updateProfile: (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url'>>) => Promise<{ error: string | null }>
   refreshProfile: () => Promise<void>
 }
 
@@ -58,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from('profiles')
-      .select('id, email, display_name, role, is_active, language, theme, invite_slots_remaining, last_login_date')
+      .select('id, email, display_name, role, is_active, language, theme, invite_slots_remaining, last_login_date, avatar_emoji, avatar_color, avatar_url')
       .eq('id', userId)
       .single()
     if (data) {
@@ -70,10 +74,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Account currently reflected in `user`/`profile`. Read inside the auth
+  // callback, which closes over the initial render and cannot see the state.
+  const currentUserIdRef = useRef<string | null>(null)
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setUser(session?.user ?? null)
+      currentUserIdRef.current = session?.user?.id ?? null
       if (session?.user) {
         loadProfile(session.user.id).finally(() => setLoading(false))
       } else {
@@ -87,13 +96,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sessionStorage.setItem(RECOVERY_FLAG, '1')
       }
       if (event === 'SIGNED_OUT') sessionStorage.removeItem(RECOVERY_FLAG)
+
+      // Always: consumers read a fresh `session.access_token` at call time.
       setSession(session)
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        loadProfile(session.user.id)
+
+      const nextUser = session?.user ?? null
+      // With autoRefreshToken (the default), supabase-js listens to
+      // `visibilitychange` and re-emits SIGNED_IN every time the tab regains
+      // focus, handing us a freshly deserialized `session.user` — a new object
+      // for the very same account. Handing that identity to React invalidates
+      // every `[user]` dependency in the app: useFinanceData would re-run,
+      // flip its `loading` back to true and unmount all finance tabs, wiping
+      // their local state. So keep the previous instance when nothing changed.
+      // USER_UPDATED is the one event that must adopt the new object (email or
+      // metadata really did change).
+      const sameAccount = !!nextUser && currentUserIdRef.current === nextUser.id && event !== 'USER_UPDATED'
+      setUser(prev => (sameAccount && prev ? prev : nextUser))
+
+      if (nextUser) {
+        // Refetching on every focus would churn `profile` for no reason. The
+        // flows that genuinely need fresh data (signIn, changePassword,
+        // completePasswordReset) call loadProfile themselves.
+        if (!sameAccount) loadProfile(nextUser.id)
       } else {
         setProfile(null)
       }
+      currentUserIdRef.current = nextUser?.id ?? null
       setLoading(false)
     })
 
@@ -207,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut()
   }, [signOut])
 
-  const updateProfile = useCallback(async (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme'>>): Promise<{ error: string | null }> => {
+  const updateProfile = useCallback(async (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url'>>): Promise<{ error: string | null }> => {
     if (!user) return { error: 'Usuário não autenticado.' }
     const { error } = await supabase.from('profiles').update(data).eq('id', user.id)
     if (error) return { error: error.message }

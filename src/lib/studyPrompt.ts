@@ -12,7 +12,8 @@ export interface StudyPromptInput {
   level?: string
   objective?: string
   duration?: { qty: number; unit: DurationUnit } | null
-  // Certo/Errado questions per card; null/undefined = no quiz section.
+  // Questions per card (mixed Certo/Errado + multiple choice);
+  // null/undefined = no quiz section.
   quizCount?: number | null
 }
 
@@ -39,8 +40,15 @@ const QUIZ_CONTRACT_BLOCK = `
 **Quiz:**
 
 - [C] <afirmação VERDADEIRA sobre o conteúdo do card>
+  Justificativa: <1 frase explicando por que a afirmação está certa>
 - [E] <afirmação FALSA sobre o conteúdo do card>
-- [C] <outra afirmação verdadeira>`
+  Justificativa: <1 frase apontando o erro da afirmação>
+- [Q] <pergunta de múltipla escolha sobre o conteúdo do card>
+  - [ ] <alternativa incorreta>
+  - [x] <alternativa CORRETA>
+  - [ ] <alternativa incorreta>
+  - [ ] <alternativa incorreta>
+  Justificativa: <1 frase explicando por que essa alternativa é a correta>`
 
 export function buildStudyContract(withQuiz: boolean): string {
   return `# Estudo: <título do estudo>
@@ -108,7 +116,7 @@ export function buildStudyPrompt(input: StudyPromptInput): string {
     '- Cada card deve ter de 6 a 12 pontos de estudo: tarefas específicas e verificáveis, começando com verbo de ação (ex.: "Implementar...", "Ler...", "Explicar...", "Depurar..."). Misture teoria (ler, explicar, comparar) e prática (implementar, criar, depurar) — pelo menos 2 pontos práticos por card. Nunca temas vagos.',
     '- Cada card deve ter de 2 a 5 recursos: links de artigos e documentação para referência, com URLs reais e confiáveis (documentação oficial, artigos aprofundados, vídeos). Não invente URLs — na dúvida, use a página oficial da tecnologia.',
     ...(input.quizCount
-      ? [`- Cada card deve terminar com a seção "**Quiz:**" contendo exatamente ${input.quizCount} afirmações no formato Certo/Errado: "- [C] afirmação" quando a afirmação for verdadeira e "- [E] afirmação" quando for falsa. Misture C e E (aproximadamente metade de cada, em ordem imprevisível), cubra os conceitos centrais do card e escreva afirmações objetivas, verificáveis apenas com o conteúdo do card. Não use nenhuma outra sintaxe nos itens do quiz.`]
+      ? [`- Cada card deve terminar com a seção "**Quiz:**" contendo exatamente ${input.quizCount} perguntas, misturando dois formatos em ordem imprevisível: (1) afirmações Certo/Errado — "- [C] afirmação" quando verdadeira e "- [E] afirmação" quando falsa, com aproximadamente metade C e metade E; (2) múltipla escolha — "- [Q] pergunta" seguida de exatamente 4 alternativas como sub-itens "- [ ] alternativa", marcando a única correta com "- [x] alternativa" e variando a posição da correta entre as perguntas. Use aproximadamente metade de cada formato. TODA pergunta deve ter, na linha seguinte (após a afirmação ou após as alternativas), "Justificativa: <1 a 2 frases>" explicando a resposta com base no conteúdo do card. Cubra os conceitos centrais do card com perguntas objetivas, verificáveis apenas com o conteúdo do card. Não use nenhuma outra sintaxe nos itens do quiz.`]
       : []),
     '- Seja completo e aprofundado: o roadmap deve ser suficiente para levar a pessoa do nível informado até o objetivo sem precisar de outro guia. Não resuma por economia de espaço. A resposta será longa — isso é esperado e desejado.',
     '- Preencha a tabela de metadados (Área, Nível, Objetivo) usando os valores fornecidos; se ausentes, infira a partir do título.',

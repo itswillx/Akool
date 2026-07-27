@@ -3,6 +3,7 @@ import { BarChart3 } from 'lucide-react'
 import type { StudyCard, StudyLog, StudyTopic } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { countByStatus, logsPerDay, progressByArea, topicProgress } from '../../lib/studyProgress'
+import { quizScore } from '../../lib/studyQuiz'
 import { ProgressBar, SectionLabel } from './StudyBits'
 import { STATUS_COLOR, STATUS_LABEL_KEY, STATUS_ORDER } from './studyUi'
 
@@ -29,6 +30,12 @@ export default function StudyStats({ topics, cardsByTopic, logsByTopic, isMobile
     if (withPoints.length === 0) return 0
     return Math.round(withPoints.reduce((sum, p) => sum + p.pct, 0) / withPoints.length)
   }, [topics, cardsByTopic])
+
+  const quiz = useMemo(
+    () => quizScore(Object.values(cardsByTopic).flat().flatMap(card => card.quiz)),
+    [cardsByTopic],
+  )
+  const quizPct = quiz.answered === 0 ? 0 : Math.round((quiz.right / quiz.answered) * 100)
 
   const activity = useMemo(
     () => logsPerDay(Object.values(logsByTopic).flat(), 7),
@@ -93,6 +100,23 @@ export default function StudyStats({ topics, cardsByTopic, logsByTopic, isMobile
                 <ProgressBar pct={row.pct} height={5} />
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <SectionLabel>{t('study_stats_quiz')}</SectionLabel>
+        {quiz.answered === 0 ? (
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>{t('study_stats_quiz_empty')}</p>
+        ) : (
+          <div style={{ border: '1px solid var(--color-border)', borderRadius: 12, backgroundColor: 'var(--color-surface)', padding: 14, display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span style={{ fontSize: 26, fontWeight: 800, color: quizPct >= 70 ? '#22c55e' : 'var(--color-text)', lineHeight: 1, flexShrink: 0 }}>{quizPct}%</span>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <ProgressBar pct={quizPct} height={8} />
+              <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                {t('study_stats_quiz_hint', { right: quiz.right, answered: quiz.answered, total: quiz.total })}
+              </span>
+            </div>
           </div>
         )}
       </div>
