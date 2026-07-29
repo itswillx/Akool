@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
-import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, User, Link2, FileDown, Camera, Download, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal, Search, Zap, PanelLeft, PanelTop, HardHat } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, User, Link2, FileDown, Camera, Download, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal, Search, Zap, PanelLeft, PanelTop, HardHat, Store } from 'lucide-react'
 import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceBudget, FinanceTxType, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceWorkspace, FinanceWorkspaceMember, FinanceWorkspaceInvite } from '../../types'
 import { supabase } from '../../lib/supabase'
 import { toCents, fromCents, formatBRL } from '../../lib/money'
@@ -22,6 +22,7 @@ import {
 } from './ui'
 
 const FinanceProjectsTab = lazy(() => import('./projects'))
+const FinanceStoreTab = lazy(() => import('./store'))
 
 // Imported from the file rather than the './projects' barrel on purpose: the
 // barrel re-exports the tab component, which would pull the whole submodule
@@ -31,7 +32,7 @@ import { useProjectsSummary } from './projects/useProjectsSummary'
 // Single source of truth for the tabs: the union, the localStorage validator and
 // the CustomEvent whitelist below all derive from this array, so adding a tab in
 // one place can't silently desync the other two.
-const TAB_IDS = ['overview', 'transactions', 'budgets', 'accounts', 'goals', 'categories', 'recurring', 'projects'] as const
+const TAB_IDS = ['overview', 'transactions', 'budgets', 'accounts', 'goals', 'categories', 'recurring', 'projects', 'store'] as const
 type TabId = typeof TAB_IDS[number]
 
 function isTabId(value: unknown): value is TabId {
@@ -167,9 +168,12 @@ function useFinanceData() {
   const userId = user?.id
   const userEmail = user?.email
 
-  const load = useCallback(async () => {
+  // `silent` refreshes the data without flipping `loading` — flipping it would
+  // unmount every tab below (see the userId comment above). Used when another
+  // submodule (e.g. the store) writes a transaction and asks for a refresh.
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!userId) return
-    setLoading(true)
+    if (!opts?.silent) setLoading(true)
     await supabase.rpc('bootstrap_finance_categories', { p_user_id: userId })
     const [accs, cats, txs, buds, gls, ctbs, recs, rEnts, ownedShares, incShares, shTxs, shBuds] = await Promise.all([
       supabase.from('finance_accounts').select('*').eq('user_id', userId).order('created_at'),
@@ -2978,6 +2982,7 @@ const FINANCE_NAV: { id: TabId; icon: React.ReactNode }[] = [
   { id: 'categories', icon: <Tag size={18} /> },
   { id: 'recurring', icon: <RefreshCw size={18} /> },
   { id: 'projects', icon: <HardHat size={18} /> },
+  { id: 'store', icon: <Store size={18} /> },
 ]
 
 function tabLabelKey(id: TabId): `finance_tab_${TabId}` {
@@ -3033,7 +3038,7 @@ function FinanceSidebar({ tab, onSelect, accountsBalance, accountCount }: {
   )
 }
 
-const MORE_TABS: TabId[] = ['accounts', 'goals', 'categories', 'recurring', 'projects']
+const MORE_TABS: TabId[] = ['accounts', 'goals', 'categories', 'recurring', 'projects', 'store']
 
 function MobileBottomNav({ tab, onSelect, onMore, onQuickAdd }: {
   tab: TabId
@@ -3456,6 +3461,16 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     window.addEventListener('finance_tab_change', handler)
     return () => window.removeEventListener('finance_tab_change', handler)
   }, [])
+
+  // The store submodule writes to finance_transactions on its own (linked
+  // income/expense of a sale/purchase) and announces it here, so the
+  // Transactions tab reflects the change without an F5. Silent: a full reload
+  // would flip `loading` and unmount the tab the user is standing on.
+  useEffect(() => {
+    const handler = () => { reload({ silent: true }) }
+    window.addEventListener('finance_transactions_changed', handler)
+    return () => window.removeEventListener('finance_transactions_changed', handler)
+  }, [reload])
 
   // Derived datasets based on view mode
   const isFamily = viewMode === 'family' && !!workspace
@@ -3882,6 +3897,12 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                     toggle — sharing an obra is decided per obra in its form,
                     and tying it to the view mode made obras silently private. */}
                 <FinanceProjectsTab workspaceId={workspace?.id ?? null} accounts={activeAccounts} />
+              </Suspense>
+            )}
+            {tab === 'store' && (
+              <Suspense fallback={<div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>}>
+                {/* The header month arrows drive the store overview cards. */}
+                <FinanceStoreTab workspaceId={workspace?.id ?? null} accounts={activeAccounts} month={month} />
               </Suspense>
             )}
           </>

@@ -291,6 +291,119 @@ export interface FinanceProjectExpense {
   updated_at: string
 }
 
+// ─── Finance Store / Loja ───────────────────────────────────────────────────
+// Estoque de revenda (hardware etc.), pipeline de venda e clientes. O estoque
+// disponível é DERIVADO (comprado − vendido − reservado) em
+// src/lib/financeStoreCalc.ts; sale_items guardam snapshot de preço/custo para
+// o lucro histórico não mudar com edições no produto. Valores em centavos.
+
+export type FinanceStoreProductKind = 'unique' | 'stock'
+export type FinanceStoreCondition = 'new' | 'used'
+export type FinanceStoreSaleStatus = 'negotiating' | 'sold' | 'shipped' | 'delivered' | 'cancelled'
+export type FinanceStoreChannel =
+  | 'olx' | 'mercado_livre' | 'facebook' | 'whatsapp' | 'referral' | 'in_person' | 'other'
+
+export interface FinanceStoreProduct {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  kind: FinanceStoreProductKind
+  name: string
+  /** Categoria livre ('GPU', 'CPU'...), sugerida por datalist. */
+  category: string
+  condition: FinanceStoreCondition
+  /** Relevante para kind='unique'; vazio em produtos de estoque. */
+  serial_number: string
+  notes: string
+  /** Preço de venda pretendido em centavos. 0 = indefinido. */
+  target_price: number
+  archived: boolean
+  attachments: FinanceAttachment[]
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceStorePurchase {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  product_id: string
+  supplier_id: string | null
+  /** Sempre 1 para kind='unique' (garantido no cliente). */
+  quantity: number
+  /** Custo unitário em centavos. */
+  unit_cost: number
+  /** Frete/taxas da compra em centavos, sobre o lote inteiro. */
+  other_costs: number
+  date: string
+  account_id: string | null
+  /** Despesa gerada em finance_transactions (FK ON DELETE SET NULL). */
+  transaction_id: string | null
+  notes: string
+  attachments: FinanceAttachment[]
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceStoreCustomer {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  name: string
+  /** Telefone/WhatsApp livre. */
+  phone: string
+  city: string
+  channel: FinanceStoreChannel
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceStoreSale {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  customer_id: string | null
+  status: FinanceStoreSaleStatus
+  channel: FinanceStoreChannel
+  /** Setada quando o status vira 'sold'; data da transação de receita. */
+  sold_on: string | null
+  shipping_method: string
+  tracking_code: string
+  expected_delivery_on: string | null
+  delivered_on: string | null
+  /** Frete cobrado do cliente (entra na receita), em centavos. */
+  shipping_charged: number
+  /** Frete pago por mim (sai do lucro), em centavos. */
+  shipping_cost: number
+  /** Taxas do canal (ML etc.), em centavos. */
+  fees: number
+  account_id: string | null
+  /** Receita gerada em finance_transactions — sempre 1 por venda (FK SET NULL). */
+  transaction_id: string | null
+  notes: string
+  attachments: FinanceAttachment[]
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceStoreSaleItem {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  sale_id: string
+  product_id: string | null
+  /** Snapshot: o histórico da venda sobrevive à exclusão do produto. */
+  product_name: string
+  quantity: number
+  /** Preço unitário negociado, em centavos. */
+  unit_price: number
+  /** Snapshot do custo médio no momento da venda, em centavos. */
+  unit_cost_at_sale: number
+  created_at: string
+  updated_at: string
+}
+
 // ─── Notifications ──────────────────────────────────────────────────────────
 
 export type NotificationType =

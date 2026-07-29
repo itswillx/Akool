@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { Download, Paperclip, Trash2, X } from 'lucide-react'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
@@ -11,8 +11,9 @@ import { ATTACHMENT_BUCKET } from './useFinanceProjects'
 // Small inline preview so a receipt photo can be seen without downloading it.
 // Images resolve their signed URL once on mount (same shape as the transaction
 // photo preview in FinancePanel); anything else keeps the paperclip square.
-function AttachmentThumb({ attachment, onView }: {
+function AttachmentThumb({ attachment, bucket, onView }: {
   attachment: FinanceAttachment
+  bucket: string
   onView: (url: string) => void
 }) {
   const isImage = attachment.mime.startsWith('image/')
@@ -21,7 +22,7 @@ function AttachmentThumb({ attachment, onView }: {
   useEffect(() => {
     if (!isImage) return
     let active = true
-    resolveSignedUrl(ATTACHMENT_BUCKET, attachment.path).then(signed => {
+    resolveSignedUrl(bucket, attachment.path).then(signed => {
       if (active) setUrl(signed)
     })
     return () => { active = false }
@@ -72,11 +73,13 @@ function Lightbox({ url, name, onClose }: { url: string; name: string; onClose: 
 
 // Multi-file field for receipts and product photos. Uploads land in a private
 // bucket under `<uid>/<projectId>/`, which is what the storage policies key on,
-// and are read back through signed URLs (never getPublicUrl).
-export function AttachmentField({ projectId, value, onChange }: {
+// and are read back through signed URLs (never getPublicUrl). The bucket
+// defaults to the obras one; the store submodule passes its own.
+export function AttachmentField({ projectId, value, onChange, bucket = ATTACHMENT_BUCKET }: {
   projectId: string
   value: FinanceAttachment[]
   onChange: (next: FinanceAttachment[]) => void
+  bucket?: string
 }) {
   const { user } = useAuth()
   const { t } = useLanguage()
@@ -92,7 +95,7 @@ export function AttachmentField({ projectId, value, onChange }: {
     for (const file of Array.from(files)) {
       const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin'
       const path = `${user.id}/${projectId}/${crypto.randomUUID()}.${ext}`
-      const { error: err } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, file)
+      const { error: err } = await supabase.storage.from(bucket).upload(path, file)
       if (err) { setError(err.message); continue }
       added.push({
         id: crypto.randomUUID(),
@@ -109,12 +112,12 @@ export function AttachmentField({ projectId, value, onChange }: {
 
   const handleRemove = async (attachment: FinanceAttachment) => {
     // Drop the object as well — the jsonb column has no cascade to storage.
-    await supabase.storage.from(ATTACHMENT_BUCKET).remove([attachment.path])
+    await supabase.storage.from(bucket).remove([attachment.path])
     onChange(value.filter(a => a.id !== attachment.id))
   }
 
   const handleOpen = async (attachment: FinanceAttachment) => {
-    const url = await resolveSignedUrl(ATTACHMENT_BUCKET, attachment.path)
+    const url = await resolveSignedUrl(bucket, attachment.path)
     if (url) window.open(url, '_blank', 'noopener,noreferrer')
   }
 
@@ -125,7 +128,7 @@ export function AttachmentField({ projectId, value, onChange }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
           {value.map(a => (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 9px', border: '1px solid var(--color-border)', borderRadius: 7, background: 'var(--color-surface)' }}>
-              <AttachmentThumb attachment={a} onView={url => setViewing({ url, name: a.name })} />
+              <AttachmentThumb attachment={a} bucket={bucket} onView={url => setViewing({ url, name: a.name })} />
               <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {a.name}
               </span>
