@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
-import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, User, Link2, FileDown, Camera, Download, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal, Search, Zap, PanelLeft, PanelTop, HardHat, Store } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, Link2, FileDown, Camera, Download, Upload, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal, Search, Zap, PanelLeft, PanelTop, HardHat, Store } from 'lucide-react'
 import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceBudget, FinanceTxType, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceWorkspace, FinanceWorkspaceMember, FinanceWorkspaceInvite } from '../../types'
 import { supabase } from '../../lib/supabase'
 import { toCents, fromCents, formatBRL } from '../../lib/money'
 import { resolveSignedUrl } from '../../lib/storageUrl'
 import { sanitizeIlikeTerm } from '../../lib/profileSearch'
 import { downloadTransactionsCsv } from '../../lib/financeCsv'
+import { missingAutoBudgets } from '../../lib/financeCalc'
 import { useAuth } from '../../contexts/AuthContext'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { useIsMobile } from '../../hooks/useIsMobile'
@@ -14,7 +15,7 @@ import { UserAvatar } from '../../components/UserAvatar'
 // Shared primitives (modal/drawer/emoji picker, mobile context, design tokens)
 // live in ./ui so the works submodule reuses them instead of duplicating.
 import {
-  Modal, Drawer, EmojiInput,
+  Modal, Drawer, EmojiInput, ScopePicker,
   FinanceMobileContext, useFinanceMobile, MOBILE_NAV_HEIGHT,
   inputStyle, labelStyle, tabularNums, segTrackStyle, segBtnStyle,
   primaryBtnStyle, ghostBtnStyle, cardSurfaceStyle, sectionCaptionStyle,
@@ -24,16 +25,25 @@ import {
 const FinanceProjectsTab = lazy(() => import('./projects'))
 const FinanceStoreTab = lazy(() => import('./store'))
 
+// Lazy so the statement parsers (and, behind them, pdfjs) stay out of the
+// main finance chunk until someone actually opens the import flow.
+const ImportStatementModal = lazy(() => import('./integrations/ImportStatementModal'))
+
 // Imported from the file rather than the './projects' barrel on purpose: the
 // barrel re-exports the tab component, which would pull the whole submodule
 // into the main chunk and defeat the lazy split above.
 import { useProjectsSummary } from './projects/useProjectsSummary'
 
+// Static (non-lazy) on purpose: it is the default overview and pulls no new
+// dependency, so a Suspense flash would cost more than it saves.
+import OverviewDetailedTab from './tabs/OverviewDetailedTab'
+import CoworkspaceOverviewTab from './tabs/CoworkspaceOverviewTab'
+
 // Single source of truth for the tabs: the union, the localStorage validator and
 // the CustomEvent whitelist below all derive from this array, so adding a tab in
 // one place can't silently desync the other two.
 const TAB_IDS = ['overview', 'transactions', 'budgets', 'accounts', 'goals', 'categories', 'recurring', 'projects', 'store'] as const
-type TabId = typeof TAB_IDS[number]
+export type TabId = typeof TAB_IDS[number]
 
 function isTabId(value: unknown): value is TabId {
   return typeof value === 'string' && (TAB_IDS as readonly string[]).includes(value)
@@ -465,7 +475,7 @@ interface TxForm {
 }
 
 function TransactionModal({
-  tx, personalAccounts, familyAccounts, personalCategories, familyCategories, partners, userId, workspace, defaultShareWithFamily, onClose, onSave, onDelete,
+  tx, personalAccounts, familyAccounts, personalCategories, familyCategories, partners, userId, workspace, onClose, onSave, onDelete,
 }: {
   tx?: FinanceTransaction
   personalAccounts: FinanceAccount[]
@@ -475,7 +485,6 @@ function TransactionModal({
   partners: PartnerProfile[]
   userId: string
   workspace?: FinanceWorkspace | null
-  defaultShareWithFamily?: boolean
   onClose: () => void
   onSave: (data: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>) => Promise<void>
   onDelete?: () => Promise<void>
@@ -491,7 +500,8 @@ function TransactionModal({
     account_id: tx?.account_id ?? '',
     category_id: tx?.category_id ?? '',
     shared_with_user_id: tx?.shared_with_user_id ?? '',
-    share_with_family: tx ? !!(tx.workspace_id && workspace) : !!(defaultShareWithFamily && workspace),
+    // New transactions default to personal; editing keeps the row's scope.
+    share_with_family: tx ? !!(tx.workspace_id && workspace) : false,
   })
   // Categories/accounts depend on whether the transaction is shared with the family (workspace-scoped) or personal
   const categories = form.share_with_family ? familyCategories : personalCategories
@@ -766,7 +776,7 @@ function TransactionModal({
                   <div>
                     <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)' }}>{workspace.name}</span>
                     <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 6 }}>
-                      {form.share_with_family ? '✓ Compartilhado' : 'Apenas individual'}
+                      {form.share_with_family ? t('finance_scope_shared_on') : t('finance_scope_personal_only')}
                     </span>
                   </div>
                 </button>
@@ -891,7 +901,7 @@ function TransactionModal({
             <div>
               <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)' }}>{workspace.name}</span>
               <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 6 }}>
-                {form.share_with_family ? '✓ Compartilhado' : 'Apenas individual'}
+                {form.share_with_family ? t('finance_scope_shared_on') : t('finance_scope_personal_only')}
               </span>
             </div>
           </button>
@@ -921,9 +931,11 @@ function TransactionModal({
 const ACCOUNT_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#8b5cf6', '#f97316']
 
 function AccountModal({
-  account, onClose, onSave, onDelete,
+  account, workspace, userId, onClose, onSave, onDelete,
 }: {
   account?: FinanceAccount
+  workspace?: FinanceWorkspace | null
+  userId: string
   onClose: () => void
   onSave: (data: Omit<FinanceAccount, 'id' | 'user_id' | 'created_at'>) => Promise<void>
   onDelete?: () => Promise<void>
@@ -935,6 +947,8 @@ function AccountModal({
     initial_balance: account ? String(fromCents(account.initial_balance)) : '0',
     color: account?.color ?? '#6366f1',
     icon: account?.icon ?? '🏦',
+    credit_limit: account?.credit_limit != null ? String(fromCents(account.credit_limit)) : '',
+    workspace_id: account?.workspace_id ?? null as string | null,
   })
 
   const handleTypeChange = (accType: FinanceAccount['type']) => {
@@ -952,6 +966,9 @@ function AccountModal({
       initial_balance: toCents(form.initial_balance),
       color: form.color,
       icon: form.icon || ACCOUNT_TYPE_ICONS[form.type] || '🏦',
+      // Cleared on purpose when the account is no longer a credit card.
+      credit_limit: form.type === 'credit' && form.credit_limit.trim() ? toCents(form.credit_limit) : null,
+      workspace_id: form.workspace_id,
     })
     setSaving(false)
     onClose()
@@ -979,11 +996,27 @@ function AccountModal({
             {Object.entries(typeLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
+        {workspace && (
+          <ScopePicker
+            value={form.workspace_id}
+            onChange={ws => setForm(f => ({ ...f, workspace_id: ws }))}
+            workspaceId={workspace.id}
+            workspaceName={workspace.name}
+            disabled={!!account && account.user_id !== userId}
+          />
+        )}
         <div>
           <label style={labelStyle}>{t('finance_account_balance')}</label>
           <input style={inputStyle} type="number" step="0.01" value={form.initial_balance}
             onChange={e => setForm(f => ({ ...f, initial_balance: e.target.value }))} />
         </div>
+        {form.type === 'credit' && (
+          <div>
+            <label style={labelStyle}>{t('finance_account_credit_limit')}</label>
+            <input style={inputStyle} type="number" step="0.01" min="0" value={form.credit_limit}
+              onChange={e => setForm(f => ({ ...f, credit_limit: e.target.value }))} />
+          </div>
+        )}
         <EmojiInput label={t('finance_goal_icon')} value={form.icon} onChange={v => setForm(f => ({ ...f, icon: v }))} />
         <div>
           <label style={labelStyle}>{t('finance_account_color')}</label>
@@ -1024,72 +1057,96 @@ function AccountModal({
 // ─── Budget Modal ─────────────────────────────────────────────────────────────
 
 function BudgetModal({
-  categories, month, existing, partners, onClose, onSave,
+  budget, personalCategories, workspaceCategories, month, personalExisting, workspaceExisting, workspace, partners, onClose, onSave,
 }: {
-  categories: FinanceCategory[]
+  budget?: FinanceBudget
+  personalCategories: FinanceCategory[]
+  workspaceCategories: FinanceCategory[]
   month: string
-  existing: FinanceBudget[]
+  personalExisting: FinanceBudget[]
+  workspaceExisting: FinanceBudget[]
+  workspace?: FinanceWorkspace | null
   partners: PartnerProfile[]
   onClose: () => void
-  onSave: (data: { category_id: string; month: string; amount_limit: number; shared_with_user_id: string | null }) => Promise<void>
+  onSave: (data: { category_id: string; month: string; amount_limit: number; shared_with_user_id: string | null; workspace_id: string | null }) => Promise<void>
 }) {
   const { t } = useLanguage()
-  const expenseCats = categories.filter(c => c.type === 'expense')
-  const usedIds = new Set(existing.map(b => b.category_id))
-  const available = expenseCats.filter(c => !usedIds.has(c.id))
-  const [catId, setCatId] = useState(available[0]?.id ?? '')
-  const [limit, setLimit] = useState('')
-  const [sharedWith, setSharedWith] = useState('')
+  // null = personal budget; workspace id = coworkspace budget. A workspace
+  // budget references a workspace category, so the lists swap with the scope.
+  const [scopeWs, setScopeWs] = useState<string | null>(budget?.workspace_id ?? null)
+  const [catId, setCatId] = useState(budget?.category_id ?? '')
+  const [limit, setLimit] = useState(budget ? String(fromCents(budget.amount_limit)) : '')
+  const [sharedWith, setSharedWith] = useState(budget?.shared_with_user_id ?? '')
   const [saving, setSaving] = useState(false)
+
+  const categories = scopeWs ? workspaceCategories : personalCategories
+  const existing = scopeWs ? workspaceExisting : personalExisting
+  const expenseCats = categories.filter(c => c.type === 'expense')
+  // Exclude the budget's own category from "already used" — otherwise editing
+  // a budget hides its own category (and, if it's the only one, the whole form).
+  const usedIds = new Set(existing.filter(b => b.id !== budget?.id).map(b => b.category_id))
+  const available = expenseCats.filter(c => !usedIds.has(c.id) || c.id === budget?.category_id)
+  const effectiveCatId = catId || available[0]?.id || ''
 
   const handleSave = async () => {
     const amt = toCents(limit)
-    if (!catId || !amt || amt <= 0) return
+    if (!effectiveCatId || !amt || amt <= 0) return
     setSaving(true)
-    await onSave({ category_id: catId, month, amount_limit: amt, shared_with_user_id: sharedWith || null })
+    await onSave({
+      category_id: effectiveCatId,
+      month,
+      amount_limit: amt,
+      shared_with_user_id: scopeWs ? null : (sharedWith || null),
+      workspace_id: scopeWs,
+    })
     setSaving(false)
     onClose()
   }
 
-  if (available.length === 0) {
-    return (
-      <Modal title={t('finance_new_budget')} onClose={onClose}>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>{t('finance_all_categories_budgeted')}</p>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'transparent', color: 'var(--color-text)', cursor: 'pointer', fontSize: 14 }}>{t('finance_cancel')}</button>
-        </div>
-      </Modal>
-    )
-  }
-
   return (
-    <Modal title={t('finance_new_budget')} onClose={onClose}>
+    <Modal title={t(budget ? 'finance_edit_budget' : 'finance_new_budget')} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
-          <label style={labelStyle}>{t('finance_budget_category')}</label>
-          <select style={inputStyle} value={catId} onChange={e => setCatId(e.target.value)}>
-            {available.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={labelStyle}>{t('finance_budget_limit')}</label>
-          <input style={inputStyle} type="number" min="0" step="0.01" value={limit}
-            onChange={e => setLimit(e.target.value)} />
-        </div>
-        <UserPicker
-          label={t('finance_share_with')}
-          value={sharedWith}
-          onChange={setSharedWith}
-          knownPartners={partners}
-        />
+        {workspace && (
+          <ScopePicker
+            value={scopeWs}
+            onChange={ws => { setScopeWs(ws); setCatId('') }}
+            workspaceId={workspace.id}
+            workspaceName={workspace.name}
+          />
+        )}
+        {available.length === 0 ? (
+          <p style={{ color: 'var(--color-text-muted)', fontSize: 14, margin: 0 }}>{t('finance_all_categories_budgeted')}</p>
+        ) : (
+          <>
+            <div>
+              <label style={labelStyle}>{t('finance_budget_category')}</label>
+              <select style={inputStyle} value={effectiveCatId} onChange={e => setCatId(e.target.value)}>
+                {available.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>{t('finance_budget_limit')}</label>
+              <input style={inputStyle} type="number" min="0" step="0.01" value={limit}
+                onChange={e => setLimit(e.target.value)} />
+            </div>
+            {!scopeWs && (
+              <UserPicker
+                label={t('finance_share_with')}
+                value={sharedWith}
+                onChange={setSharedWith}
+                knownPartners={partners}
+              />
+            )}
+          </>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
         <button onClick={onClose}
           style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'transparent', color: 'var(--color-text)', cursor: 'pointer', fontSize: 14 }}>
           {t('finance_cancel')}
         </button>
-        <button onClick={handleSave} disabled={saving}
-          style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+        <button onClick={handleSave} disabled={saving || !effectiveCatId}
+          style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', cursor: saving || !effectiveCatId ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, opacity: saving || !effectiveCatId ? 0.7 : 1 }}>
           {t('finance_save')}
         </button>
       </div>
@@ -1099,7 +1156,7 @@ function BudgetModal({
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ transactions, categories, month, recurring, recurringEntries, accounts, budgets, goals, contributions, onMarkPaid, onSkipEntry, onNavigate }: {
+function OverviewTab({ transactions, categories, month, recurring, recurringEntries, accounts, budgets, goals, contributions, onMarkPaid, onSkipEntry, onNavigate, workspaceName, onOpenWorkspaceView }: {
   transactions: FinanceTransaction[]
   categories: FinanceCategory[]
   month: string
@@ -1112,6 +1169,8 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
   onMarkPaid: (entry: FinanceRecurringEntry, rec: FinanceRecurring) => void
   onSkipEntry: (entryId: string) => void
   onNavigate: (tab: TabId) => void
+  workspaceName?: string | null
+  onOpenWorkspaceView?: () => void
 }) {
   const { t } = useLanguage()
   const { user } = useAuth()
@@ -1238,6 +1297,14 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Coworkspace view entry */}
+      {workspaceName && onOpenWorkspaceView && (
+        <div>
+          <button onClick={onOpenWorkspaceView} title={t('finance_ws_view_open')} style={ghostBtnStyle}>
+            <Users size={14} />{workspaceName}<ChevronRight size={14} />
+          </button>
+        </div>
+      )}
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 14 }}>
         {summaryCard(t('finance_month_income'), income, <TrendingUp size={17} />, FIN_POS_SOFT, FIN_POS, 'var(--color-text)',
@@ -1416,17 +1483,21 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
 
 // ─── Transactions Tab ─────────────────────────────────────────────────────────
 
-function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, accounts, categories, month, onAdd, onEdit, onQuickAdd, onBulkDelete }: {
+function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, accounts, categories, workspace, workspaceCategories, workspaceAccounts, month, onAdd, onEdit, onQuickAdd, onBulkDelete, onImport }: {
   transactions: FinanceTransaction[]
   partnerTransactions: FinanceTransaction[]
   partnerProfiles: PartnerProfile[]
   accounts: FinanceAccount[]
   categories: FinanceCategory[]
+  workspace?: FinanceWorkspace | null
+  workspaceCategories: FinanceCategory[]
+  workspaceAccounts: FinanceAccount[]
   month: string
   onAdd: () => void
   onEdit: (tx: FinanceTransaction) => void
   onQuickAdd: (data: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>) => Promise<void>
   onBulkDelete: (ids: string[]) => Promise<void>
+  onImport: () => void
 }) {
   const { t } = useLanguage()
   const isMobile = useFinanceMobile()
@@ -1435,17 +1506,22 @@ function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, a
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const profileMap = new Map(partnerProfiles.map(p => [p.id, p]))
-  const catMap = new Map(categories.map(c => [c.id, c]))
-  const accMap = new Map(accounts.map(a => [a.id, a]))
+  // Resolution maps include workspace rows so the user's own shared
+  // transactions render their (workspace) category/account instead of "none".
+  const catMap = new Map([...categories, ...workspaceCategories].map(c => [c.id, c]))
+  const accMap = new Map([...accounts, ...workspaceAccounts].map(a => [a.id, a]))
 
-  // Quick add ("Lançamento rápido")
+  // Quick add ("Lançamento rápido"). qaScope: null = personal, workspace id =
+  // shared — category/account lists swap with it, mirroring the full modal.
   const [qaType, setQaType] = useState<FinanceTxType>('expense')
+  const [qaScope, setQaScope] = useState<string | null>(null)
   const [qaDesc, setQaDesc] = useState('')
   const [qaAmount, setQaAmount] = useState('')
   const [qaCat, setQaCat] = useState('')
   const [qaAcc, setQaAcc] = useState('')
   const [qaSaving, setQaSaving] = useState(false)
-  const qaCats = categories.filter(c => c.type === qaType)
+  const qaCats = (qaScope ? workspaceCategories : categories).filter(c => c.type === qaType)
+  const qaAccounts = qaScope ? workspaceAccounts : accounts
   const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
 
   const submitQuickAdd = async () => {
@@ -1459,8 +1535,9 @@ function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, a
         description: qaDesc.trim(),
         date: today,
         category_id: (qaCat || qaCats[0]?.id) ?? null,
-        account_id: (qaAcc || accounts[0]?.id) ?? null,
+        account_id: (qaAcc || qaAccounts[0]?.id) ?? null,
         shared_with_user_id: null,
+        workspace_id: qaScope,
       })
       setQaDesc('')
       setQaAmount('')
@@ -1514,7 +1591,10 @@ function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, a
           {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
         </select>
         <div style={{ flex: 1 }} />
-        <button onClick={() => downloadTransactionsCsv(filtered, categories, accounts, month)} style={ghostBtnStyle}>
+        <button onClick={onImport} style={ghostBtnStyle}>
+          <Upload size={16} />{!isMobile && t('finance_import')}
+        </button>
+        <button onClick={() => downloadTransactionsCsv(filtered, [...categories, ...workspaceCategories], [...accounts, ...workspaceAccounts], month)} style={ghostBtnStyle}>
           <Download size={16} />{!isMobile && t('finance_export')}
         </button>
         <button onClick={onAdd} style={primaryBtnStyle}>
@@ -1533,6 +1613,16 @@ function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, a
             <button onClick={() => setQaType('expense')} style={segBtnStyle(qaType === 'expense')}>{t('finance_filter_expense')}</button>
             <button onClick={() => setQaType('income')} style={segBtnStyle(qaType === 'income')}>{t('finance_filter_income')}</button>
           </div>
+          {workspace && (
+            <ScopePicker
+              value={qaScope}
+              onChange={ws => { setQaScope(ws); setQaCat(''); setQaAcc('') }}
+              workspaceId={workspace.id}
+              workspaceName={workspace.name}
+              label={null}
+              compact
+            />
+          )}
           <input value={qaDesc} onChange={e => setQaDesc(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitQuickAdd() }} placeholder={t('finance_tx_description')}
             style={{ ...fieldStyle, flex: 2, minWidth: 150 }} />
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -1543,8 +1633,8 @@ function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, a
           <select value={qaCat || qaCats[0]?.id || ''} onChange={e => setQaCat(e.target.value)} style={{ ...fieldStyle, cursor: 'pointer', maxWidth: 150 }}>
             {qaCats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
           </select>
-          <select value={qaAcc || accounts[0]?.id || ''} onChange={e => setQaAcc(e.target.value)} style={{ ...fieldStyle, cursor: 'pointer' }}>
-            {accounts.map(a => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
+          <select value={qaAcc || qaAccounts[0]?.id || ''} onChange={e => setQaAcc(e.target.value)} style={{ ...fieldStyle, cursor: 'pointer' }}>
+            {qaAccounts.map(a => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
           </select>
           <button onClick={submitQuickAdd} disabled={qaSaving} style={{ ...primaryBtnStyle, opacity: qaSaving ? 0.6 : 1 }}>
             <Plus size={16} />{t('finance_add')}
@@ -1602,6 +1692,11 @@ function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, a
                         <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{cat?.name ?? t('finance_tx_none_category')}</div>
                       </div>
                       {acc && <span style={{ fontSize: 11.5, color: 'var(--color-text-subtle)', background: 'var(--color-bg-secondary)', borderRadius: 6, padding: '3px 8px', flexShrink: 0, whiteSpace: 'nowrap' }}>{acc.icon} {acc.name}</span>}
+                      {tx.workspace_id && !isMobile && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--color-text-subtle)', background: 'var(--color-active)', borderRadius: 10, padding: '2px 8px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                          <Users size={10} />{t('finance_scope_workspace')}
+                        </span>
+                      )}
                       {tx.photo_url && <Camera size={13} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />}
                       <span style={{ fontSize: 14, fontWeight: 600, color: tx.type === 'income' ? FIN_POS : FIN_NEG, textAlign: 'right', flexShrink: 0, ...tabularNums }}>
                         {tx.type === 'income' ? '+' : '−'}{fmt(tx.amount)}
@@ -1658,7 +1753,7 @@ function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, a
 
 // ─── Budgets Tab ──────────────────────────────────────────────────────────────
 
-function BudgetsTab({ budgets, sharedBudgets, transactions, partnerTransactions, partnerProfiles, categories, month, onAdd, onDeleteBudget }: {
+function BudgetsTab({ budgets, sharedBudgets, transactions, partnerTransactions, partnerProfiles, categories, month, onAdd, onEdit, onDeleteBudget }: {
   budgets: FinanceBudget[]
   sharedBudgets: FinanceBudget[]
   transactions: FinanceTransaction[]
@@ -1667,6 +1762,7 @@ function BudgetsTab({ budgets, sharedBudgets, transactions, partnerTransactions,
   categories: FinanceCategory[]
   month: string
   onAdd: () => void
+  onEdit: (budget: FinanceBudget) => void
   onDeleteBudget: (id: string) => Promise<void>
 }) {
   const { t } = useLanguage()
@@ -1712,12 +1808,23 @@ function BudgetsTab({ budgets, sharedBudgets, transactions, partnerTransactions,
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 18 }}>{cat?.icon ?? '📦'}</span>
                     <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>{cat?.name ?? budget.category_id}</span>
+                    {budget.workspace_id && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--color-text-subtle)', background: 'var(--color-active)', borderRadius: 10, padding: '2px 8px' }}>
+                        <Users size={10} />{t('finance_scope_workspace')}
+                      </span>
+                    )}
                     {over && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', backgroundColor: '#ef444422', padding: '2px 6px', borderRadius: 10 }}>{t('finance_budget_over')}</span>}
                   </div>
-                  <button onClick={() => onDeleteBudget(budget.id)}
-                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', padding: 4, borderRadius: 4 }}>
-                    <Trash2 size={13} />
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <button onClick={() => onEdit(budget)}
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', padding: 4, borderRadius: 4 }}>
+                      <Pencil size={13} />
+                    </button>
+                    <button onClick={() => onDeleteBudget(budget.id)}
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', padding: 4, borderRadius: 4 }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
                 <div style={{ height: 8, borderRadius: 4, backgroundColor: 'var(--color-border)', marginBottom: 8, overflow: 'hidden' }}>
                   <div style={{ height: '100%', borderRadius: 4, width: `${pct}%`, backgroundColor: barColor, transition: 'width 0.4s ease' }} />
@@ -1830,11 +1937,18 @@ function AccountsTab({ accounts, transactions, onAdd, onEdit }: {
                 onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-surface)')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                   <span style={{ fontSize: 24 }}>{acc.icon}</span>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>{acc.name}</p>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {acc.name}
+                      {acc.workspace_id && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-subtle)', background: 'var(--color-active)', borderRadius: 10, padding: '1px 7px', flexShrink: 0 }}>
+                          <Users size={10} />{t('finance_scope_workspace')}
+                        </span>
+                      )}
+                    </p>
                     <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-muted)' }}>{typeLabel[acc.type]}</p>
                   </div>
-                  <Pencil size={12} style={{ marginLeft: 'auto', color: 'var(--color-text-muted)' }} />
+                  <Pencil size={12} style={{ marginLeft: 'auto', color: 'var(--color-text-muted)', flexShrink: 0 }} />
                 </div>
                 <p style={{ margin: 0, fontSize: 22, fontWeight: 700, color: bal >= 0 ? FIN_POS : FIN_NEG }}>{fmt(bal)}</p>
               </div>
@@ -1851,10 +1965,12 @@ function AccountsTab({ accounts, transactions, onAdd, onEdit }: {
 const CATEGORY_COLORS = ['#f97316','#3b82f6','#8b5cf6','#ef4444','#ec4899','#06b6d4','#22c55e','#84cc16','#f59e0b','#10b981','#a855f7','#6b7280']
 
 function CategoryModal({
-  category, transactions, onClose, onSave, onDelete,
+  category, transactions, workspace, userId, onClose, onSave, onDelete,
 }: {
   category?: FinanceCategory
   transactions: FinanceTransaction[]
+  workspace?: FinanceWorkspace | null
+  userId: string
   onClose: () => void
   onSave: (data: Omit<FinanceCategory, 'id' | 'user_id' | 'created_at'>) => Promise<void>
   onDelete?: () => Promise<void>
@@ -1866,6 +1982,7 @@ function CategoryModal({
     icon: category?.icon ?? '📦',
     color: category?.color ?? '#6b7280',
     is_default: category?.is_default ?? false,
+    workspace_id: category?.workspace_id ?? null as string | null,
   })
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -1875,7 +1992,7 @@ function CategoryModal({
   const handleSave = async () => {
     if (!form.name.trim()) return
     setSaving(true)
-    await onSave({ name: form.name.trim(), type: form.type, icon: form.icon || '📦', color: form.color, is_default: form.is_default })
+    await onSave({ name: form.name.trim(), type: form.type, icon: form.icon || '📦', color: form.color, is_default: form.is_default, workspace_id: form.workspace_id })
     setSaving(false)
     onClose()
   }
@@ -1905,6 +2022,15 @@ function CategoryModal({
             ))}
           </div>
         </div>
+        {workspace && (
+          <ScopePicker
+            value={form.workspace_id}
+            onChange={ws => setForm(f => ({ ...f, workspace_id: ws }))}
+            workspaceId={workspace.id}
+            workspaceName={workspace.name}
+            disabled={!!category && category.user_id !== userId}
+          />
+        )}
         <EmojiInput label={t('finance_cat_icon')} value={form.icon} onChange={v => setForm(f => ({ ...f, icon: v }))} />
         <div>
           <label style={labelStyle}>{t('finance_cat_color')}</label>
@@ -1971,7 +2097,14 @@ function CategoriesTab({ categories, transactions, onAdd, onEdit }: {
         {cat.icon}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--color-text)' }}>{cat.name}</p>
+        <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {cat.name}
+          {cat.workspace_id && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-subtle)', backgroundColor: 'var(--color-active)', borderRadius: 10, padding: '1px 7px', flexShrink: 0 }}>
+              <Users size={10} />{t('finance_scope_workspace')}
+            </span>
+          )}
+        </p>
         {txCount(cat.id) > 0 && (
           <span style={{ fontSize: 11, backgroundColor: 'var(--color-border)', color: 'var(--color-text-muted)', borderRadius: 10, padding: '2px 8px' }}>{txCount(cat.id)}x</span>
         )}
@@ -3416,12 +3549,6 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   const isMobile = isMobileProp ?? isMobileHook
   const { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, loading, reload } = useFinanceData()
 
-  type ViewMode = 'individual' | 'family'
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const saved = localStorage.getItem('finance_view_mode')
-    return saved === 'family' ? 'family' : 'individual'
-  })
-
   const [month, setMonth] = useState(currentYM())
   const [exporting, setExporting] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
@@ -3445,10 +3572,12 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     localStorage.setItem('finance_active_tab', tab)
   }, [tab])
 
-  // Save view mode
+  // The global Individual/Coworkspace toggle is gone: scope is now declared
+  // per row and the workspace view lives behind a button on the overview.
+  // Drop the orphaned localStorage value from older clients.
   useEffect(() => {
-    localStorage.setItem('finance_view_mode', viewMode)
-  }, [viewMode])
+    localStorage.removeItem('finance_view_mode')
+  }, [])
 
   // Listen for tab change events dispatched by sidebar
   useEffect(() => {
@@ -3472,16 +3601,48 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     return () => window.removeEventListener('finance_transactions_changed', handler)
   }, [reload])
 
-  // Derived datasets based on view mode
-  const isFamily = viewMode === 'family' && !!workspace
-  const activeTransactions = isFamily ? familyTransactions : transactions
-  const activeBudgets = isFamily ? familyBudgets : budgets
-  const activeAccounts = isFamily ? familyAccounts : accounts
-  const activeCategories = isFamily ? familyCategories : categories
+  // Auto-create a budget for the viewed month from each active, fixed-amount
+  // expense recurring that doesn't have one yet, so it counts toward expense
+  // tracking without manual setup. Only ever inserts — never edits/removes a
+  // budget once created, even if the recurring is later deactivated or its
+  // amount changes, and never touches a budget that already exists (manual or
+  // auto-created before) for that category/month/scope.
+  useEffect(() => {
+    if (!user) return
+    const candidates = missingAutoBudgets(recurring, [...budgets, ...familyBudgets], month)
+    if (candidates.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const { error } = await supabase.from('finance_budgets').insert(
+        candidates.map(c => ({ ...c, user_id: user.id, shared_with_user_id: null }))
+      )
+      if (!error && !cancelled) await reload({ silent: true })
+    })()
+    return () => { cancelled = true }
+  }, [user, recurring, budgets, familyBudgets, month, reload])
 
-  // Total balance across the active accounts (shown in the Lateral sidebar footer).
-  const accountsBalanceTotal = activeAccounts.reduce((sum, acc) => {
-    const txs = activeTransactions.filter(tx => tx.account_id === acc.id)
+  // Tabs are always personal now; workspace rows appear where they belong:
+  // the user's own shared rows inline (with a badge) and everyone's in the
+  // Coworkspace overview. These merged sets exist only to RESOLVE names of
+  // workspace categories/accounts referenced by the user's own shared rows
+  // (own tx can point at a workspace category the personal list lacks) and to
+  // let CategoryModal's "in use" check see other members' usage.
+  const ownWsCategories = familyCategories.filter(c => c.user_id === user?.id)
+  const resolveCategories = [...categories, ...familyCategories]
+  const otherMembersTxs = familyTransactions.filter(tx => tx.user_id !== user?.id)
+  const allVisibleTxs = [...transactions, ...otherMembersTxs]
+
+  // Coworkspace view of the overview tab: session-only, entered via the chip
+  // on the personal overviews. Falls back to personal if the workspace goes
+  // away (left/removed).
+  const [overviewScope, setOverviewScope] = useState<'personal' | 'workspace'>('personal')
+  useEffect(() => {
+    if (overviewScope === 'workspace' && !workspace) setOverviewScope('personal')
+  }, [overviewScope, workspace])
+
+  // Total balance across the user's accounts (shown in the Lateral sidebar footer).
+  const accountsBalanceTotal = accounts.reduce((sum, acc) => {
+    const txs = transactions.filter(tx => tx.account_id === acc.id)
     const inc = txs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0)
     const exp = txs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0)
     return sum + acc.initial_balance + inc - exp
@@ -3490,15 +3651,16 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   // Modals
   const [txModal, setTxModal] = useState<{ open: boolean; tx?: FinanceTransaction }>({ open: false })
   const [accModal, setAccModal] = useState<{ open: boolean; account?: FinanceAccount }>({ open: false })
-  const [budgetModal, setBudgetModal] = useState(false)
+  const [budgetModal, setBudgetModal] = useState<{ open: boolean; budget?: FinanceBudget }>({ open: false })
   const [goalModal, setGoalModal] = useState<{ open: boolean; goal?: FinanceGoal }>({ open: false })
   const [contributionGoal, setContributionGoal] = useState<FinanceGoal | null>(null)
   const [catModal, setCatModal] = useState<{ open: boolean; category?: FinanceCategory }>({ open: false })
   const [recurringModal, setRecurringModal] = useState<{ open: boolean; item?: FinanceRecurring }>({ open: false })
   const [payModal, setPayModal] = useState<{ open: boolean; entry?: FinanceRecurringEntry; rec?: FinanceRecurring }>({ open: false })
   const [goalShareModal, setGoalShareModal] = useState<{ open: boolean; goal?: FinanceGoal }>({ open: false })
+  const [importModal, setImportModal] = useState(false)
 
-  const monthTxs = activeTransactions.filter(tx => tx.date.startsWith(month))
+  const monthTxs = transactions.filter(tx => tx.date.startsWith(month))
 
   // CRUD helpers
   const saveTx = async (data: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>) => {
@@ -3522,6 +3684,13 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     await reload()
   }
 
+  const bulkAddTx = async (rows: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>[]) => {
+    if (!user || rows.length === 0) return
+    const { error } = await supabase.from('finance_transactions').insert(rows.map(r => ({ ...r, user_id: user.id })))
+    if (error) throw error
+    await reload()
+  }
+
   const bulkDeleteTx = async (ids: string[]) => {
     if (ids.length === 0) return
     await supabase.from('finance_transactions').delete().in('id', ids)
@@ -3533,7 +3702,8 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     if (accModal.account) {
       await supabase.from('finance_accounts').update(data).eq('id', accModal.account.id)
     } else {
-      await supabase.from('finance_accounts').insert({ ...data, user_id: user.id, workspace_id: isFamily && workspace ? workspace.id : null })
+      // Scope (workspace_id) comes from the modal's ScopePicker inside `data`.
+      await supabase.from('finance_accounts').insert({ ...data, user_id: user.id })
     }
     await reload()
   }
@@ -3543,9 +3713,13 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     await reload()
   }
 
-  const saveBudget = async (data: { category_id: string; month: string; amount_limit: number; shared_with_user_id: string | null }) => {
+  const saveBudget = async (data: { category_id: string; month: string; amount_limit: number; shared_with_user_id: string | null; workspace_id: string | null }) => {
     if (!user) return
-    await supabase.from('finance_budgets').insert({ ...data, user_id: user.id, workspace_id: isFamily && workspace ? workspace.id : null })
+    // Scope (workspace_id) comes from the modal's ScopePicker inside `data`.
+    const { error } = budgetModal.budget
+      ? await supabase.from('finance_budgets').update(data).eq('id', budgetModal.budget.id)
+      : await supabase.from('finance_budgets').insert({ ...data, user_id: user.id })
+    if (error) throw error
     await reload()
   }
 
@@ -3609,7 +3783,8 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     if (catModal.category) {
       await supabase.from('finance_categories').update(data).eq('id', catModal.category.id)
     } else {
-      await supabase.from('finance_categories').insert({ ...data, user_id: user.id, workspace_id: isFamily && workspace ? workspace.id : null })
+      // Scope (workspace_id) comes from the modal's ScopePicker inside `data`.
+      await supabase.from('finance_categories').insert({ ...data, user_id: user.id })
     }
     await reload()
   }
@@ -3684,7 +3859,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--color-bg-secondary)', overflow: 'hidden', position: 'relative' }}>
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {showSidebar && (
-          <FinanceSidebar tab={tab} onSelect={setTab} accountsBalance={accountsBalanceTotal} accountCount={activeAccounts.length} />
+          <FinanceSidebar tab={tab} onSelect={setTab} accountsBalance={accountsBalanceTotal} accountCount={accounts.length} />
         )}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* Header */}
@@ -3736,17 +3911,6 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
               </span>
             )}
           </button>
-          {/* View scope toggle (only when in a workspace) */}
-          {workspace && (
-            <div style={segTrackStyle}>
-              <button onClick={() => setViewMode('family')} title={t('finance_view_family')} style={segBtnStyle(viewMode === 'family')}>
-                <Users size={13} />{!isMobile && t('finance_view_family')}
-              </button>
-              <button onClick={() => setViewMode('individual')} title={t('finance_view_individual')} style={segBtnStyle(viewMode === 'individual')}>
-                <User size={13} />{!isMobile && t('finance_view_individual')}
-              </button>
-            </div>
-          )}
           {/* Layout toggle — desktop only */}
           {!isMobile && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, paddingLeft: 9, marginLeft: 1, borderLeft: '1px solid var(--color-border)' }}>
@@ -3803,53 +3967,87 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
           </div>
         ) : (
           <>
-            {tab === 'overview' && (
+            {tab === 'overview' && (overviewScope === 'workspace' && workspace ? (
+              <CoworkspaceOverviewTab
+                workspace={workspace}
+                members={workspaceMembers}
+                transactions={familyTransactions}
+                budgets={familyBudgets}
+                accounts={familyAccounts}
+                categories={familyCategories}
+                month={month}
+                onBack={() => setOverviewScope('personal')}
+                onManage={() => setWsModalOpen(true)}
+              />
+            ) : (profile?.finance_dashboard_view ?? 'detailed') === 'simple' ? (
               <OverviewTab
-                transactions={activeTransactions}
-                categories={activeCategories}
+                transactions={transactions}
+                categories={resolveCategories}
                 month={month}
                 recurring={recurring}
                 recurringEntries={recurringEntries}
-                accounts={activeAccounts}
-                budgets={activeBudgets}
+                accounts={accounts}
+                budgets={budgets}
                 goals={goals}
                 contributions={contributions}
                 onMarkPaid={handleMarkPaid}
                 onSkipEntry={skipEntry}
                 onNavigate={setTab}
+                workspaceName={workspace?.name ?? null}
+                onOpenWorkspaceView={() => setOverviewScope('workspace')}
               />
-            )}
+            ) : (
+              <OverviewDetailedTab
+                transactions={transactions}
+                categories={resolveCategories}
+                accounts={accounts}
+                budgets={budgets}
+                goals={goals}
+                contributions={contributions}
+                recurring={recurring}
+                recurringEntries={recurringEntries}
+                month={month}
+                onNavigate={setTab}
+                workspaceName={workspace?.name ?? null}
+                onOpenWorkspaceView={() => setOverviewScope('workspace')}
+              />
+            ))}
             {tab === 'transactions' && (
               <TransactionsTab
                 transactions={monthTxs}
-                partnerTransactions={isFamily ? [] : sharedTransactions.filter(tx => tx.date.startsWith(month))}
+                partnerTransactions={sharedTransactions.filter(tx => tx.date.startsWith(month))}
                 partnerProfiles={partnerProfiles}
-                accounts={activeAccounts}
-                categories={activeCategories}
+                accounts={accounts}
+                categories={categories}
+                workspace={workspace}
+                workspaceCategories={familyCategories}
+                workspaceAccounts={familyAccounts}
                 month={month}
                 onAdd={() => setTxModal({ open: true })}
                 onEdit={tx => setTxModal({ open: true, tx })}
                 onQuickAdd={quickAddTx}
                 onBulkDelete={bulkDeleteTx}
+                onImport={() => setImportModal(true)}
               />
             )}
             {tab === 'budgets' && (
               <BudgetsTab
-                budgets={activeBudgets}
-                sharedBudgets={isFamily ? [] : sharedBudgets}
-                transactions={activeTransactions}
-                partnerTransactions={isFamily ? [] : sharedTransactions}
+                budgets={budgets}
+                sharedBudgets={sharedBudgets}
+                transactions={transactions}
+                partnerTransactions={sharedTransactions}
                 partnerProfiles={partnerProfiles}
-                categories={activeCategories}
+                categories={resolveCategories}
                 month={month}
-                onAdd={() => setBudgetModal(true)}
+                onAdd={() => setBudgetModal({ open: true })}
+                onEdit={budget => setBudgetModal({ open: true, budget })}
                 onDeleteBudget={deleteBudget}
               />
             )}
             {tab === 'accounts' && (
               <AccountsTab
-                accounts={activeAccounts}
-                transactions={activeTransactions}
+                accounts={accounts}
+                transactions={transactions}
                 onAdd={() => setAccModal({ open: true })}
                 onEdit={acc => setAccModal({ open: true, account: acc })}
               />
@@ -3873,8 +4071,8 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
             )}
             {tab === 'categories' && (
               <CategoriesTab
-                categories={activeCategories}
-                transactions={activeTransactions}
+                categories={[...categories, ...ownWsCategories]}
+                transactions={transactions}
                 onAdd={() => setCatModal({ open: true })}
                 onEdit={c => setCatModal({ open: true, category: c })}
               />
@@ -3893,16 +4091,15 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
             )}
             {tab === 'projects' && (
               <Suspense fallback={<div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>}>
-                {/* The real workspace, regardless of the Individual/Family view
-                    toggle — sharing an obra is decided per obra in its form,
-                    and tying it to the view mode made obras silently private. */}
-                <FinanceProjectsTab workspaceId={workspace?.id ?? null} accounts={activeAccounts} />
+                {/* Sharing an obra is decided per obra in its form; expense
+                    forms pay from the user's own accounts. */}
+                <FinanceProjectsTab workspaceId={workspace?.id ?? null} accounts={accounts} />
               </Suspense>
             )}
             {tab === 'store' && (
               <Suspense fallback={<div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>}>
                 {/* The header month arrows drive the store overview cards. */}
-                <FinanceStoreTab workspaceId={workspace?.id ?? null} accounts={activeAccounts} month={month} />
+                <FinanceStoreTab workspaceId={workspace?.id ?? null} accounts={accounts} month={month} />
               </Suspense>
             )}
           </>
@@ -3939,7 +4136,9 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
       {catModal.open && (
         <CategoryModal
           category={catModal.category}
-          transactions={transactions}
+          transactions={allVisibleTxs}
+          workspace={workspace}
+          userId={user?.id ?? ''}
           onClose={() => setCatModal({ open: false })}
           onSave={saveCategory}
           onDelete={catModal.category ? () => deleteCategory(catModal.category!.id) : undefined}
@@ -3955,27 +4154,46 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
           partners={partnerProfiles}
           userId={user?.id ?? ''}
           workspace={workspace}
-          defaultShareWithFamily={isFamily}
           onClose={() => setTxModal({ open: false })}
           onSave={saveTx}
           onDelete={txModal.tx ? () => deleteTx(txModal.tx!.id) : undefined}
         />
       )}
+      {importModal && (
+        <Suspense fallback={null}>
+          <ImportStatementModal
+            accounts={accounts}
+            workspaceAccounts={familyAccounts}
+            categories={categories}
+            workspaceCategories={familyCategories}
+            workspace={workspace}
+            existingTransactions={transactions}
+            onImport={bulkAddTx}
+            onClose={() => setImportModal(false)}
+          />
+        </Suspense>
+      )}
       {accModal.open && (
         <AccountModal
           account={accModal.account}
+          workspace={workspace}
+          userId={user?.id ?? ''}
           onClose={() => setAccModal({ open: false })}
           onSave={saveAccount}
           onDelete={accModal.account ? () => deleteAccount(accModal.account!.id) : undefined}
         />
       )}
-      {budgetModal && (
+      {budgetModal.open && (
         <BudgetModal
-          categories={activeCategories}
+          budget={budgetModal.budget}
+          personalCategories={categories}
+          workspaceCategories={familyCategories}
           month={month}
-          existing={activeBudgets.filter(b => b.month === month)}
+          personalExisting={budgets.filter(b => b.month === month)}
+          workspaceExisting={familyBudgets.filter(b => b.month === month)}
+          workspace={workspace}
           partners={partnerProfiles}
-          onClose={() => setBudgetModal(false)}
+          onClose={() => setBudgetModal({ open: false })}
           onSave={saveBudget}
         />
       )}

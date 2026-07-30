@@ -2,6 +2,8 @@
 // dashboard. Presentational and pure; colors come from the caller (hex or CSS
 // variables) so they adapt to light/dark theme.
 
+import { useState } from 'react'
+
 export interface ChartDatum {
   label: string
   value: number
@@ -62,6 +64,89 @@ export function SegmentedBar({ segments, height = 14 }: { segments: ChartDatum[]
       {total > 0 && segments.filter(s => s.value > 0).map((s, i) => (
         <div key={i} title={`${s.label}: ${s.value}`} style={{ width: `${(s.value / total) * 100}%`, backgroundColor: s.color }} />
       ))}
+    </div>
+  )
+}
+
+export interface AreaSeries {
+  name: string
+  color: string
+  values: number[]
+}
+
+// Two overlaid area trends on a shared Y scale (e.g. income vs expense per
+// month). Same stretched-SVG technique as AreaTrend; the hover guide line,
+// point markers and tooltip are HTML overlays because anything drawn inside a
+// preserveAspectRatio="none" SVG would distort. Per-point values live in the
+// tooltip only — 12 currency values would not fit under the chart.
+export function DualAreaTrend({ labels, series, height = 190, formatValue = String }: {
+  labels: string[]; series: [AreaSeries, AreaSeries]; height?: number; formatValue?: (v: number) => string;
+}) {
+  const [hover, setHover] = useState<number | null>(null)
+  const n = labels.length
+  if (n === 0) return null
+  const W = 100, H = 40, padY = 3
+  const max = Math.max(1, ...series[0].values, ...series[1].values)
+  const x = (i: number) => (n === 1 ? W / 2 : (i / (n - 1)) * W)
+  const y = (v: number) => H - padY - (v / max) * (H - padY * 2)
+  const line = (values: number[]) => values.map((v, i) => `${x(i)},${y(v)}`).join(' ')
+  const area = (values: number[]) =>
+    `M ${x(0)},${y(values[0] ?? 0)} ` + values.map((v, i) => `L ${x(i)},${y(v)}`).join(' ') + ` L ${x(n - 1)},${H} L ${x(0)},${H} Z`
+  // Keep the floating card inside the chart near both edges.
+  const tooltipLeft = (i: number) => Math.min(Math.max(x(i), 12), 88)
+  return (
+    <div>
+      <div style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
+        <svg width="100%" height={height} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+          {series.map((s, si) => (
+            <path key={`a${si}`} d={area(s.values)} fill={s.color} fillOpacity={0.12} stroke="none" />
+          ))}
+          {series.map((s, si) => (
+            <polyline key={`l${si}`} points={line(s.values)} fill="none" stroke={s.color} strokeWidth={2}
+              vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+          ))}
+        </svg>
+        {hover != null && (
+          <>
+            <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${x(hover)}%`, width: 1, backgroundColor: 'var(--color-border)', pointerEvents: 'none' }} />
+            {series.map((s, si) => (
+              <div key={si} style={{
+                position: 'absolute', left: `${x(hover)}%`, top: `${(y(s.values[hover] ?? 0) / H) * 100}%`,
+                width: 9, height: 9, borderRadius: '50%', backgroundColor: s.color,
+                border: '2px solid var(--color-bg)', transform: 'translate(-50%, -50%)', pointerEvents: 'none',
+              }} />
+            ))}
+            <div style={{
+              position: 'absolute', left: `${tooltipLeft(hover)}%`, bottom: 'calc(100% - 4px)', transform: 'translateX(-50%)',
+              backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 10,
+              boxShadow: '0 6px 20px rgba(0,0,0,0.12)', padding: '8px 10px', pointerEvents: 'none', zIndex: 2, whiteSpace: 'nowrap',
+            }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'capitalize', marginBottom: 4 }}>{labels[hover]}</div>
+              {series.map((s, si) => (
+                <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: s.color, flexShrink: 0 }} />
+                  <span style={{ color: 'var(--color-text-muted)' }}>{s.name}</span>
+                  <span style={{ fontWeight: 700, color: 'var(--color-text)', marginLeft: 'auto', paddingLeft: 10 }}>{formatValue(s.values[hover] ?? 0)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
+          {labels.map((_, i) => (
+            <div key={i} style={{ flex: 1 }} onMouseEnter={() => setHover(i)} />
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'flex', marginTop: 6 }}>
+        {labels.map((l, i) => (
+          <div key={i} style={{
+            flex: 1, textAlign: 'center', minWidth: 0, fontSize: 10, textTransform: 'capitalize',
+            color: hover === i ? 'var(--color-text)' : 'var(--color-text-muted)', fontWeight: hover === i ? 700 : 400,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{l}</div>
+        ))}
+      </div>
     </div>
   )
 }

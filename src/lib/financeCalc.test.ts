@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { FinanceTransaction } from '../types'
+import type { FinanceRecurringEntry, FinanceTransaction } from '../types'
 import {
   monthTotals,
   transactionsInMonth,
@@ -11,14 +11,21 @@ import {
   daysUntil,
   recurringDueDate,
   missingRecurringDueDates,
+  monthsOfYear,
+  monthlySeries,
+  totalsByCategory,
+  totalsByUser,
+  topCategories,
+  pendingRecurringTotal,
+  missingAutoBudgets,
 } from './financeCalc'
 
 // Minimal transaction factory (only the fields the calculations read).
 const tx = (
   type: FinanceTransaction['type'],
   amount: number,
-  extra: Partial<Pick<FinanceTransaction, 'account_id' | 'category_id' | 'date'>> = {},
-) => ({ type, amount, account_id: null, category_id: null, date: '2025-06-15', ...extra })
+  extra: Partial<Pick<FinanceTransaction, 'account_id' | 'category_id' | 'date' | 'user_id'>> = {},
+) => ({ type, amount, account_id: null, category_id: null, date: '2025-06-15', user_id: 'u1', ...extra })
 
 describe('monthTotals', () => {
   it('sums income and expense and nets balance', () => {
@@ -129,6 +136,115 @@ describe('recurringDueDate', () => {
   })
 })
 
+describe('monthsOfYear', () => {
+  it('lists the 12 months of a year, zero-padded', () => {
+    const months = monthsOfYear(2025)
+    expect(months).toHaveLength(12)
+    expect(months[0]).toBe('2025-01')
+    expect(months[8]).toBe('2025-09')
+    expect(months[11]).toBe('2025-12')
+  })
+})
+
+describe('monthlySeries', () => {
+  it('aligns totals to the given months, with zeros for empty ones', () => {
+    const txs = [
+      tx('income', 1000, { date: '2025-01-10' }),
+      tx('expense', 300, { date: '2025-01-20' }),
+      tx('expense', 50, { date: '2025-03-05' }),
+      tx('income', 999, { date: '2024-12-31' }), // outside the window, ignored
+    ]
+    const r = monthlySeries(txs, ['2025-01', '2025-02', '2025-03'])
+    expect(r).toEqual([
+      { income: 1000, expense: 300, balance: 700 },
+      { income: 0, expense: 0, balance: 0 },
+      { income: 0, expense: 50, balance: -50 },
+    ])
+  })
+  it('returns an empty list for no months', () => {
+    expect(monthlySeries([tx('income', 1)], [])).toEqual([])
+  })
+})
+
+describe('totalsByCategory', () => {
+  const txs = [
+    tx('expense', 100, { category_id: 'food' }),
+    tx('expense', 50, { category_id: 'food' }),
+    tx('income', 700, { category_id: 'salary' }),
+    tx('income', 300, { category_id: 'salary' }),
+    tx('income', 80, { category_id: 'freela' }),
+    tx('expense', 5, { category_id: null }), // uncategorized ignored
+  ]
+  it('groups the requested type only', () => {
+    expect(totalsByCategory(txs, 'expense')).toEqual({ food: 150 })
+    expect(totalsByCategory(txs, 'income')).toEqual({ salary: 1000, freela: 80 })
+  })
+})
+
+describe('totalsByUser', () => {
+  it('groups the requested type by author', () => {
+    const txs = [
+      tx('expense', 100, { user_id: 'ana' }),
+      tx('expense', 50, { user_id: 'ana' }),
+      tx('expense', 70, { user_id: 'bia' }),
+      tx('income', 999, { user_id: 'ana' }), // other type ignored
+    ]
+    expect(totalsByUser(txs, 'expense')).toEqual({ ana: 150, bia: 70 })
+    expect(totalsByUser(txs, 'income')).toEqual({ ana: 999 })
+  })
+  it('is empty for an empty list', () => {
+    expect(totalsByUser([], 'expense')).toEqual({})
+  })
+})
+
+describe('topCategories', () => {
+  it('sorts descending and cuts at n', () => {
+    const r = topCategories({ a: 10, b: 300, c: 50, d: 200 }, 3)
+    expect(r).toEqual([
+      { categoryId: 'b', amount: 300 },
+      { categoryId: 'd', amount: 200 },
+      { categoryId: 'c', amount: 50 },
+    ])
+  })
+  it('returns everything when n exceeds the map size', () => {
+    expect(topCategories({ a: 1 }, 5)).toEqual([{ categoryId: 'a', amount: 1 }])
+  })
+})
+
+describe('pendingRecurringTotal', () => {
+  const recs = [
+    { id: 'r1', type: 'expense' as const, amount: 5000 },
+    { id: 'r2', type: 'expense' as const, amount: null }, // variable
+    { id: 'r3', type: 'income' as const, amount: 30000 },
+  ]
+  const entry = (
+    recurring_id: string,
+    extra: Partial<Pick<FinanceRecurringEntry, 'due_date' | 'status' | 'amount'>> = {},
+  ) => ({ recurring_id, due_date: '2025-06-10', status: 'pending' as const, amount: null, ...extra })
+
+  it('sums pending entries of the month for the requested type', () => {
+    const entries = [entry('r1'), entry('r3')]
+    expect(pendingRecurringTotal(recs, entries, '2025-06', 'expense')).toBe(5000)
+    expect(pendingRecurringTotal(recs, entries, '2025-06', 'income')).toBe(30000)
+  })
+  it('excludes paid and skipped entries (paid already became a transaction)', () => {
+    const entries = [entry('r1', { status: 'paid' }), entry('r1', { status: 'skipped' })]
+    expect(pendingRecurringTotal(recs, entries, '2025-06', 'expense')).toBe(0)
+  })
+  it('excludes entries due in another month', () => {
+    expect(pendingRecurringTotal(recs, [entry('r1', { due_date: '2025-07-10' })], '2025-06', 'expense')).toBe(0)
+  })
+  it('prefers the entry amount over the recurring amount', () => {
+    expect(pendingRecurringTotal(recs, [entry('r1', { amount: 7777 })], '2025-06', 'expense')).toBe(7777)
+  })
+  it('counts a variable recurring with no amount as 0', () => {
+    expect(pendingRecurringTotal(recs, [entry('r2')], '2025-06', 'expense')).toBe(0)
+  })
+  it('ignores entries whose recurring is unknown', () => {
+    expect(pendingRecurringTotal(recs, [entry('ghost')], '2025-06', 'expense')).toBe(0)
+  })
+})
+
 describe('missingRecurringDueDates', () => {
   const now = new Date('2025-06-15T12:00:00')
   const item = (extra: Partial<Parameters<typeof missingRecurringDueDates>[0]> = {}) => ({
@@ -196,5 +312,58 @@ describe('missingRecurringDueDates', () => {
       new Date('2025-02-10T12:00:00'),
     )
     expect(r).toEqual(['2025-01-31', '2025-02-28', '2025-03-31'])
+  })
+})
+
+describe('missingAutoBudgets', () => {
+  const rec = (extra: Partial<Parameters<typeof missingAutoBudgets>[0][number]> = {}) => ({
+    type: 'expense' as const, active: true, is_variable: false, amount: 5000,
+    category_id: 'cat1', workspace_id: null, ...extra,
+  })
+
+  it('creates a budget for a qualifying active fixed-amount expense recurring', () => {
+    expect(missingAutoBudgets([rec()], [], '2025-06')).toEqual([
+      { category_id: 'cat1', month: '2025-06', amount_limit: 5000, workspace_id: null },
+    ])
+  })
+
+  it('skips variable-amount recurrings', () => {
+    expect(missingAutoBudgets([rec({ is_variable: true, amount: null })], [], '2025-06')).toEqual([])
+  })
+
+  it('skips inactive recurrings', () => {
+    expect(missingAutoBudgets([rec({ active: false })], [], '2025-06')).toEqual([])
+  })
+
+  it('skips income-type recurrings', () => {
+    expect(missingAutoBudgets([rec({ type: 'income' })], [], '2025-06')).toEqual([])
+  })
+
+  it('skips recurrings with no category', () => {
+    expect(missingAutoBudgets([rec({ category_id: null })], [], '2025-06')).toEqual([])
+  })
+
+  it('does not duplicate a budget that already exists for that category/month/scope', () => {
+    const existing = [{ category_id: 'cat1', month: '2025-06', workspace_id: null }]
+    expect(missingAutoBudgets([rec()], existing, '2025-06')).toEqual([])
+  })
+
+  it('treats personal and workspace scope as distinct even for the same category', () => {
+    const existing = [{ category_id: 'cat1', month: '2025-06', workspace_id: 'ws1' }]
+    // personal recurring (workspace_id null) still needs its own budget
+    expect(missingAutoBudgets([rec()], existing, '2025-06')).toEqual([
+      { category_id: 'cat1', month: '2025-06', amount_limit: 5000, workspace_id: null },
+    ])
+  })
+
+  it('does not let a budget in a different month block this month', () => {
+    const existing = [{ category_id: 'cat1', month: '2025-05', workspace_id: null }]
+    expect(missingAutoBudgets([rec()], existing, '2025-06')).toEqual([
+      { category_id: 'cat1', month: '2025-06', amount_limit: 5000, workspace_id: null },
+    ])
+  })
+
+  it('dedupes two active recurrings that would produce the same category/scope candidate', () => {
+    expect(missingAutoBudgets([rec(), rec({ amount: 7000 })], [], '2025-06')).toHaveLength(1)
   })
 })

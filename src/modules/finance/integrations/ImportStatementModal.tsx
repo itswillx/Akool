@@ -1,0 +1,417 @@
+import { useMemo, useRef, useState } from 'react'
+import { Upload, AlertTriangle, CheckCircle2, FileText } from 'lucide-react'
+import { useLanguage } from '../../../i18n/LanguageContext'
+import type { TranslationKey } from '../../../i18n/translations'
+import { formatBRL } from '../../../lib/money'
+import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceWorkspace } from '../../../types'
+import {
+  buildExistingTxIndex, buildHistorySuggestions, groupForCategorization, groupKeyFor,
+  isLikelyDuplicate, type InternalReason, type ParsedStatement, type ParsedTx,
+} from '../../../lib/statementImport'
+import { parseStatementFile, type ParseFileError } from './parseStatementFile'
+import {
+  Modal, ScopePicker, useFinanceMobile,
+  inputStyle, labelStyle, tabularNums, primaryBtnStyle, ghostBtnStyle,
+  FIN_ACCENT, FIN_POS, FIN_NEG, FIN_NEG_SOFT,
+} from '../ui'
+
+// Multi-step statement import: pick a file → (password, if the PDF is
+// protected) → review the parsed rows → decide whether to categorize now or
+// later → single bulk insert. Parsing lives in ./parseStatementFile; this
+// component only owns the flow, the selection and the category assignment.
+
+type Step =
+  | { step: 'pick' }
+  | { step: 'password'; file: File; wrong: boolean }
+  | { step: 'parsing' }
+  | { step: 'preview' }
+  | { step: 'categorize' }
+  | { step: 'saving' }
+  | { step: 'done'; count: number }
+  | { step: 'error'; error: ParseFileError | 'generic' }
+
+interface PreviewRow {
+  tx: ParsedTx
+  selected: boolean
+  duplicate: boolean
+}
+
+const ERROR_KEYS: Record<ParseFileError | 'generic', TranslationKey> = {
+  needs_password: 'finance_import_err_generic',
+  wrong_password: 'finance_import_wrong_password',
+  unrecognized: 'finance_import_err_unrecognized',
+  invalid_ofx: 'finance_import_err_invalid_ofx',
+  empty: 'finance_import_err_empty',
+  generic: 'finance_import_err_generic',
+}
+
+const INTERNAL_KEYS: Record<InternalReason, TranslationKey> = {
+  card_payment: 'finance_import_internal_card_payment',
+  investment: 'finance_import_internal_investment',
+  refund: 'finance_import_internal_refund',
+  fee: 'finance_import_internal_fee',
+}
+
+export default function ImportStatementModal({
+  accounts, workspaceAccounts, categories, workspaceCategories, workspace,
+  existingTransactions, onImport, onClose,
+}: {
+  accounts: FinanceAccount[]
+  workspaceAccounts: FinanceAccount[]
+  categories: FinanceCategory[]
+  workspaceCategories: FinanceCategory[]
+  workspace?: FinanceWorkspace | null
+  existingTransactions: FinanceTransaction[]
+  onImport: (rows: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>[]) => Promise<void>
+  onClose: () => void
+}) {
+  const { t } = useLanguage()
+  const isMobile = useFinanceMobile()
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const [state, setState] = useState<Step>({ step: 'pick' })
+  const [statement, setStatement] = useState<ParsedStatement | null>(null)
+  const [rows, setRows] = useState<PreviewRow[]>([])
+  const [password, setPassword] = useState('')
+  const [scope, setScope] = useState<string | null>(null)
+  const [accountId, setAccountId] = useState('')
+  const [groupCategories, setGroupCategories] = useState<Record<string, string>>({})
+
+  const scopedAccounts = scope ? workspaceAccounts : accounts
+  const scopedCategories = scope ? workspaceCategories : categories
+
+  // Dedup and category suggestions look at every transaction the user has,
+  // not just the visible month, so re-imports and merchant history both work.
+  const dupIndex = useMemo(() => buildExistingTxIndex(existingTransactions), [existingTransactions])
+  const suggestions = useMemo(() => buildHistorySuggestions(existingTransactions), [existingTransactions])
+
+  const selectedIdx = useMemo(
+    () => new Set(rows.flatMap((r, i) => (r.selected ? [i] : []))),
+    [rows],
+  )
+  const selectedCount = selectedIdx.size
+  const selectedTotal = rows.reduce((s, r) => (r.selected ? s + r.tx.amount : s), 0)
+
+  const groups = useMemo(
+    () => (state.step === 'categorize' ? groupForCategorization(rows.map(r => r.tx), selectedIdx, suggestions) : []),
+    [state.step, rows, selectedIdx, suggestions],
+  )
+
+  const runParse = async (file: File, pwd?: string) => {
+    setState({ step: 'parsing' })
+    const result = await parseStatementFile(file, pwd)
+    if (!result.ok) {
+      if (result.error === 'needs_password') { setState({ step: 'password', file, wrong: false }); return }
+      if (result.error === 'wrong_password') { setState({ step: 'password', file, wrong: true }); return }
+      setState({ step: 'error', error: result.error })
+      return
+    }
+    setStatement(result.statement)
+    setRows(result.statement.txs.map(tx => {
+      const duplicate = isLikelyDuplicate(tx, dupIndex)
+      return { tx, duplicate, selected: !tx.internal && !duplicate }
+    }))
+    setAccountId(prev => prev || accounts[0]?.id || '')
+    setState({ step: 'preview' })
+  }
+
+  const doImport = async (withCategories: boolean) => {
+    setState({ step: 'saving' })
+    const payload = rows.flatMap(r => {
+      if (!r.selected) return []
+      const categoryId = withCategories ? (groupCategories[groupKeyFor(r.tx)] || null) : null
+      return [{
+        account_id: accountId || null,
+        category_id: categoryId,
+        type: r.tx.type,
+        amount: r.tx.amount,
+        description: r.tx.description,
+        date: r.tx.date,
+        shared_with_user_id: null,
+        workspace_id: scope,
+      }]
+    })
+    try {
+      await onImport(payload)
+      setState({ step: 'done', count: payload.length })
+      setTimeout(onClose, 1400)
+    } catch {
+      setState({ step: 'error', error: 'generic' })
+    }
+  }
+
+  const goToCategorize = () => {
+    // Seed each group with its history suggestion so the selects open pre-filled.
+    const seeded: Record<string, string> = { ...groupCategories }
+    for (const g of groupForCategorization(rows.map(r => r.tx), selectedIdx, suggestions)) {
+      if (!seeded[g.key] && g.suggestedCategoryId) seeded[g.key] = g.suggestedCategoryId
+    }
+    setGroupCategories(seeded)
+    setState({ step: 'categorize' })
+  }
+
+  const setAllSelected = (value: boolean) => setRows(rs => rs.map(r => ({ ...r, selected: value })))
+  const toggleRow = (i: number) => setRows(rs => rs.map((r, j) => (j === i ? { ...r, selected: !r.selected } : r)))
+
+  const chipStyle = (bg: string, color: string): React.CSSProperties => ({
+    fontSize: 10.5, fontWeight: 600, padding: '2px 6px', borderRadius: 5,
+    background: bg, color, whiteSpace: 'nowrap',
+  })
+
+  const body = () => {
+    switch (state.step) {
+      case 'pick':
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <p style={{ margin: 0, fontSize: 13.5, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+              {t('finance_import_pick_desc')}
+            </p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf,.ofx,application/pdf"
+              hidden
+              onChange={e => {
+                const file = e.target.files?.[0]
+                e.target.value = ''
+                if (file) { setPassword(''); runParse(file) }
+              }}
+            />
+            <button
+              onClick={() => fileRef.current?.click()}
+              style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                border: '1.5px dashed var(--color-border)', borderRadius: 10, padding: '28px 16px',
+                background: 'var(--color-surface)', color: 'var(--color-text-subtle)', cursor: 'pointer',
+              }}
+            >
+              <Upload size={22} style={{ color: FIN_ACCENT }} />
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text)' }}>{t('finance_import_pick_file')}</span>
+              <span style={{ fontSize: 12, textAlign: 'center', lineHeight: 1.45 }}>{t('finance_import_formats_hint')}</span>
+            </button>
+          </div>
+        )
+
+      case 'password':
+        return (
+          <form
+            onSubmit={e => { e.preventDefault(); if (password) runParse(state.file, password) }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: 'var(--color-text)' }}>
+              <FileText size={16} style={{ color: FIN_ACCENT, flexShrink: 0 }} />
+              <span>{t('finance_import_password_title')}</span>
+            </div>
+            <div>
+              <label style={labelStyle}>{t('finance_import_password_label')}</label>
+              <input
+                type="password"
+                autoFocus
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+            {state.wrong && (
+              <div style={{ background: FIN_NEG_SOFT, color: FIN_NEG, borderRadius: 8, padding: '8px 11px', fontSize: 12.5 }}>
+                {t('finance_import_wrong_password')}
+              </div>
+            )}
+            <button type="submit" disabled={!password} style={{ ...primaryBtnStyle, justifyContent: 'center', opacity: password ? 1 : 0.55 }}>
+              {t('finance_import_password_submit')}
+            </button>
+          </form>
+        )
+
+      case 'parsing':
+      case 'saving':
+        return (
+          <div style={{ padding: '32px 0', textAlign: 'center', fontSize: 13.5, color: 'var(--color-text-muted)' }}>
+            {t(state.step === 'parsing' ? 'finance_import_parsing' : 'finance_import_saving')}
+          </div>
+        )
+
+      case 'done':
+        return (
+          <div style={{ padding: '28px 0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <CheckCircle2 size={30} style={{ color: FIN_POS }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>
+              {t('finance_import_success', { n: state.count })}
+            </span>
+          </div>
+        )
+
+      case 'error':
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', gap: 9, background: FIN_NEG_SOFT, color: FIN_NEG, borderRadius: 8, padding: '11px 13px', fontSize: 12.5, lineHeight: 1.5 }}>
+              <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>{t(ERROR_KEYS[state.error])}</span>
+            </div>
+            <button onClick={() => setState({ step: 'pick' })} style={{ ...ghostBtnStyle, justifyContent: 'center' }}>
+              {t('finance_import_back')}
+            </button>
+          </div>
+        )
+
+      case 'preview':
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+              <span>
+                {t('finance_import_found', {
+                  n: rows.length,
+                  period: statement?.periodStart && statement?.periodEnd
+                    ? `${statement.periodStart.split('-').reverse().join('/')} – ${statement.periodEnd.split('-').reverse().join('/')}`
+                    : (statement?.accountHint ?? ''),
+                })}
+              </span>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setAllSelected(true)} style={{ ...ghostBtnStyle, padding: '5px 9px', fontSize: 12 }}>{t('finance_import_select_all')}</button>
+              <button onClick={() => setAllSelected(false)} style={{ ...ghostBtnStyle, padding: '5px 9px', fontSize: 12 }}>{t('finance_import_deselect_all')}</button>
+            </div>
+
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: 9, maxHeight: isMobile ? '42vh' : 300, overflowY: 'auto' }}>
+              {rows.map((row, i) => (
+                <label
+                  key={`${row.tx.date}-${i}`}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 9, padding: '7px 11px', cursor: 'pointer',
+                    borderBottom: i === rows.length - 1 ? 'none' : '1px solid var(--color-border)',
+                    opacity: row.selected ? 1 : 0.62,
+                  }}
+                >
+                  <input type="checkbox" checked={row.selected} onChange={() => toggleRow(i)} style={{ flexShrink: 0, cursor: 'pointer' }} />
+                  <span style={{ fontSize: 11.5, color: 'var(--color-text-subtle)', flexShrink: 0, ...tabularNums }}>
+                    {row.tx.date.slice(8)}/{row.tx.date.slice(5, 7)}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.tx.description}
+                  </span>
+                  {row.tx.internal && row.tx.internalReason && (
+                    <span style={chipStyle('var(--color-active)', 'var(--color-text-muted)')} title={t('finance_import_internal_badge')}>
+                      {t(INTERNAL_KEYS[row.tx.internalReason])}
+                    </span>
+                  )}
+                  {row.duplicate && (
+                    <span style={chipStyle(FIN_NEG_SOFT, FIN_NEG)}>{t('finance_import_duplicate_badge')}</span>
+                  )}
+                  <span style={{ fontSize: 12.5, fontWeight: 600, flexShrink: 0, color: row.tx.type === 'income' ? FIN_POS : FIN_NEG, ...tabularNums }}>
+                    {row.tx.type === 'income' ? '+' : '−'}{formatBRL(row.tx.amount)}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            <div style={{ fontSize: 11.5, color: 'var(--color-text-subtle)', lineHeight: 1.45 }}>
+              {t('finance_import_internal_hint')}
+            </div>
+
+            {workspace && (
+              <ScopePicker
+                value={scope}
+                onChange={ws => { setScope(ws); setAccountId(''); setGroupCategories({}) }}
+                workspaceId={workspace.id}
+                workspaceName={workspace.name}
+              />
+            )}
+
+            <div>
+              <label style={labelStyle}>{t('finance_import_account_label')}</label>
+              <select value={accountId} onChange={e => setAccountId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                <option value="">{t('finance_import_account_placeholder')}</option>
+                {scopedAccounts.map(a => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
+              </select>
+              {scopedAccounts.length === 0 && (
+                <div style={{ marginTop: 6, fontSize: 12, color: FIN_NEG }}>{t('finance_import_no_accounts')}</div>
+              )}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text)', ...tabularNums }}>
+                  {t('finance_import_selected_sum', { n: selectedCount, total: formatBRL(selectedTotal) })}
+                </span>
+              </div>
+              <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>{t('finance_import_now_or_later_hint')}</span>
+              <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => doImport(false)}
+                  disabled={selectedCount === 0 || !accountId}
+                  style={{ ...ghostBtnStyle, flex: 1, justifyContent: 'center', opacity: selectedCount === 0 || !accountId ? 0.55 : 1 }}
+                >
+                  {t('finance_import_without_categories')}
+                </button>
+                <button
+                  onClick={goToCategorize}
+                  disabled={selectedCount === 0 || !accountId}
+                  style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center', opacity: selectedCount === 0 || !accountId ? 0.55 : 1 }}
+                >
+                  {t('finance_import_categorize_now')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'categorize':
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+              {t('finance_import_categorize_hint')}
+            </span>
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: 9, maxHeight: isMobile ? '48vh' : 340, overflowY: 'auto' }}>
+              {groups.map((g, i) => (
+                <div
+                  key={g.key}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', flexWrap: 'wrap',
+                    borderBottom: i === groups.length - 1 ? 'none' : '1px solid var(--color-border)',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 150 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {g.label}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: g.type === 'income' ? FIN_POS : 'var(--color-text-subtle)', ...tabularNums }}>
+                      {t(g.txIndexes.length === 1 ? 'finance_import_group_txs' : 'finance_import_group_txs_plural', {
+                        n: g.txIndexes.length, total: formatBRL(g.total),
+                      })}
+                    </div>
+                  </div>
+                  <select
+                    value={groupCategories[g.key] ?? ''}
+                    onChange={e => setGroupCategories(prev => ({ ...prev, [g.key]: e.target.value }))}
+                    style={{ ...inputStyle, cursor: 'pointer', width: isMobile ? '100%' : 190 }}
+                  >
+                    <option value="">{t('finance_import_no_category')}</option>
+                    {scopedCategories.filter(c => c.type === g.type).map(c => (
+                      <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 9 }}>
+              <button onClick={() => setState({ step: 'preview' })} style={{ ...ghostBtnStyle, justifyContent: 'center' }}>
+                {t('finance_import_back')}
+              </button>
+              <button onClick={() => doImport(true)} style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center' }}>
+                {t('finance_import_confirm', { n: selectedCount })}
+              </button>
+            </div>
+          </div>
+        )
+    }
+  }
+
+  return (
+    <Modal
+      title={t(state.step === 'categorize' ? 'finance_import_categorize_title' : 'finance_import_title')}
+      onClose={onClose}
+      width={640}
+    >
+      {body()}
+    </Modal>
+  )
+}

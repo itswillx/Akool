@@ -27,6 +27,7 @@ export default defineConfig({
           if (id.includes('@blocknote') || id.includes('@mantine') || id.includes('prosemirror')) return 'editor'
           if (id.includes('@xyflow')) return 'xyflow'
           if (id.includes('jspdf')) return 'pdf'
+          if (id.includes('pdfjs-dist')) return 'pdfjs'
           if (id.includes('@supabase')) return 'supabase'
           if (id.includes('react-router')) return 'router'
           if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) return 'react'

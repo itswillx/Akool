@@ -3,7 +3,7 @@
 // amounts in one consistent unit (integer cents after the money migration).
 // Side-effect free and framework-agnostic.
 
-import type { FinanceTransaction, FinanceAccount, FinanceRecurring } from '../types'
+import type { FinanceTransaction, FinanceAccount, FinanceRecurring, FinanceRecurringEntry, FinanceTxType, FinanceBudget } from '../types'
 
 type AmountTx = Pick<FinanceTransaction, 'type' | 'amount'>
 
@@ -101,6 +101,98 @@ export function recurringDueDate(year: number, month1to12: number, dayOfMonth: n
   return `${year}-${String(month1to12).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
+// The 12 'YYYY-MM' keys of a calendar year, January through December.
+export function monthsOfYear(year: number): string[] {
+  return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`)
+}
+
+// Income/expense totals per month, aligned index-by-index to `months` (zeros
+// for months with no transactions). Single pass over the transaction list;
+// months are matched by the 'YYYY-MM' date prefix.
+export function monthlySeries(
+  transactions: (AmountTx & Pick<FinanceTransaction, 'date'>)[],
+  months: string[],
+): Totals[] {
+  const index = new Map<string, Totals>()
+  const out = months.map(m => {
+    const totals: Totals = { income: 0, expense: 0, balance: 0 }
+    index.set(m, totals)
+    return totals
+  })
+  for (const tx of transactions) {
+    const totals = index.get(tx.date.slice(0, 7))
+    if (!totals) continue
+    if (tx.type === 'income') totals.income += tx.amount
+    else if (tx.type === 'expense') totals.expense += tx.amount
+    totals.balance = totals.income - totals.expense
+  }
+  return out
+}
+
+// Total per category id for one transaction type. Generalizes expenseByCategory
+// (kept above for its existing callers) so income can be grouped the same way.
+export function totalsByCategory(
+  transactions: (AmountTx & Pick<FinanceTransaction, 'category_id'>)[],
+  type: FinanceTxType,
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const tx of transactions) {
+    if (tx.type === type && tx.category_id) {
+      out[tx.category_id] = (out[tx.category_id] ?? 0) + tx.amount
+    }
+  }
+  return out
+}
+
+// Total per user id for one transaction type — the workspace "spending by
+// member" breakdown. Same shape as totalsByCategory, keyed by author.
+export function totalsByUser(
+  transactions: (AmountTx & Pick<FinanceTransaction, 'user_id'>)[],
+  type: FinanceTxType,
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const tx of transactions) {
+    if (tx.type === type) {
+      out[tx.user_id] = (out[tx.user_id] ?? 0) + tx.amount
+    }
+  }
+  return out
+}
+
+// Largest N entries of a category→amount map, descending by amount.
+export function topCategories(
+  byCategory: Record<string, number>,
+  n: number,
+): { categoryId: string; amount: number }[] {
+  return Object.entries(byCategory)
+    .map(([categoryId, amount]) => ({ categoryId, amount }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, n)
+}
+
+// Amount still expected for a month: pending entries due in that month, for
+// recurrings of the given type. Paid entries are excluded on purpose — marking
+// one paid creates a real transaction, so counting them here would double-count
+// against realized totals. Skipped entries are out; a variable recurring with
+// no amount on the entry counts as 0. Entries are the ledger, so rec.active is
+// not consulted.
+export function pendingRecurringTotal(
+  recurring: Pick<FinanceRecurring, 'id' | 'type' | 'amount'>[],
+  entries: Pick<FinanceRecurringEntry, 'recurring_id' | 'due_date' | 'status' | 'amount'>[],
+  month: string,
+  type: FinanceTxType,
+): number {
+  const byId = new Map(recurring.map(r => [r.id, r]))
+  let total = 0
+  for (const entry of entries) {
+    if (entry.status !== 'pending' || !entry.due_date.startsWith(month)) continue
+    const rec = byId.get(entry.recurring_id)
+    if (!rec || rec.type !== type) continue
+    total += entry.amount ?? rec.amount ?? 0
+  }
+  return total
+}
+
 // Due dates a recurring item is missing, from its creation month through the
 // month after `now`. Iterating from the creation month backfills months in
 // which the app was never opened — the entry for a missed month must exist for
@@ -131,6 +223,43 @@ export function missingRecurringDueDates(
       out.push(due)
       budget--
     }
+  }
+  return out
+}
+
+export interface AutoBudgetCandidate {
+  category_id: string
+  month: string
+  amount_limit: number
+  workspace_id: string | null
+}
+
+// Budgets to auto-create for the given month from active, fixed-amount expense
+// recurrings that don't have one yet — so an active recurring counts toward
+// expense tracking without the user manually setting up a budget for it.
+// Variable-amount recurrings and ones without a category are skipped outright.
+// A row already existing for (category_id, month, scope) — manual or a prior
+// auto-create — is left untouched: this only ever proposes what's missing.
+export function missingAutoBudgets(
+  recurring: Pick<FinanceRecurring, 'type' | 'active' | 'is_variable' | 'amount' | 'category_id' | 'workspace_id'>[],
+  existingBudgets: Pick<FinanceBudget, 'category_id' | 'month' | 'workspace_id'>[],
+  month: string,
+): AutoBudgetCandidate[] {
+  const existingKeys = new Set(
+    existingBudgets
+      .filter(b => b.month === month)
+      .map(b => `${b.workspace_id ?? ''}|${b.category_id}`)
+  )
+  const seen = new Set<string>()
+  const out: AutoBudgetCandidate[] = []
+  for (const r of recurring) {
+    if (r.type !== 'expense' || !r.active || r.is_variable) continue
+    if (!r.category_id || r.amount == null) continue
+    const workspaceId = r.workspace_id ?? null
+    const key = `${workspaceId ?? ''}|${r.category_id}`
+    if (existingKeys.has(key) || seen.has(key)) continue
+    seen.add(key)
+    out.push({ category_id: r.category_id, month, amount_limit: r.amount, workspace_id: workspaceId })
   }
   return out
 }

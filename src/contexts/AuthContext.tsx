@@ -17,6 +17,7 @@ export interface UserProfile {
   avatar_color: string | null
   /** Storage PATH in the private `avatars` bucket, resolved via signed URL. */
   avatar_url: string | null
+  finance_dashboard_view: 'simple' | 'detailed'
 }
 
 interface AuthContextType {
@@ -39,7 +40,7 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<{ error: string | null }>
   completePasswordReset: (newPassword: string) => Promise<{ error: string | null }>
   cancelPasswordReset: () => Promise<void>
-  updateProfile: (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url'>>) => Promise<{ error: string | null }>
+  updateProfile: (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url' | 'finance_dashboard_view'>>) => Promise<{ error: string | null }>
   refreshProfile: () => Promise<void>
 }
 
@@ -62,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from('profiles')
-      .select('id, email, display_name, role, is_active, language, theme, invite_slots_remaining, last_login_date, avatar_emoji, avatar_color, avatar_url')
+      .select('id, email, display_name, role, is_active, language, theme, invite_slots_remaining, last_login_date, avatar_emoji, avatar_color, avatar_url, finance_dashboard_view')
       .eq('id', userId)
       .single()
     if (data) {
@@ -235,7 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut()
   }, [signOut])
 
-  const updateProfile = useCallback(async (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url'>>): Promise<{ error: string | null }> => {
+  const updateProfile = useCallback(async (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url' | 'finance_dashboard_view'>>): Promise<{ error: string | null }> => {
     if (!user) return { error: 'Usuário não autenticado.' }
     const { error } = await supabase.from('profiles').update(data).eq('id', user.id)
     if (error) return { error: error.message }

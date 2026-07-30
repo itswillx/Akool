@@ -49,11 +49,12 @@ export default function ResetPasswordPage() {
       <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.14)', padding: '40px', width: '100%', maxWidth: 420 }}>
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: 'var(--color-btn-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-btn-primary-text)', fontSize: 18, fontWeight: 700 }}>A</div>
-          <div>
-            <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text)', margin: 0 }}>Akool</p>
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>{t('auth_tagline')}</p>
-          </div>
+          <svg width="48" height="36" viewBox="0 0 259 194" xmlns="http://www.w3.org/2000/svg">
+            <g transform="translate(0,194) scale(0.1,-0.1)" fill="var(--color-text)" stroke="none">
+              <path d="M575 1157 c-52 -21 -73 -36 -80 -57 -4 -14 -35 -34 -88 -59 -98 -45 -115 -62 -98 -94 23 -41 81 -77 125 -77 23 0 57 -3 78 -6 31 -6 37 -11 42 -39 7 -37 22 -47 48 -34 9 5 19 5 22 1 20 -33 48 -127 56 -188 5 -41 19 -91 30 -113 22 -43 130 -140 191 -171 43 -22 49 -36 21 -44 -25 -8 -65 -64 -58 -81 14 -36 148 -25 161 14 12 40 52 64 112 67 69 3 396 65 557 104 95 24 142 25 204 5 26 -8 69 -16 97 -18 63 -3 72 -26 25 -68 -26 -24 -30 -32 -20 -44 7 -8 28 -15 46 -15 25 0 32 -4 28 -15 -16 -39 104 -44 129 -5 6 11 22 20 34 20 33 0 28 16 -7 29 -30 10 -30 11 -30 83 0 100 -6 116 -44 126 -29 8 -31 11 -32 59 -3 102 -40 158 -124 188 -67 25 -303 37 -565 29 -213 -6 -236 -4 -314 15 -96 24 -157 56 -186 98 -12 15 -49 78 -84 138 -79 137 -103 158 -185 162 -34 1 -74 -3 -91 -10z"/>
+            </g>
+          </svg>
+          <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--color-text)', margin: 0 }}>Akool</p>
         </div>
 
         {!user ? (

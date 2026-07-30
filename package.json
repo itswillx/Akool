@@ -37,8 +37,10 @@
     "clsx": "^2.1.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.14.0",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-easy-crop": "^6.2.3",
     "react-router-dom": "^7.15.0",
     "tailwind-merge": "^3.5.0"
   },

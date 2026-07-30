@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
-import { X, User, Lock, Check, Sun, Moon, Gift, Copy, CheckCheck, Users, Database, LogOut, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, User, Lock, Check, Sun, Moon, Gift, Copy, CheckCheck, Users, Database, LogOut, Camera, Crop, Trash2, ChevronDown, ChevronUp, LayoutDashboard, LayoutList } from 'lucide-react'
 import { PasswordInput, PasswordStrengthMeter } from './PasswordFields'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -8,6 +8,8 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { AVATAR_BUCKET, UserAvatar } from './UserAvatar'
 import { AVATAR_COLORS } from '../lib/avatar'
+import { resolveSignedUrl } from '../lib/storageUrl'
+import AvatarCropModal from './AvatarCropModal'
 import type { Lang } from '../i18n/translations'
 
 // Curated picks that read well at avatar sizes (faces, people, symbols).
@@ -51,6 +53,10 @@ export default function UserSettingsModal({ open, onClose }: Props) {
   const [avatarEmoji, setAvatarEmoji] = useState<string | null>(null)
   const [avatarColor, setAvatarColor] = useState<string | null>(null)
   const [avatarBusy, setAvatarBusy] = useState(false)
+  // Photo awaiting crop confirmation: `revoke` marks a freshly picked file's
+  // blob: URL, which must be released after the modal closes (a re-crop of
+  // the already-uploaded photo instead points at a signed URL, not revoked).
+  const [cropSource, setCropSource] = useState<{ url: string; revoke: boolean } | null>(null)
   // The emoji/color grid is collapsed by default so the profile card stays
   // short; the avatar preview and the customize button both toggle it.
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -120,16 +126,42 @@ export default function UserSettingsModal({ open, onClose }: Props) {
     }
   }, [open, profile])
 
+  // A picked file (or a re-crop request on the existing photo) opens the
+  // round crop step first — upload only happens once the user confirms the
+  // framing, in `uploadCroppedAvatar`.
+  const handlePhotoPick = (file: File | null) => {
+    if (!file || !file.type.startsWith('image/')) return
+    setCropSource(prev => {
+      if (prev?.revoke) URL.revokeObjectURL(prev.url)
+      return { url: URL.createObjectURL(file), revoke: true }
+    })
+  }
+
+  const handlePhotoAdjust = async () => {
+    if (!profile?.avatar_url) return
+    const url = await resolveSignedUrl(AVATAR_BUCKET, profile.avatar_url)
+    setCropSource(prev => {
+      if (prev?.revoke) URL.revokeObjectURL(prev.url)
+      return { url, revoke: false }
+    })
+  }
+
+  const closeCropModal = () => {
+    setCropSource(prev => {
+      if (prev?.revoke) URL.revokeObjectURL(prev.url)
+      return null
+    })
+  }
+
   // Photo actions are self-contained (not part of the form submit): the object
-  // upload and the profile column change move together, so a picked photo can
+  // upload and the profile column change move together, so a cropped photo can
   // never end up orphaned in the bucket by closing the modal without saving.
-  const handlePhotoPick = async (file: File | null) => {
-    if (!file || !user || !file.type.startsWith('image/')) return
+  const uploadCroppedAvatar = async (blob: Blob) => {
+    if (!user) return
     setAvatarBusy(true)
     const previous = profile?.avatar_url ?? null
-    const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg'
-    const path = `${user.id}/${crypto.randomUUID()}.${ext}`
-    const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, file)
+    const path = `${user.id}/${crypto.randomUUID()}.jpg`
+    const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, blob)
     if (upErr) {
       setProfileMsg({ type: 'error', text: upErr.message })
     } else {
@@ -138,6 +170,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
       else if (previous) await supabase.storage.from(AVATAR_BUCKET).remove([previous])
     }
     setAvatarBusy(false)
+    closeCropModal()
   }
 
   const handlePhotoRemove = async () => {
@@ -218,6 +251,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
   const wideTab = tab === 'users' || tab === 'backup'
 
   return (
+    <>
     <div
       ref={overlayRef}
       onClick={handleOverlayClick}
@@ -296,6 +330,12 @@ export default function UserSettingsModal({ open, onClose }: Props) {
                     <input type="file" accept="image/*" hidden disabled={avatarBusy}
                       onChange={e => { handlePhotoPick(e.target.files?.[0] ?? null); e.target.value = '' }} />
                   </label>
+                  {profile?.avatar_url && (
+                    <button type="button" onClick={handlePhotoAdjust} disabled={avatarBusy}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, padding: '7px 11px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', cursor: 'pointer', opacity: avatarBusy ? 0.6 : 1 }}>
+                      <Crop size={13} />{t('settings_avatar_photo_adjust')}
+                    </button>
+                  )}
                   {profile?.avatar_url && (
                     <button type="button" onClick={handlePhotoRemove} disabled={avatarBusy}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, padding: '7px 11px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-error)', cursor: 'pointer', opacity: avatarBusy ? 0.6 : 1 }}>
@@ -380,6 +420,26 @@ export default function UserSettingsModal({ open, onClose }: Props) {
                     onClick={() => setTheme('dark')}
                     icon={<Moon size={15} />}
                     label={t('settings_theme_dark')}
+                  />
+                </div>
+              </FieldLabel>
+
+              {/* Finance dashboard view picker. Applies instantly like the theme
+                  (updateProfile updates `profile` optimistically), so it lives
+                  outside the form's submit flow. */}
+              <FieldLabel label={t('settings_fin_dashboard')}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <ThemeOption
+                    selected={(profile?.finance_dashboard_view ?? 'detailed') === 'detailed'}
+                    onClick={() => { void updateProfile({ finance_dashboard_view: 'detailed' }) }}
+                    icon={<LayoutDashboard size={15} />}
+                    label={t('settings_fin_dashboard_detailed')}
+                  />
+                  <ThemeOption
+                    selected={profile?.finance_dashboard_view === 'simple'}
+                    onClick={() => { void updateProfile({ finance_dashboard_view: 'simple' }) }}
+                    icon={<LayoutList size={15} />}
+                    label={t('settings_fin_dashboard_simple')}
                   />
                 </div>
               </FieldLabel>
@@ -542,6 +602,10 @@ export default function UserSettingsModal({ open, onClose }: Props) {
         </div>
       </div>
     </div>
+    {cropSource && (
+      <AvatarCropModal imageSrc={cropSource.url} onClose={closeCropModal} onSave={uploadCroppedAvatar} />
+    )}
+    </>
   )
 }
 

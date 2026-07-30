@@ -23,6 +23,8 @@ export interface FinanceAccount {
   initial_balance: number
   color: string
   icon: string
+  /** Credit card limit in cents; only meaningful when type === 'credit'. */
+  credit_limit?: number | null
   workspace_id?: string | null
   created_at: string
 }

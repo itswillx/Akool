@@ -8,11 +8,13 @@ import { useFinanceMobile } from './mobileContext'
 // a data-entry form, and losing a filled-in form to a stray click is the worst
 // possible outcome. The header X and each form's Cancel button are the way out.
 // Menus and other throwaway sheets can opt back in with `dismissOnBackdrop`.
-export function Modal({ title, onClose, children, dismissOnBackdrop = false }: {
+export function Modal({ title, onClose, children, dismissOnBackdrop = false, width = 420 }: {
   title: string
   onClose: () => void
   children: React.ReactNode
   dismissOnBackdrop?: boolean
+  /** Desktop dialog width in px. Wider for list-heavy modals (statement import). */
+  width?: number
 }) {
   const isMobile = useFinanceMobile()
   const handleBackdrop = dismissOnBackdrop ? onClose : undefined
@@ -54,7 +56,7 @@ export function Modal({ title, onClose, children, dismissOnBackdrop = false }: {
       <div
         className="finance-modal-panel"
         onClick={e => e.stopPropagation()}
-        style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 24, width: 420, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
+        style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 24, width, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>{title}</h3>

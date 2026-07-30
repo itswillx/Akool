@@ -1,35 +1,33 @@
--- Convert finance money columns from numeric(_,2) reais to bigint cents.
+-- ⚠️ MIGRAÇÃO NEUTRALIZADA EM 2026-07-29 — NÃO RESTAURAR O CORPO ORIGINAL. ⚠️
 --
--- Rationale: amounts are summed/compared in the JS layer (float64). Storing and
--- moving integer cents removes any rounding ambiguity end to end. Existing values
--- are multiplied by 100 and rounded to the nearest cent.
+-- O corpo original convertia as colunas financeiras de numeric(15,2) (reais)
+-- para bigint (centavos), multiplicando os valores existentes por 100:
 --
--- ⚠️ Deploy atomically with the application code that reads/writes cents
--- (toCents on write, fromCents/formatBRL on display). Until the new code ships,
--- the old UI would render values 100× too large.
---
--- Reversible: to roll back, run the inverse for each column, e.g.
 --   alter table public.finance_transactions
---     alter column amount type numeric(15,2) using (amount::numeric / 100);
+--     alter column amount type bigint using round(amount * 100)::bigint;
+--   -- idem para: finance_accounts.initial_balance,
+--   --            finance_budgets.amount_limit,
+--   --            finance_goals.target_amount,
+--   --            finance_goal_contributions.amount,
+--   --            finance_recurring.amount,
+--   --            finance_recurring_entries.amount
+--
+-- Por que foi esvaziada:
+--   Esta migração NUNCA foi aplicada no projeto remoto (nhfftophadasiezrzlsv)
+--   e não consta em supabase_migrations.schema_migrations. Verificado em
+--   2026-07-29: as sete colunas acima ainda são `numeric` no remoto, mas o
+--   app já grava CENTAVOS (inteiros) nelas desde que o código toCents/
+--   fromCents entrou em produção. Executar o corpo original agora — por
+--   exemplo via `supabase db push` — multiplicaria TODOS os valores
+--   financeiros por 100 (transações, contas, orçamentos, metas,
+--   contribuições, recorrentes).
+--
+-- Com o corpo vazio, aplicar esta migração é um no-op seguro em qualquer
+-- ambiente: `supabase db push` apenas registra a versão. Em bancos criados
+-- do zero as colunas permanecem numeric, igual ao remoto — consistente.
+--
+-- Se um dia quiserem de fato migrar o TIPO das colunas para bigint, criem uma
+-- NOVA migração usando `alter column ... type bigint using round(col)::bigint`
+-- (SEM multiplicar por 100 — os valores já estão em centavos).
 
-alter table public.finance_transactions
-  alter column amount type bigint using round(amount * 100)::bigint;
-
-alter table public.finance_accounts
-  alter column initial_balance type bigint using round(initial_balance * 100)::bigint;
-
-alter table public.finance_budgets
-  alter column amount_limit type bigint using round(amount_limit * 100)::bigint;
-
-alter table public.finance_goals
-  alter column target_amount type bigint using round(target_amount * 100)::bigint;
-
-alter table public.finance_goal_contributions
-  alter column amount type bigint using round(amount * 100)::bigint;
-
--- Nullable amounts (variable recurring bills): NULLs are preserved by round().
-alter table public.finance_recurring
-  alter column amount type bigint using round(amount * 100)::bigint;
-
-alter table public.finance_recurring_entries
-  alter column amount type bigint using round(amount * 100)::bigint;
+select 1; -- no-op intencional

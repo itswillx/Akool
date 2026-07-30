@@ -5,6 +5,7 @@ export { Modal } from './Modal'
 export { Drawer } from './Drawer'
 export { EmojiInput } from './EmojiInput'
 export { FinanceMobileContext, useFinanceMobile, MOBILE_NAV_HEIGHT } from './mobileContext'
+export { ScopePicker } from './ScopePicker'
 export {
   inputStyle,
   labelStyle,

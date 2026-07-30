@@ -102,7 +102,7 @@ function AppInner() {
                   onClick={() => setShowAccount(true)}
                   title={profile?.display_name || user?.email || ''}
                   aria-label={tFallback('account_menu')}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, padding: isMobile ? 4 : '0 12px 0 5px', borderRadius: 9, border: 'none', backgroundColor: 'var(--color-logo-bg)', cursor: 'pointer', color: 'var(--color-logo-text)', flexShrink: 0 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, padding: isMobile ? 4 : '0 12px 0 5px', borderRadius: 9, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)', cursor: 'pointer', color: 'var(--color-text)', flexShrink: 0 }}
                 >
                   <UserAvatar
                     name={profile?.display_name || user?.email || '?'}
@@ -113,7 +113,7 @@ function AppInner() {
                     size={26}
                   />
                   {!isMobile && (
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-logo-text)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {profile?.display_name || user?.email}
                     </span>
                   )}

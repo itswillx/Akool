@@ -1,0 +1,51 @@
+# CI (card DEV-001): trava regressoes antes do merge.
+#
+# Por que existe: em 2026-07-29 o working tree ficou com 7 erros de TypeScript
+# que quebravam `npm run build` (o build roda `tsc -b && vite build`, entao um
+# erro de tipo impede o deploy). Nada avisava. Este workflow roda exatamente os
+# mesmos comandos que o deploy roda.
+#
+# Nao precisa de segredo do Supabase: o build so precisa das VITE_* em runtime,
+# e os testes sao unitarios (parsers puros em src/lib, environment: 'node').
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+# Cancela runs antigos do mesmo branch quando chega commit novo.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # `npm ci` exige package-lock.json em dia com package.json.
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc -b --noEmit
+
+      - name: Tests
+        run: npm test
+
+      # Roda por ultimo: e' o passo mais caro e depende dos dois acima.
+      - name: Build
+        run: npm run build
+
+      # Lint nao bloqueia ainda — a base tem violacoes legadas (cards QA-001/QA-002).
+      # Deixa o relatorio visivel para irem caindo aos poucos.
+      - name: Lint (informativo)
+        run: npm run lint
+        continue-on-error: true
