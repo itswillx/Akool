@@ -27,6 +27,15 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
   mas nunca tiveram arquivo aqui. Foram escritas de forma idempotente e o nome do
   arquivo usa a **mesma versão do ledger remoto**, então o CLI as considera aplicadas.
 
+- `20260805120000_finance_store_purchase_status.sql` — aplicada no remoto em
+  2026-08-05 via MCP (`finance_store_purchase_status`). Adiciona
+  `finance_store_purchases.status` (`quoting|purchased|received`, default
+  `received`) para o funil de compra da Loja. **Additiva e reversível**
+  (`DROP COLUMN status`). RLS e trigger não precisaram de mudança: as policies
+  são por linha, não por coluna. Atenção: `quoting` é excluído do estoque
+  derivado e do custo médio em `src/lib/financeStoreCalc.ts` — mexer no default
+  reescreveria o saldo histórico de estoque.
+
 ## Pendências conhecidas de versionamento
 
 - **Baseline ausente.** As ~55 migrações mais antigas (excalinotion/pages, profiles,

@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import type {
   FinanceStoreChannel,
   FinanceStoreCondition,
+  FinanceStorePurchaseStatus,
   FinanceStoreProductKind,
   FinanceStoreSaleStatus,
 } from '../../../types'
@@ -15,9 +16,19 @@ import { FIN_NEG, FIN_POS, FIN_WARN } from '../ui'
 export const SALE_STATUSES: FinanceStoreSaleStatus[] = [
   'negotiating', 'sold', 'shipped', 'delivered', 'cancelled',
 ]
+// Trilha do stepper no card do kanban. 'cancelled' fica FORA dela de propósito:
+// não é um passo do caminho, é sair dele — `stepIndexOf` devolve -1 e o stepper
+// inteiro aparece apagado.
+export const SALE_STEPS: FinanceStoreSaleStatus[] = [
+  'negotiating', 'sold', 'shipped', 'delivered',
+]
 export const CHANNELS: FinanceStoreChannel[] = [
   'olx', 'mercado_livre', 'facebook', 'whatsapp', 'referral', 'in_person', 'other',
 ]
+// Funil de compra. Ao contrário do de venda, aqui TODOS os passos são a
+// trilha: não existe um "cancelado" — uma compra que não vai acontecer volta
+// para 'quoting' ou é apagada.
+export const PURCHASE_STATUSES: FinanceStorePurchaseStatus[] = ['quoting', 'purchased', 'received']
 export const CONDITIONS: FinanceStoreCondition[] = ['used', 'new']
 export const PRODUCT_KINDS: FinanceStoreProductKind[] = ['unique', 'stock']
 
@@ -35,6 +46,12 @@ export const SALE_STATUS_KEY: Record<FinanceStoreSaleStatus, TranslationKey> = {
   shipped: 'finance_store_status_shipped',
   delivered: 'finance_store_status_delivered',
   cancelled: 'finance_store_status_cancelled',
+}
+
+export const PURCHASE_STATUS_KEY: Record<FinanceStorePurchaseStatus, TranslationKey> = {
+  quoting: 'finance_store_purchase_status_quoting',
+  purchased: 'finance_store_purchase_status_purchased',
+  received: 'finance_store_purchase_status_received',
 }
 
 export const CHANNEL_KEY: Record<FinanceStoreChannel, TranslationKey> = {
@@ -70,6 +87,14 @@ export function saleStatusColor(status: FinanceStoreSaleStatus): string {
     case 'shipped': return 'var(--color-btn-primary)'
     case 'delivered': return FIN_POS
     case 'cancelled': return FIN_NEG
+  }
+}
+
+export function purchaseStatusColor(status: FinanceStorePurchaseStatus): string {
+  switch (status) {
+    case 'quoting': return 'var(--color-text-muted)'
+    case 'purchased': return FIN_WARN
+    case 'received': return FIN_POS
   }
 }
 

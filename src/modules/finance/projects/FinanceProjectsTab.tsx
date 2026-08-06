@@ -9,22 +9,26 @@ import { ExpenseModal, type ExpenseDraft } from './ExpenseModal'
 import { ProjectDetail } from './ProjectDetail'
 import { ProjectList } from './ProjectList'
 import { ProjectModal } from './ProjectModal'
-import { useFinanceProjects } from './useFinanceProjects'
+import type { FinanceProjectsStore } from './useFinanceProjects'
 
 // Which obra is open survives a reload, the same way the finance tab and layout
 // already do. An id pointing at a deleted obra simply falls back to the list.
 const OPEN_KEY = 'finance_project_open_id'
 
 // Entry point of the works ("Obras") submodule: a list of projects that opens
-// into a detail view. Rendered as a tab of FinancePanel, inside its mobile
-// context provider — the shared Modal depends on it.
-export default function FinanceProjectsTab({ workspaceId, accounts }: {
+// into a detail view. Rendered as the "Obras" sub-tab of MyProjectsTab, inside
+// the FinancePanel mobile context provider — the shared Modal depends on it.
+//
+// O `store` vem por prop porque o Resumo de Projetos precisa dos mesmos
+// dados: hospedar o hook aqui daria duas cópias, que divergiriam na primeira
+// escrita.
+export default function FinanceProjectsTab({ store, workspaceId, accounts }: {
+  store: FinanceProjectsStore
   workspaceId: string | null
   accounts: FinanceAccount[]
 }) {
   const { user } = useAuth()
   const { t } = useLanguage()
-  const store = useFinanceProjects(user?.id, workspaceId)
   const [openId, setOpenId] = useState<string | null>(() => localStorage.getItem(OPEN_KEY))
 
   useEffect(() => {

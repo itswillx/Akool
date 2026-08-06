@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
-import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
-import type { FinanceAccount, FinanceStoreCustomer, FinanceStoreProduct, FinanceStorePurchase, FinanceStoreSale } from '../../../types'
+import type { FinanceAccount, FinanceCategory, FinanceStoreCustomer, FinanceStoreProduct, FinanceStorePurchase, FinanceStoreSale } from '../../../types'
 import { segBtnStyle, segTrackStyle } from '../ui'
 import type { TranslationKey } from '../../../i18n/translations'
 import { CustomerModal } from './CustomerModal'
@@ -10,16 +9,18 @@ import { CustomersView } from './CustomersView'
 import { InventoryView } from './InventoryView'
 import { ProductModal } from './ProductModal'
 import { PurchaseModal } from './PurchaseModal'
+import { PurchasesBoard } from './PurchasesBoard'
 import { SaleModal } from './SaleModal'
 import { SalesView } from './SalesView'
 import { StoreOverview } from './StoreOverview'
-import { useFinanceStore } from './useFinanceStore'
+import type { FinanceStoreStore } from './useFinanceStore'
 
-type Section = 'overview' | 'inventory' | 'sales' | 'customers'
+type Section = 'overview' | 'inventory' | 'purchases' | 'sales' | 'customers'
 
 const SECTIONS: { id: Section; key: TranslationKey }[] = [
   { id: 'overview', key: 'finance_store_nav_overview' },
   { id: 'inventory', key: 'finance_store_nav_inventory' },
+  { id: 'purchases', key: 'finance_store_nav_purchases' },
   { id: 'sales', key: 'finance_store_nav_sales' },
   { id: 'customers', key: 'finance_store_nav_customers' },
 ]
@@ -32,17 +33,23 @@ function isSection(value: unknown): value is Section {
 }
 
 // Entry point of the store ("Loja") submodule: resale inventory, sale pipeline
-// and customers. Rendered as a tab of FinancePanel, inside its mobile context
-// provider — the shared Modal depends on it. `month` ('YYYY-MM') comes from
-// the panel's header arrows and drives the overview cards.
-export default function FinanceStoreTab({ workspaceId, accounts, month }: {
-  workspaceId: string | null
+// and customers. Rendered as the "Loja" sub-tab of MyProjectsTab, inside the
+// FinancePanel mobile context provider — the shared Modal depends on it.
+// `month` ('YYYY-MM') comes from the panel's header arrows and drives the
+// overview cards.
+//
+// O `store` vem por prop pelo mesmo motivo de Obras: o Resumo de Projetos
+// lê os mesmos dados e duas cópias divergiriam na primeira escrita.
+export default function FinanceStoreTab({ store, accounts, categories, month }: {
+  store: FinanceStoreStore
   accounts: FinanceAccount[]
+  /** Only used to categorize the transactions the store links into the cash
+   *  flow — without one they count in the month's totals but never show up in
+   *  "top categories" or against a budget. */
+  categories: FinanceCategory[]
   month: string
 }) {
-  const { user } = useAuth()
   const { t } = useLanguage()
-  const store = useFinanceStore(user?.id, workspaceId)
   const [section, setSection] = useState<Section>(() => {
     const saved = localStorage.getItem(SECTION_KEY)
     return isSection(saved) ? saved : 'overview'
@@ -86,8 +93,15 @@ export default function FinanceStoreTab({ workspaceId, accounts, month }: {
           onEdit={product => setProductModal({ open: true, product })}
           onRestock={product => setPurchaseModal({ product })} />
       )}
+      {section === 'purchases' && (
+        <PurchasesBoard store={store} categories={categories}
+          onEdit={purchase => {
+            const product = store.products.find(p => p.id === purchase.product_id)
+            if (product) setPurchaseModal({ product, purchase })
+          }} />
+      )}
       {section === 'sales' && (
-        <SalesView store={store}
+        <SalesView store={store} categories={categories}
           onNew={() => setSaleModal({ open: true })}
           onEdit={sale => setSaleModal({ open: true, sale })} />
       )}
@@ -111,7 +125,7 @@ export default function FinanceStoreTab({ workspaceId, accounts, month }: {
       )}
       {purchaseModal && (
         <PurchaseModal store={store} product={purchaseModal.product} purchase={purchaseModal.purchase}
-          accounts={accounts} onClose={() => setPurchaseModal(null)} />
+          accounts={accounts} categories={categories} onClose={() => setPurchaseModal(null)} />
       )}
       {saleModal.open && (
         <SaleModal store={store} sale={saleModal.sale} accounts={accounts}

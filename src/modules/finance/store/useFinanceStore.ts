@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabase'
-import { saleNetReceived } from '../../../lib/financeStoreCalc'
+import { purchaseTotal, saleNetReceived } from '../../../lib/financeStoreCalc'
 import type {
   FinanceAttachment,
   FinanceStoreCustomer,
@@ -37,7 +37,7 @@ export const TRANSACTIONS_CHANGED_EVENT = 'finance_transactions_changed'
 type NewProduct = Pick<FinanceStoreProduct,
   'kind' | 'name' | 'category' | 'condition' | 'serial_number' | 'notes' | 'target_price' | 'attachments'>
 type NewPurchase = Pick<FinanceStorePurchase,
-  'product_id' | 'supplier_id' | 'quantity' | 'unit_cost' | 'other_costs' | 'date' | 'account_id' | 'notes' | 'attachments'>
+  'product_id' | 'supplier_id' | 'quantity' | 'unit_cost' | 'other_costs' | 'date' | 'account_id' | 'notes' | 'attachments' | 'status'>
 type NewCustomer = Pick<FinanceStoreCustomer, 'name' | 'phone' | 'city' | 'channel' | 'notes'>
 type NewSale = Pick<FinanceStoreSale,
   'customer_id' | 'channel' | 'shipping_method' | 'tracking_code' | 'expected_delivery_on'
@@ -114,12 +114,17 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
 
   // ─── Linked finance_transactions ───────────────────────────────────────────
 
+  // `categoryId` is optional but worth passing: a linked transaction with no
+  // category still counts in the month's totals while being invisible to
+  // totalsByCategory and to the budgets — so a sale inflated the month's income
+  // and never showed up in "top categories".
   const insertLinkedTx = useCallback(async (
     type: 'income' | 'expense',
     amount: number,
     description: string,
     date: string,
     accountId: string,
+    categoryId: string | null = null,
   ): Promise<string | null> => {
     if (!userId) return null
     const { data, error: err } = await supabase
@@ -127,7 +132,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
       .insert({
         user_id: userId,
         account_id: accountId,
-        category_id: null,
+        category_id: categoryId,
         type,
         amount,
         description,
@@ -206,13 +211,13 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
 
   const createPurchase = useCallback(async (
     form: NewPurchase,
-    opts?: { createTransaction?: boolean; description?: string },
+    opts?: { createTransaction?: boolean; description?: string; categoryId?: string | null },
   ): Promise<FinanceStorePurchase | null> => {
     if (!userId) return null
     let transactionId: string | null = null
     if (opts?.createTransaction && form.account_id) {
       const amount = form.quantity * form.unit_cost + form.other_costs
-      transactionId = await insertLinkedTx('expense', amount, opts.description ?? '', form.date, form.account_id)
+      transactionId = await insertLinkedTx('expense', amount, opts.description ?? '', form.date, form.account_id, opts.categoryId ?? null)
     }
     const { data, error: err } = await supabase
       .from('finance_store_purchases')
@@ -229,16 +234,49 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
     const target = purchases.find(p => p.id === id)
     if (!target) return
     const next = { ...target, ...patch }
+    // Voltar para 'quoting' desfaz a compra: a despesa some do fluxo de caixa
+    // e as unidades saem do estoque (por derivação). Espelha o 'reopen' da
+    // venda — sem isto, uma cotação continuaria contando como dinheiro gasto.
+    const undoing = patch.status === 'quoting' && target.status !== 'quoting' && !!target.transaction_id
+    if (undoing) next.transaction_id = null
     setPurchases(prev => prev.map(p => (p.id === id ? next : p)))
-    const { error: err } = await supabase.from('finance_store_purchases').update({ ...patch, ...touch() }).eq('id', id)
+    const { error: err } = await supabase
+      .from('finance_store_purchases')
+      .update({ ...patch, ...(undoing ? { transaction_id: null } : {}), ...touch() })
+      .eq('id', id)
     if (err) { setError(err.message); return }
+    if (undoing) {
+      await deleteLinkedTx(target.transaction_id!)
+      return
+    }
     if (target.transaction_id) {
       await updateLinkedTx(target.transaction_id, {
         amount: next.quantity * next.unit_cost + next.other_costs,
         date: next.date,
       })
     }
-  }, [purchases, updateLinkedTx])
+  }, [purchases, updateLinkedTx, deleteLinkedTx])
+
+  // Cria a despesa vinculada depois do fato — espelho de `generateSaleIncome`.
+  // Usado quando a compra sai de 'quoting' e o usuário decide lançá-la no fluxo
+  // de caixa naquele momento, em vez de na criação.
+  const generatePurchaseExpense = useCallback(async (id: string, description: string, categoryId: string | null = null) => {
+    const target = purchases.find(p => p.id === id)
+    if (!target || target.transaction_id || !target.account_id) return
+    if (target.status === 'quoting') return
+    const txId = await insertLinkedTx(
+      'expense',
+      purchaseTotal(target),
+      description,
+      target.date,
+      target.account_id,
+      categoryId,
+    )
+    if (!txId) return
+    setPurchases(prev => prev.map(p => (p.id === id ? { ...p, transaction_id: txId } : p)))
+    const { error: err } = await supabase.from('finance_store_purchases').update({ transaction_id: txId, ...touch() }).eq('id', id)
+    if (err) setError(err.message)
+  }, [purchases, insertLinkedTx])
 
   const deletePurchase = useCallback(async (id: string) => {
     const target = purchases.find(p => p.id === id)
@@ -328,7 +366,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
   const setSaleStatus = useCallback(async (
     id: string,
     status: FinanceStoreSaleStatus,
-    opts?: { createTransaction?: boolean; description?: string; date?: string },
+    opts?: { createTransaction?: boolean; description?: string; date?: string; categoryId?: string | null },
   ) => {
     const target = sales.find(s => s.id === id)
     if (!target) return
@@ -361,6 +399,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
         opts.description ?? '',
         next.sold_on ?? todayISO(),
         target.account_id,
+        opts.categoryId ?? null,
       )
       patch.transaction_id = txId
       next = { ...next, transaction_id: txId }
@@ -373,7 +412,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
 
   // Late income for a sale that was marked sold without one (no account at the
   // time, or the checkbox was off). Same single-transaction-per-sale rule.
-  const generateSaleIncome = useCallback(async (id: string, description: string) => {
+  const generateSaleIncome = useCallback(async (id: string, description: string, categoryId: string | null = null) => {
     const target = sales.find(s => s.id === id)
     if (!target || target.transaction_id || !target.account_id) return
     if (target.status === 'negotiating' || target.status === 'cancelled') return
@@ -384,6 +423,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
       description,
       target.sold_on ?? todayISO(),
       target.account_id,
+      categoryId,
     )
     if (!txId) return
     setSales(prev => prev.map(s => (s.id === id ? { ...s, transaction_id: txId } : s)))
@@ -470,7 +510,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
   return {
     products, purchases, customers, sales, saleItems, suppliers, loading, error, clearError,
     createProduct, updateProduct, deleteProduct,
-    createPurchase, updatePurchase, deletePurchase,
+    createPurchase, updatePurchase, deletePurchase, generatePurchaseExpense,
     createSupplier,
     createCustomer, updateCustomer, deleteCustomer,
     createSale, updateSale, setSaleStatus, generateSaleIncome, deleteSale,

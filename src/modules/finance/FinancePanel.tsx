@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
-import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, Link2, FileDown, Camera, Download, Upload, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal, Search, Zap, PanelLeft, PanelTop, HardHat, Store } from 'lucide-react'
-import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceBudget, FinanceTxType, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceWorkspace, FinanceWorkspaceMember, FinanceWorkspaceInvite } from '../../types'
+import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, Link2, FileDown, Camera, Download, Upload, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal, Search, Zap, PanelLeft, PanelTop, HardHat, FolderKanban } from 'lucide-react'
+import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceBudget, FinanceTxType, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceWorkspace, FinanceWorkspaceMember, FinanceWorkspaceInvite, FinanceInvestment, FinanceInvestmentMovement } from '../../types'
 import { supabase } from '../../lib/supabase'
 import { toCents, fromCents, formatBRL } from '../../lib/money'
 import { resolveSignedUrl } from '../../lib/storageUrl'
 import { sanitizeIlikeTerm } from '../../lib/profileSearch'
 import { downloadTransactionsCsv } from '../../lib/financeCsv'
-import { missingAutoBudgets } from '../../lib/financeCalc'
+import { accountBalance, missingAutoBudgets } from '../../lib/financeCalc'
 import { useAuth } from '../../contexts/AuthContext'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { useIsMobile } from '../../hooks/useIsMobile'
@@ -22,12 +22,18 @@ import {
   FIN_ACCENT, FIN_ACCENT_TEXT, FIN_POS, FIN_NEG, FIN_POS_SOFT, FIN_NEG_SOFT, FIN_WARN,
 } from './ui'
 
-const FinanceProjectsTab = lazy(() => import('./projects'))
-const FinanceStoreTab = lazy(() => import('./store'))
+// Obras, Investimentos e Loja deixaram de ser abas irmãs: viraram sub-abas de
+// "Projetos", que é quem faz o lazy import de cada uma agora.
+const MyProjectsTab = lazy(() => import('./myprojects/MyProjectsTab'))
 
 // Lazy so the statement parsers (and, behind them, pdfjs) stay out of the
 // main finance chunk until someone actually opens the import flow.
 const ImportStatementModal = lazy(() => import('./integrations/ImportStatementModal'))
+import type { ParsedInvestmentMovement } from './integrations/ImportStatementModal'
+
+// Puro e minúsculo: a resolução da aba acontece no primeiro render, antes de
+// qualquer chunk lazy, então não pode depender de um.
+import { parseFinanceLocation, readStoredSection, type ProjectsSection } from './myprojects/section'
 
 // Imported from the file rather than the './projects' barrel on purpose: the
 // barrel re-exports the tab component, which would pull the whole submodule
@@ -42,11 +48,26 @@ import CoworkspaceOverviewTab from './tabs/CoworkspaceOverviewTab'
 // Single source of truth for the tabs: the union, the localStorage validator and
 // the CustomEvent whitelist below all derive from this array, so adding a tab in
 // one place can't silently desync the other two.
-const TAB_IDS = ['overview', 'transactions', 'budgets', 'accounts', 'goals', 'categories', 'recurring', 'projects', 'store'] as const
+const TAB_IDS = ['overview', 'transactions', 'budgets', 'accounts', 'categories', 'recurring', 'myprojects'] as const
 export type TabId = typeof TAB_IDS[number]
 
 function isTabId(value: unknown): value is TabId {
   return typeof value === 'string' && (TAB_IDS as readonly string[]).includes(value)
+}
+
+/**
+ * Único ponto do painel que entende os ids de aba antigos ('projects',
+ * 'store', 'investments', 'goals'), hoje sub-abas de "Projetos". Usado tanto
+ * pelo localStorage quanto pelo CustomEvent, para que os dois nunca divirjam.
+ *
+ * O TabId continua sendo 'myprojects' mesmo com o rótulo "Projetos": trocá-lo
+ * por 'projects' colidiria com o id legado de Obras, e o mesmo texto passaria a
+ * significar duas coisas.
+ */
+function resolveTabRequest(raw: string | null): { tab: TabId; section: ProjectsSection | null } | null {
+  const loc = parseFinanceLocation(raw)
+  if (!loc || !isTabId(loc.tab)) return null
+  return { tab: loc.tab, section: loc.section }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -168,6 +189,13 @@ function useFinanceData() {
   const [familyBudgets, setFamilyBudgets] = useState<FinanceBudget[]>([])
   const [familyAccounts, setFamilyAccounts] = useState<FinanceAccount[]>([])
   const [familyCategories, setFamilyCategories] = useState<FinanceCategory[]>([])
+  // Investment movements never become transactions (they would inflate the
+  // month's income/expense), but the money did leave the bank — so every place
+  // that computes an account balance needs them alongside the transactions.
+  const [investments, setInvestments] = useState<FinanceInvestment[]>([])
+  const [investmentMovements, setInvestmentMovements] = useState<FinanceInvestmentMovement[]>([])
+  const [familyInvestments, setFamilyInvestments] = useState<FinanceInvestment[]>([])
+  const [familyInvestmentMovements, setFamilyInvestmentMovements] = useState<FinanceInvestmentMovement[]>([])
   const [loading, setLoading] = useState(true)
 
   // Keyed by the fields actually read, not by the `user` object: supabase-js
@@ -185,7 +213,7 @@ function useFinanceData() {
     if (!userId) return
     if (!opts?.silent) setLoading(true)
     await supabase.rpc('bootstrap_finance_categories', { p_user_id: userId })
-    const [accs, cats, txs, buds, gls, ctbs, recs, rEnts, ownedShares, incShares, shTxs, shBuds] = await Promise.all([
+    const [accs, cats, txs, buds, gls, ctbs, recs, rEnts, ownedShares, incShares, shTxs, shBuds, invs, invMovs] = await Promise.all([
       supabase.from('finance_accounts').select('*').eq('user_id', userId).order('created_at'),
       supabase.from('finance_categories').select('*').eq('user_id', userId).is('workspace_id', null).order('type').order('name'),
       supabase.from('finance_transactions').select('*').eq('user_id', userId).order('date', { ascending: false }).order('created_at', { ascending: false }),
@@ -198,6 +226,8 @@ function useFinanceData() {
       supabase.from('finance_goal_shares').select('*').eq('shared_with_user_id', userId),
       supabase.from('finance_transactions').select('*').eq('shared_with_user_id', userId).order('date', { ascending: false }).order('created_at', { ascending: false }),
       supabase.from('finance_budgets').select('*').eq('shared_with_user_id', userId),
+      supabase.from('finance_investments').select('*').eq('user_id', userId).is('workspace_id', null).order('created_at'),
+      supabase.from('finance_investment_movements').select('*').eq('user_id', userId).is('workspace_id', null).order('date', { ascending: false }),
     ])
 
     // Load workspace data
@@ -214,11 +244,13 @@ function useFinanceData() {
     let wsBuds: FinanceBudget[] = []
     let wsAccs: FinanceAccount[] = []
     let wsCats: FinanceCategory[] = []
+    let wsInvs: FinanceInvestment[] = []
+    let wsInvMovs: FinanceInvestmentMovement[] = []
 
     if (memberRow) {
       const wsId = (memberRow as FinanceWorkspaceMember).workspace_id
       await supabase.rpc('bootstrap_workspace_categories', { p_workspace_id: wsId })
-      const [wsRes, membersRes, invitesRes, wsTxsRes, wsBudsRes, wsAccsRes, wsCatsRes] = await Promise.all([
+      const [wsRes, membersRes, invitesRes, wsTxsRes, wsBudsRes, wsAccsRes, wsCatsRes, wsInvsRes, wsInvMovsRes] = await Promise.all([
         supabase.from('finance_workspaces').select('*').eq('id', wsId).single(),
         supabase.from('finance_workspace_members').select('*').eq('workspace_id', wsId),
         supabase.from('finance_workspace_invites').select('*').eq('workspace_id', wsId).order('created_at', { ascending: false }),
@@ -226,6 +258,8 @@ function useFinanceData() {
         supabase.from('finance_budgets').select('*').not('workspace_id', 'is', null).eq('workspace_id', wsId),
         supabase.from('finance_accounts').select('*').not('workspace_id', 'is', null).eq('workspace_id', wsId).order('created_at'),
         supabase.from('finance_categories').select('*').not('workspace_id', 'is', null).eq('workspace_id', wsId).order('type').order('name'),
+        supabase.from('finance_investments').select('*').not('workspace_id', 'is', null).eq('workspace_id', wsId).order('created_at'),
+        supabase.from('finance_investment_movements').select('*').not('workspace_id', 'is', null).eq('workspace_id', wsId).order('date', { ascending: false }),
       ])
       ws = (wsRes.data as FinanceWorkspace) ?? null
       wsMembers = (membersRes.data as FinanceWorkspaceMember[]) ?? []
@@ -234,6 +268,8 @@ function useFinanceData() {
       wsBuds = (wsBudsRes.data as FinanceBudget[]) ?? []
       wsAccs = (wsAccsRes.data as FinanceAccount[]) ?? []
       wsCats = (wsCatsRes.data as FinanceCategory[]) ?? []
+      wsInvs = (wsInvsRes.data as FinanceInvestment[]) ?? []
+      wsInvMovs = (wsInvMovsRes.data as FinanceInvestmentMovement[]) ?? []
     }
 
     // Load pending invites for current user (even if not in a workspace yet)
@@ -289,6 +325,10 @@ function useFinanceData() {
     setFamilyBudgets(wsBuds)
     setFamilyAccounts(wsAccs)
     setFamilyCategories(wsCats)
+    setInvestments((invs.data as FinanceInvestment[]) ?? [])
+    setInvestmentMovements((invMovs.data as FinanceInvestmentMovement[]) ?? [])
+    setFamilyInvestments(wsInvs)
+    setFamilyInvestmentMovements(wsInvMovs)
 
     const recItems = (recs.data as FinanceRecurring[]) ?? []
     setRecurring(recItems)
@@ -306,7 +346,7 @@ function useFinanceData() {
 
   useEffect(() => { load() }, [load])
 
-  return { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, loading, reload: load }
+  return { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, investments, investmentMovements, familyInvestments, familyInvestmentMovements, loading, reload: load }
 }
 
 // ─── Transaction Modal ────────────────────────────────────────────────────────
@@ -1156,19 +1196,20 @@ function BudgetModal({
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ transactions, categories, month, recurring, recurringEntries, accounts, budgets, goals, contributions, onMarkPaid, onSkipEntry, onNavigate, workspaceName, onOpenWorkspaceView }: {
+function OverviewTab({ transactions, categories, month, recurring, recurringEntries, accounts, investmentMovements, budgets, goals, contributions, onMarkPaid, onSkipEntry, onNavigate, workspaceName, onOpenWorkspaceView }: {
   transactions: FinanceTransaction[]
   categories: FinanceCategory[]
   month: string
   recurring: FinanceRecurring[]
   recurringEntries: FinanceRecurringEntry[]
   accounts: FinanceAccount[]
+  investmentMovements: FinanceInvestmentMovement[]
   budgets: FinanceBudget[]
   goals: FinanceGoal[]
   contributions: FinanceGoalContribution[]
   onMarkPaid: (entry: FinanceRecurringEntry, rec: FinanceRecurring) => void
   onSkipEntry: (entryId: string) => void
-  onNavigate: (tab: TabId) => void
+  onNavigate: (tab: TabId, section?: ProjectsSection) => void
   workspaceName?: string | null
   onOpenWorkspaceView?: () => void
 }) {
@@ -1236,12 +1277,11 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
     .sort((a, b) => a.due_date.localeCompare(b.due_date))
 
   // ─── Sector mini-summaries ──────────────────────────────────────────────────
-  const accountsBalance = accounts.reduce((sum, acc) => {
-    const txs = transactions.filter(tx => tx.account_id === acc.id)
-    const inc = txs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0)
-    const exp = txs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0)
-    return sum + acc.initial_balance + inc - exp
-  }, 0)
+  // Via the shared helper rather than inline arithmetic: the balance now also
+  // depends on investment movements, and three copies of the formula is how the
+  // sidebar and the dashboard ended up disagreeing with the bank.
+  const accountsBalance = accounts.reduce(
+    (sum, acc) => sum + accountBalance(acc, transactions, investmentMovements), 0)
 
   const activeGoals = goals.filter(g => g.status === 'active')
   const goalsTarget = activeGoals.reduce((s, g) => s + g.target_amount, 0)
@@ -1281,8 +1321,8 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
     </div>
   )
 
-  const sectorCard = (key: string, icon: React.ReactNode, label: string, value: React.ReactNode, sub: string, tab: TabId) => (
-    <button key={key} onClick={() => onNavigate(tab)}
+  const sectorCard = (key: string, icon: React.ReactNode, label: string, value: React.ReactNode, sub: string, tab: TabId, section?: ProjectsSection) => (
+    <button key={key} onClick={() => onNavigate(tab, section)}
       style={{ textAlign: 'left', ...cardSurfaceStyle, padding: '14px 16px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--color-text-subtle)' }}>
@@ -1324,7 +1364,7 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
         {sectorCard('goals', <Star size={16} />, t('finance_tab_goals'),
           activeGoals.length > 0 ? `${goalsPct.toFixed(0)}%` : '—',
           activeGoals.length === 1 ? t('finance_overview_goals_sub', { n: activeGoals.length }) : t('finance_overview_goals_sub_plural', { n: activeGoals.length }),
-          'goals')}
+          'myprojects', 'goals')}
         {sectorCard('budgets', <Target size={16} />, t('finance_tab_budgets'),
           monthBudgets.length > 0 ? (budgetsOver > 0 ? t('finance_overview_budgets_over', { n: budgetsOver }) : t('finance_overview_budgets_ok')) : '—',
           monthBudgets.length === 1 ? t('finance_overview_budgets_sub', { n: monthBudgets.length }) : t('finance_overview_budgets_sub_plural', { n: monthBudgets.length }),
@@ -1335,12 +1375,14 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
           'recurring')}
         {/* Works spending never becomes a transaction — this consolidated total
             is the only place the cash flow sees it. */}
+        {/* O rótulo continua "Obras": o atalho leva à sub-aba de Obras dentro
+            de Projetos, não à seção inteira. */}
         {sectorCard('projects', <HardHat size={16} />, t('finance_tab_projects'),
           projectsSummary.total > 0 ? fmt(projectsSummary.total) : '—',
           projectsSummary.count === 1
             ? t('finance_overview_projects_sub', { n: projectsSummary.count })
             : t('finance_overview_projects_sub_plural', { n: projectsSummary.count }),
-          'projects')}
+          'myprojects', 'works')}
       </div>
 
       {/* Monthly evolution */}
@@ -1886,20 +1928,16 @@ function BudgetsTab({ budgets, sharedBudgets, transactions, partnerTransactions,
 
 // ─── Accounts Tab ─────────────────────────────────────────────────────────────
 
-function AccountsTab({ accounts, transactions, onAdd, onEdit }: {
+function AccountsTab({ accounts, transactions, investmentMovements, onAdd, onEdit }: {
   accounts: FinanceAccount[]
   transactions: FinanceTransaction[]
+  investmentMovements: FinanceInvestmentMovement[]
   onAdd: () => void
   onEdit: (acc: FinanceAccount) => void
 }) {
   const { t } = useLanguage()
 
-  const accBalance = (acc: FinanceAccount) => {
-    const txs = transactions.filter(tx => tx.account_id === acc.id)
-    const income = txs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0)
-    const expense = txs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0)
-    return acc.initial_balance + income - expense
-  }
+  const accBalance = (acc: FinanceAccount) => accountBalance(acc, transactions, investmentMovements)
 
   const typeLabel: Record<string, string> = {
     checking: t('finance_account_type_checking'),
@@ -3111,11 +3149,9 @@ const FINANCE_NAV: { id: TabId; icon: React.ReactNode }[] = [
   { id: 'transactions', icon: <List size={18} /> },
   { id: 'budgets', icon: <Target size={18} /> },
   { id: 'accounts', icon: <CreditCard size={18} /> },
-  { id: 'goals', icon: <Star size={18} /> },
   { id: 'categories', icon: <Tag size={18} /> },
   { id: 'recurring', icon: <RefreshCw size={18} /> },
-  { id: 'projects', icon: <HardHat size={18} /> },
-  { id: 'store', icon: <Store size={18} /> },
+  { id: 'myprojects', icon: <FolderKanban size={18} /> },
 ]
 
 function tabLabelKey(id: TabId): `finance_tab_${TabId}` {
@@ -3171,7 +3207,7 @@ function FinanceSidebar({ tab, onSelect, accountsBalance, accountCount }: {
   )
 }
 
-const MORE_TABS: TabId[] = ['accounts', 'goals', 'categories', 'recurring', 'projects', 'store']
+const MORE_TABS: TabId[] = ['accounts', 'categories', 'recurring', 'myprojects']
 
 function MobileBottomNav({ tab, onSelect, onMore, onQuickAdd }: {
   tab: TabId
@@ -3547,16 +3583,33 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   const { t } = useLanguage()
   const isMobileHook = useIsMobile()
   const isMobile = isMobileProp ?? isMobileHook
-  const { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, loading, reload } = useFinanceData()
+  const { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, investments, investmentMovements, familyInvestments, familyInvestmentMovements, loading, reload } = useFinanceData()
 
   const [month, setMonth] = useState(currentYM())
   const [exporting, setExporting] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [wsModalOpen, setWsModalOpen] = useState(false)
-  const [tab, setTab] = useState<TabId>(() => {
-    const saved = localStorage.getItem('finance_active_tab')
-    return isTabId(saved) ? saved : 'overview'
-  })
+  // Uma leitura só do localStorage: o valor gravado pode ser um id antigo
+  // ('store'), que resolve para a aba nova MAIS a sub-aba correspondente.
+  const [tab, setTab] = useState<TabId>(
+    () => resolveTabRequest(localStorage.getItem('finance_active_tab'))?.tab ?? 'overview',
+  )
+  // A sub-aba vive AQUI, e não dentro do MyProjectsTab: um atalho do Resumo
+  // precisa poder mandar "vá para a Loja" mesmo com a aba já montada — se o
+  // estado morasse lá dentro, a navegação viraria um no-op silencioso.
+  const [projSection, setProjSection] = useState<ProjectsSection>(
+    () => resolveTabRequest(localStorage.getItem('finance_active_tab'))?.section ?? readStoredSection(),
+  )
+  useEffect(() => {
+    localStorage.setItem('finance_myprojects_section', projSection)
+  }, [projSection])
+
+  // Navegação vinda dos atalhos do Resumo: a sub-aba entra ANTES da aba, para
+  // que Projetos monte já na seção certa em vez de piscar no Resumo.
+  const navigateTo = useCallback((next: TabId, section?: ProjectsSection) => {
+    if (section) setProjSection(section)
+    setTab(next)
+  }, [])
 
   // Desktop navigation layout: 'side' (Lateral) or 'top' (Topo). Persisted.
   const [direction, setDirection] = useState<'side' | 'top'>(() => {
@@ -3579,13 +3632,14 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     localStorage.removeItem('finance_view_mode')
   }, [])
 
-  // Listen for tab change events dispatched by sidebar
+  // Listen for tab change events dispatched by sidebar. Aceita 'myprojects',
+  // 'myprojects:store' (deep-link para a sub-aba) e os ids antigos.
   useEffect(() => {
     const handler = (e: Event) => {
-      const tabId = (e as CustomEvent<string>).detail
-      if (isTabId(tabId)) {
-        setTab(tabId)
-      }
+      const target = resolveTabRequest((e as CustomEvent<string>).detail)
+      if (!target) return
+      if (target.section) setProjSection(target.section)
+      setTab(target.tab)
     }
     window.addEventListener('finance_tab_change', handler)
     return () => window.removeEventListener('finance_tab_change', handler)
@@ -3641,12 +3695,8 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   }, [overviewScope, workspace])
 
   // Total balance across the user's accounts (shown in the Lateral sidebar footer).
-  const accountsBalanceTotal = accounts.reduce((sum, acc) => {
-    const txs = transactions.filter(tx => tx.account_id === acc.id)
-    const inc = txs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0)
-    const exp = txs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0)
-    return sum + acc.initial_balance + inc - exp
-  }, 0)
+  const accountsBalanceTotal = accounts.reduce(
+    (sum, acc) => sum + accountBalance(acc, transactions, investmentMovements), 0)
 
   // Modals
   const [txModal, setTxModal] = useState<{ open: boolean; tx?: FinanceTransaction }>({ open: false })
@@ -3684,11 +3734,89 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     await reload()
   }
 
-  const bulkAddTx = async (rows: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>[]) => {
-    if (!user || rows.length === 0) return
-    const { error } = await supabase.from('finance_transactions').insert(rows.map(r => ({ ...r, user_id: user.id })))
-    if (error) throw error
-    await reload()
+  // Single entry point for the statement import: plain rows go to
+  // finance_transactions, investment movements go to their own table. Both in
+  // one call so the modal reports one result and `reload()` runs once.
+  const bulkImport = async (
+    rows: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>[],
+    movements: ParsedInvestmentMovement[],
+    context: { accountId: string | null; workspaceId: string | null },
+  ) => {
+    if (!user) return
+    if (rows.length > 0) {
+      const { error } = await supabase.from('finance_transactions').insert(rows.map(r => ({ ...r, user_id: user.id })))
+      if (error) throw error
+    }
+    if (movements.length > 0) await saveInvestmentMovements(movements, context)
+    if (rows.length > 0 || movements.length > 0) await reload()
+  }
+
+  // Resolves each movement's position by its stable match_key, creating the
+  // ones that do not exist yet, then upserts the movements themselves.
+  //
+  // The upsert on (investment_id, import_key) is what makes re-importing an
+  // overlapping period a genuine no-op — unlike finance_transactions, which has
+  // no such key and can only flag likely duplicates.
+  const saveInvestmentMovements = async (
+    movements: ParsedInvestmentMovement[],
+    context: { accountId: string | null; workspaceId: string | null },
+  ) => {
+    if (!user) return
+    const { workspaceId, accountId } = context
+    const keys = [...new Set(movements.map(m => m.match.matchKey))]
+
+    const existingQuery = supabase.from('finance_investments').select('id,match_key').in('match_key', keys)
+    const { data: existingRows, error: selectError } = await (workspaceId
+      ? existingQuery.eq('workspace_id', workspaceId)
+      : existingQuery.eq('user_id', user.id).is('workspace_id', null))
+    if (selectError) throw selectError
+
+    const idByKey = new Map<string, string>(
+      ((existingRows ?? []) as Pick<FinanceInvestment, 'id' | 'match_key'>[]).map(r => [r.match_key, r.id]),
+    )
+
+    const missing = keys.filter(k => !idByKey.has(k))
+    if (missing.length > 0) {
+      const seed = new Map(movements.map(m => [m.match.matchKey, m.match]))
+      const { data: created, error: insertError } = await supabase.from('finance_investments').insert(
+        missing.map(key => {
+          const match = seed.get(key)!
+          return {
+            user_id: user.id,
+            workspace_id: workspaceId,
+            institution: match.institution,
+            product: match.product || match.assetClass,
+            asset_class: match.assetClass,
+            match_key: key,
+            account_id: accountId,
+          }
+        }),
+      ).select('id,match_key')
+      if (insertError) throw insertError
+      for (const row of (created ?? []) as Pick<FinanceInvestment, 'id' | 'match_key'>[]) {
+        idByKey.set(row.match_key, row.id)
+      }
+    }
+
+    const { error: movError } = await supabase.from('finance_investment_movements').upsert(
+      movements.map(m => ({
+        user_id: user.id,
+        workspace_id: workspaceId,
+        investment_id: idByKey.get(m.match.matchKey)!,
+        kind: m.match.movementKind,
+        // Every imported line crossed the checking account by definition — a
+        // statement cannot see a product capitalizing internally.
+        settles_in_account: true,
+        date: m.date,
+        amount: m.amount,
+        account_id: accountId,
+        description: m.description,
+        source: 'import',
+        import_key: m.importKey,
+      })),
+      { onConflict: 'investment_id,import_key', ignoreDuplicates: true },
+    )
+    if (movError) throw movError
   }
 
   const bulkDeleteTx = async (ids: string[]) => {
@@ -3841,8 +3969,12 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   }
 
   // Works ("Obras") spans the whole project lifetime, so a month selector would
-  // be misleading there — same reasoning as goals/categories/recurring.
-  const monthNavVisible = tab !== 'goals' && tab !== 'categories' && tab !== 'recurring' && tab !== 'projects'
+  // be misleading there — same reasoning as goals/categories/recurring. Dentro
+  // de Projetos a decisão é por sub-aba: Investimentos e Loja usam o mês
+  // nos seus cards de resumo, Obras e o Resumo por fase não.
+  const monthlessSection = projSection === 'works' || projSection === 'summary' || projSection === 'goals'
+  const monthNavVisible = tab !== 'categories' && tab !== 'recurring'
+    && !(tab === 'myprojects' && monthlessSection)
 
   // Desktop nav arrangement (mobile always uses the bottom nav).
   const showSidebar = !isMobile && direction === 'side'
@@ -3927,7 +4059,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
               setExporting(true)
               try {
                 const { exportFinanceToPdf } = await import('../../hooks/usePdfExport')
-                await exportFinanceToPdf({ transactions, accounts, categories, budgets, goals, contributions, recurring, month, userName: profile?.display_name || profile?.email || '' })
+                await exportFinanceToPdf({ transactions, accounts, investmentMovements, categories, budgets, goals, contributions, recurring, month, userName: profile?.display_name || profile?.email || '' })
               } catch (err) {
                 console.error('[FinancePDF] export error:', err)
               } finally {
@@ -3974,6 +4106,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                 transactions={familyTransactions}
                 budgets={familyBudgets}
                 accounts={familyAccounts}
+                investmentMovements={familyInvestmentMovements}
                 categories={familyCategories}
                 month={month}
                 onBack={() => setOverviewScope('personal')}
@@ -3987,12 +4120,13 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                 recurring={recurring}
                 recurringEntries={recurringEntries}
                 accounts={accounts}
+                investmentMovements={investmentMovements}
                 budgets={budgets}
                 goals={goals}
                 contributions={contributions}
                 onMarkPaid={handleMarkPaid}
                 onSkipEntry={skipEntry}
-                onNavigate={setTab}
+                onNavigate={navigateTo}
                 workspaceName={workspace?.name ?? null}
                 onOpenWorkspaceView={() => setOverviewScope('workspace')}
               />
@@ -4001,13 +4135,15 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                 transactions={transactions}
                 categories={resolveCategories}
                 accounts={accounts}
+                investments={investments}
+                investmentMovements={investmentMovements}
                 budgets={budgets}
                 goals={goals}
                 contributions={contributions}
                 recurring={recurring}
                 recurringEntries={recurringEntries}
                 month={month}
-                onNavigate={setTab}
+                onNavigate={navigateTo}
                 workspaceName={workspace?.name ?? null}
                 onOpenWorkspaceView={() => setOverviewScope('workspace')}
               />
@@ -4048,25 +4184,9 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
               <AccountsTab
                 accounts={accounts}
                 transactions={transactions}
+                investmentMovements={investmentMovements}
                 onAdd={() => setAccModal({ open: true })}
                 onEdit={acc => setAccModal({ open: true, account: acc })}
-              />
-            )}
-            {tab === 'goals' && (
-              <GoalsTab
-                goals={goals}
-                contributions={contributions}
-                accounts={accounts}
-                goalShares={goalShares}
-                incomingGoalShares={incomingGoalShares}
-                partnerProfiles={partnerProfiles}
-                onNewGoal={() => setGoalModal({ open: true })}
-                onEditGoal={g => setGoalModal({ open: true, goal: g })}
-                onDeleteGoal={deleteGoal}
-                onAddContribution={g => setContributionGoal(g)}
-                onDeleteContribution={deleteContribution}
-                onUpdateStatus={updateGoalStatus}
-                onShareGoal={g => setGoalShareModal({ open: true, goal: g })}
               />
             )}
             {tab === 'categories' && (
@@ -4089,17 +4209,50 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                 onSkip={skipEntry}
               />
             )}
-            {tab === 'projects' && (
+            {tab === 'myprojects' && (
               <Suspense fallback={<div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>}>
-                {/* Sharing an obra is decided per obra in its form; expense
-                    forms pay from the user's own accounts. */}
-                <FinanceProjectsTab workspaceId={workspace?.id ?? null} accounts={accounts} />
-              </Suspense>
-            )}
-            {tab === 'store' && (
-              <Suspense fallback={<div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>}>
-                {/* The header month arrows drive the store overview cards. */}
-                <FinanceStoreTab workspaceId={workspace?.id ?? null} accounts={accounts} month={month} />
+                {/* Obras, Investimentos, Loja e Metas numa aba só. Compartilhar
+                    uma obra é decidido por obra no formulário dela; os gastos
+                    saem das contas do próprio usuário.
+
+                    Investimentos vêm por prop e não de um segundo fetch: os
+                    saldos das contas já dependem desses movimentos, e duas
+                    cópias poderiam divergir depois de uma escrita.
+
+                    Metas vai como elemento pronto (`goalsSlot`): são treze
+                    props e três modais que continuam morando aqui — encaná-los
+                    pelo MyProjectsTab não daria nada em troca. */}
+                <MyProjectsTab
+                  section={projSection}
+                  onSectionChange={setProjSection}
+                  workspaceId={workspace?.id ?? null}
+                  accounts={accounts}
+                  categories={workspace ? resolveCategories : categories}
+                  month={month}
+                  investments={workspace ? [...investments, ...familyInvestments] : investments}
+                  movements={workspace ? [...investmentMovements, ...familyInvestmentMovements] : investmentMovements}
+                  investmentAccounts={workspace ? [...accounts, ...familyAccounts] : accounts}
+                  goals={goals}
+                  contributions={contributions}
+                  goalsSlot={(
+                    <GoalsTab
+                      goals={goals}
+                      contributions={contributions}
+                      accounts={accounts}
+                      goalShares={goalShares}
+                      incomingGoalShares={incomingGoalShares}
+                      partnerProfiles={partnerProfiles}
+                      onNewGoal={() => setGoalModal({ open: true })}
+                      onEditGoal={g => setGoalModal({ open: true, goal: g })}
+                      onDeleteGoal={deleteGoal}
+                      onAddContribution={g => setContributionGoal(g)}
+                      onDeleteContribution={deleteContribution}
+                      onUpdateStatus={updateGoalStatus}
+                      onShareGoal={g => setGoalShareModal({ open: true, goal: g })}
+                    />
+                  )}
+                  onChanged={reload}
+                />
               </Suspense>
             )}
           </>
@@ -4167,8 +4320,11 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
             categories={categories}
             workspaceCategories={familyCategories}
             workspace={workspace}
-            existingTransactions={transactions}
-            onImport={bulkAddTx}
+            // Other members' workspace rows count too: without them, member B
+            // re-importing the shared statement that A already imported sees no
+            // duplicate at all.
+            existingTransactions={allVisibleTxs}
+            onImport={bulkImport}
             onClose={() => setImportModal(false)}
           />
         </Suspense>

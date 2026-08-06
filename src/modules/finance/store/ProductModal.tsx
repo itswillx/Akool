@@ -81,6 +81,10 @@ export function ProductModal({ store, product, accounts, onClose, onEditPurchase
             account_id: accountId || null,
             notes: '',
             attachments: [],
+            // Cadastrar o produto com a compra embutida significa que ele já é
+            // meu: nasce 'received', preservando o comportamento anterior à
+            // coluna de fase.
+            status: 'received',
           }, {
             createTransaction: createExpense,
             description: t('finance_store_tx_purchase_desc', { name: name.trim() }),

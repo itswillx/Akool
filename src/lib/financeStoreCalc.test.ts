@@ -53,6 +53,9 @@ const purchase = (over: Partial<FinanceStorePurchase> = {}): FinanceStorePurchas
   date: '2026-07-10',
   account_id: null,
   transaction_id: null,
+  // 'received' é o default da coluna e o que preserva o comportamento anterior
+  // ao funil de compra; os testes que ligam para 'quoting' o fazem explicitamente.
+  status: 'received',
   notes: '',
   attachments: [],
   created_at: '2026-07-01T00:00:00Z',
@@ -170,6 +173,50 @@ describe('averageUnitCost', () => {
 
   it('is zero when nothing was bought yet', () => {
     expect(averageUnitCost('p1', [])).toBe(0)
+  })
+
+  it('ignores a quoting purchase — the money did not leave yet', () => {
+    const purchases = [
+      purchase({ quantity: 1, unit_cost: 10_000 }),
+      purchase({ id: 'c2', quantity: 1, unit_cost: 90_000, status: 'quoting' }),
+    ]
+    expect(averageUnitCost('p1', purchases)).toBe(10_000)
+  })
+
+  it('counts a purchased-but-not-received lot: it is already mine', () => {
+    const purchases = [purchase({ quantity: 1, unit_cost: 10_000, status: 'purchased' })]
+    expect(averageUnitCost('p1', purchases)).toBe(10_000)
+  })
+})
+
+describe('purchase funnel and stock', () => {
+  it('keeps quoting units off the shelf', () => {
+    const purchases = [
+      purchase({ quantity: 2 }),
+      purchase({ id: 'c2', quantity: 5, status: 'quoting' }),
+    ]
+    expect(productStock('p1', purchases, [], [])).toEqual({
+      purchased: 2, sold: 0, reserved: 0, available: 2,
+    })
+  })
+
+  it('counts a purchased lot that has not arrived yet', () => {
+    const purchases = [purchase({ quantity: 3, status: 'purchased' })]
+    expect(productStock('p1', purchases, [], []).available).toBe(3)
+  })
+
+  it('counts a row with no status at all (rows older than the column)', () => {
+    // Compat: linhas anteriores à migration chegam sem `status` e não podem
+    // sumir do estoque.
+    const legacy = [{ product_id: 'p1', quantity: 4 }]
+    expect(productStock('p1', legacy, [], []).available).toBe(4)
+    expect(averageUnitCost('p1', [{ product_id: 'p1', quantity: 2, unit_cost: 5_000, other_costs: 0 }])).toBe(5_000)
+  })
+
+  it('leaves quoting money out of the capital sitting on the shelf', () => {
+    const products = [product()]
+    const purchases = [purchase({ quantity: 1, unit_cost: 999_999, status: 'quoting' })]
+    expect(stockCapital(products, purchases, [], [])).toBe(0)
   })
 })
 

@@ -1,18 +1,20 @@
 import { useState } from 'react'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { formatBRL, fromCents, toCents } from '../../../lib/money'
-import type { FinanceAccount, FinanceStoreProduct, FinanceStorePurchase } from '../../../types'
+import type { FinanceAccount, FinanceCategory, FinanceStoreProduct, FinanceStorePurchase, FinanceStorePurchaseStatus } from '../../../types'
 import { Modal, ghostBtnStyle, inputStyle, labelStyle, primaryBtnStyle, tabularNums } from '../ui'
 import { AttachmentField } from '../projects/AttachmentField'
+import { PURCHASE_STATUSES, PURCHASE_STATUS_KEY } from './storeUi'
 import { STORE_ATTACHMENT_BUCKET, todayISO, type FinanceStoreStore } from './useFinanceStore'
 
 // Restock (or fix) a purchase of a product. For kind='unique' the quantity is
 // pinned to 1 — one row in products is one physical unit.
-export function PurchaseModal({ store, product, purchase, accounts, onClose }: {
+export function PurchaseModal({ store, product, purchase, accounts, categories, onClose }: {
   store: FinanceStoreStore
   product: FinanceStoreProduct
   purchase?: FinanceStorePurchase
   accounts: FinanceAccount[]
+  categories: FinanceCategory[]
   onClose: () => void
 }) {
   const { t } = useLanguage()
@@ -24,6 +26,11 @@ export function PurchaseModal({ store, product, purchase, accounts, onClose }: {
   const [newSupplier, setNewSupplier] = useState('')
   const [accountId, setAccountId] = useState(purchase?.account_id ?? '')
   const [createExpense, setCreateExpense] = useState(false)
+  const [categoryId, setCategoryId] = useState('')
+  // Uma compra criada por aqui já aconteceu, então nasce 'received'. Quem quer
+  // registrar uma cotação escolhe 'quoting' — e aí ela NÃO conta no estoque
+  // nem no custo médio.
+  const [status, setStatus] = useState<FinanceStorePurchaseStatus>(purchase?.status ?? 'received')
   const [notes, setNotes] = useState(purchase?.notes ?? '')
   const [attachments, setAttachments] = useState(purchase?.attachments ?? [])
   const [saving, setSaving] = useState(false)
@@ -49,11 +56,13 @@ export function PurchaseModal({ store, product, purchase, accounts, onClose }: {
         account_id: accountId || null,
         notes: notes.trim(),
         attachments,
+        status,
       }
       if (purchase) await store.updatePurchase(purchase.id, draft)
       else await store.createPurchase(draft, {
         createTransaction: createExpense,
         description: t('finance_store_tx_purchase_desc', { name: product.name }),
+        categoryId: categoryId || null,
       })
       onClose()
     } finally {
@@ -65,6 +74,21 @@ export function PurchaseModal({ store, product, purchase, accounts, onClose }: {
     <Modal title={purchase ? t('finance_store_purchase_edit') : t('finance_store_restock_title')} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{product.name}</div>
+
+        <div>
+          <label style={labelStyle}>{t('finance_store_purchase_phase')}</label>
+          <select style={inputStyle} value={status}
+            onChange={e => setStatus(e.target.value as FinanceStorePurchaseStatus)}>
+            {PURCHASE_STATUSES.map(s => (
+              <option key={s} value={s}>{t(PURCHASE_STATUS_KEY[s])}</option>
+            ))}
+          </select>
+          {status === 'quoting' && (
+            <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--color-text-muted)', lineHeight: 1.45 }}>
+              {t('finance_store_purchase_quoting_hint')}
+            </div>
+          )}
+        </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
           {product.kind === 'stock' && (
@@ -120,11 +144,27 @@ export function PurchaseModal({ store, product, purchase, accounts, onClose }: {
         </div>
 
         {!purchase && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={createExpense} disabled={!accountId}
-              onChange={e => setCreateExpense(e.target.checked)} />
-            {t('finance_store_create_expense')}
-          </label>
+          <>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={createExpense} disabled={!accountId}
+                onChange={e => setCreateExpense(e.target.checked)} />
+              {t('finance_store_create_expense')}
+            </label>
+            {createExpense && (
+              <div>
+                <label style={labelStyle}>{t('finance_store_tx_category')}</label>
+                <select style={inputStyle} value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+                  <option value="">{t('finance_import_no_category')}</option>
+                  {categories.filter(c => c.type === 'expense').map(c => (
+                    <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                  ))}
+                </select>
+                <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--color-text-muted)', lineHeight: 1.45 }}>
+                  {t('finance_store_tx_category_hint')}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         <div>

@@ -5,9 +5,10 @@ import { fromCents, toCents } from '../../../lib/money'
 import { formatBRL } from '../../../lib/money'
 import { stageTotals } from '../../../lib/financeProjectCalc'
 import type { FinanceProject, FinanceProjectStage } from '../../../types'
-import { EmojiInput, Modal, cardSurfaceStyle, ghostBtnStyle, inputStyle, labelStyle, primaryBtnStyle, tabularNums } from '../ui'
+import { EmojiInput, Modal, cardSurfaceStyle, ghostBtnStyle, inputStyle, labelStyle, primaryBtnStyle, segBtnStyle, segTrackStyle, tabularNums } from '../ui'
 import type { FinanceProjectsStore } from './useFinanceProjects'
 import { budgetBarColor, emptyStateStyle } from './projectsUi'
+import { StagesBoard } from './StagesBoard'
 
 const STAGE_COLORS = ['#64748b', '#f59e0b', '#6366f1', '#10b981', '#ef4444', '#0ea5e9', '#a855f7']
 
@@ -79,22 +80,46 @@ function StageModal({ stage, onClose, onSave, onDelete }: {
   )
 }
 
+// Duas leituras das mesmas etapas: "Orçamento" gerencia as etapas (criar,
+// editar, teto × gasto) e "Quadro de itens" mostra os itens distribuídos entre
+// elas, arrastáveis. O quadro traz o próprio toggle Kanban/Lista.
+type StagesMode = 'budget' | 'board'
+
+const MODE_KEY = 'finance_proj_stages_mode'
+
 export function StagesView({ project, store }: { project: FinanceProject; store: FinanceProjectsStore }) {
   const { t } = useLanguage()
   const [modal, setModal] = useState<{ open: boolean; stage?: FinanceProjectStage }>({ open: false })
+  const [mode, setMode] = useState<StagesMode>(() =>
+    localStorage.getItem(MODE_KEY) === 'board' ? 'board' : 'budget')
   const stages = store.stages.filter(s => s.project_id === project.id)
   const items = store.items.filter(i => i.project_id === project.id)
   const expenses = store.expenses.filter(e => e.project_id === project.id)
 
+  const selectMode = (next: StagesMode) => {
+    setMode(next)
+    localStorage.setItem(MODE_KEY, next)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={segTrackStyle}>
+          <button style={segBtnStyle(mode === 'budget')} onClick={() => selectMode('budget')}>
+            {t('finance_proj_stages_view_budget')}
+          </button>
+          <button style={segBtnStyle(mode === 'board')} onClick={() => selectMode('board')}>
+            {t('finance_proj_stages_view_board')}
+          </button>
+        </div>
         <button style={primaryBtnStyle} onClick={() => setModal({ open: true })}>
           <Plus size={15} />{t('finance_proj_stage_new')}
         </button>
       </div>
 
-      {stages.length === 0 ? (
+      {mode === 'board' && <StagesBoard project={project} store={store} />}
+
+      {mode === 'budget' && (stages.length === 0 ? (
         <div style={{ ...cardSurfaceStyle, ...emptyStateStyle }}>{t('finance_proj_stages_empty')}</div>
       ) : (
         <div style={{ ...cardSurfaceStyle, overflow: 'hidden' }}>
@@ -129,7 +154,7 @@ export function StagesView({ project, store }: { project: FinanceProject; store:
             )
           })}
         </div>
-      )}
+      ))}
 
       {modal.open && (
         <StageModal

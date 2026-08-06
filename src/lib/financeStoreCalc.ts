@@ -14,6 +14,7 @@ import type {
   FinanceStoreCustomer,
   FinanceStoreProduct,
   FinanceStorePurchase,
+  FinanceStorePurchaseStatus,
   FinanceStoreSale,
   FinanceStoreSaleItem,
   FinanceStoreSaleStatus,
@@ -25,6 +26,18 @@ type SaleMoneyLike = Pick<FinanceStoreSale, 'shipping_charged' | 'shipping_cost'
 
 /** Sale statuses that consume stock for good (the unit left the shelf). */
 const CONSUMED: readonly FinanceStoreSaleStatus[] = ['sold', 'shipped', 'delivered']
+
+/**
+ * Uma compra em 'quoting' é intenção: não há unidade na prateleira nem dinheiro
+ * gasto, então ela fica fora do estoque e do custo médio. 'purchased' já conta
+ * — o dinheiro saiu e a unidade é minha, ainda que a caminho.
+ *
+ * `status` ausente conta: protege linhas anteriores à coluna e mantém os
+ * chamadores que passam apenas as colunas de que precisam.
+ */
+function isCommitted(purchase: { status?: FinanceStorePurchaseStatus }): boolean {
+  return purchase.status !== 'quoting'
+}
 
 // Total money that left the pocket in one purchase: the whole lot plus its
 // freight/taxes. All integers, no rounding needed.
@@ -46,13 +59,13 @@ export interface ProductStock {
 // status; items of cancelled sales count as returned to the shelf.
 export function productStock(
   productId: string,
-  purchases: Pick<FinanceStorePurchase, 'product_id' | 'quantity'>[],
+  purchases: (Pick<FinanceStorePurchase, 'product_id' | 'quantity'> & Partial<Pick<FinanceStorePurchase, 'status'>>)[],
   saleItems: Pick<FinanceStoreSaleItem, 'product_id' | 'sale_id' | 'quantity'>[],
   sales: Pick<FinanceStoreSale, 'id' | 'status'>[],
 ): ProductStock {
   const statusOf = new Map(sales.map(s => [s.id, s.status]))
   let purchased = 0
-  for (const p of purchases) if (p.product_id === productId) purchased += p.quantity
+  for (const p of purchases) if (p.product_id === productId && isCommitted(p)) purchased += p.quantity
   let sold = 0
   let reserved = 0
   for (const si of saleItems) {
@@ -80,12 +93,13 @@ export function uniqueItemState(stock: ProductStock): UniqueItemState {
 // the default `unit_cost_at_sale` snapshot when a sale item is created.
 export function averageUnitCost(
   productId: string,
-  purchases: Pick<FinanceStorePurchase, 'product_id' | 'quantity' | 'unit_cost' | 'other_costs'>[],
+  purchases: (Pick<FinanceStorePurchase, 'product_id' | 'quantity' | 'unit_cost' | 'other_costs'> & Partial<Pick<FinanceStorePurchase, 'status'>>)[],
 ): number {
   let total = 0
   let qty = 0
   for (const p of purchases) {
-    if (p.product_id !== productId) continue
+    // Uma cotação não pode puxar o custo médio: o dinheiro não saiu.
+    if (p.product_id !== productId || !isCommitted(p)) continue
     total += purchaseTotal(p)
     qty += p.quantity
   }
@@ -119,7 +133,8 @@ export function saleProfit(sale: SaleMoneyLike, items: SaleItemLike[]): number {
 // non-archived product. The number the overview shows as "capital parado".
 export function stockCapital(
   products: Pick<FinanceStoreProduct, 'id' | 'archived'>[],
-  purchases: Pick<FinanceStorePurchase, 'product_id' | 'quantity' | 'unit_cost' | 'other_costs'>[],
+  // Compras em 'quoting' já são excluídas por productStock/averageUnitCost.
+  purchases: (Pick<FinanceStorePurchase, 'product_id' | 'quantity' | 'unit_cost' | 'other_costs'> & Partial<Pick<FinanceStorePurchase, 'status'>>)[],
   saleItems: Pick<FinanceStoreSaleItem, 'product_id' | 'sale_id' | 'quantity'>[],
   sales: Pick<FinanceStoreSale, 'id' | 'status'>[],
 ): number {

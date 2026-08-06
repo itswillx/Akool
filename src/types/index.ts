@@ -281,7 +281,14 @@ export interface FinanceProjectExpense {
   stage_id: string | null
   item_id: string | null
   supplier_id: string | null
+  /** Legado: de qual conta saiu. Quem move saldo é a transação vinculada. */
   account_id: string | null
+  /**
+   * Lançamento correspondente em finance_transactions (FK ON DELETE SET NULL),
+   * mesma convenção da Loja. Preenchido quando o gasto foi atribuído a partir
+   * do extrato; null significa "gasto registrado, ainda fora do fluxo de caixa".
+   */
+  transaction_id: string | null
   description: string
   /** Valor TOTAL pago em centavos (não o valor da parcela). */
   amount: number
@@ -325,12 +332,17 @@ export interface FinanceStoreProduct {
   updated_at: string
 }
 
+/** Funil da compra. Só `quoting` NÃO conta estoque nem custo médio. */
+export type FinanceStorePurchaseStatus = 'quoting' | 'purchased' | 'received'
+
 export interface FinanceStorePurchase {
   id: string
   user_id: string
   workspace_id: string | null
   product_id: string
   supplier_id: string | null
+  /** quoting = intenção · purchased = pago, a caminho · received = na prateleira. */
+  status: FinanceStorePurchaseStatus
   /** Sempre 1 para kind='unique' (garantido no cliente). */
   quantity: number
   /** Custo unitário em centavos. */
@@ -402,6 +414,67 @@ export interface FinanceStoreSaleItem {
   unit_price: number
   /** Snapshot do custo médio no momento da venda, em centavos. */
   unit_cost_at_sale: number
+  created_at: string
+  updated_at: string
+}
+
+// ─── Finance: Investimentos ─────────────────────────────────────────────────
+// A posição é DERIVADA dos movimentos (mesma disciplina do estoque da Loja),
+// nunca armazenada — apagar ou reimportar um movimento restaura o número
+// sozinho. `opening_balance` é uma constante editável, como
+// finance_accounts.initial_balance, para quem já tinha saldo antes do primeiro
+// extrato importado. Valores em centavos (bigint no banco).
+//
+// Um extrato de conta corrente só mostra dinheiro que ATRAVESSOU a conta, então
+// toda linha importada nasce com settles_in_account=true: a capitalização
+// interna do produto não aparece nele. Por isso o "aplicado" aqui é custo
+// líquido / principal, não valor de mercado — e a UI precisa dizer isso.
+
+export type FinanceInvestmentAssetClass =
+  | 'fixed_income' | 'treasury' | 'savings' | 'fund'
+  | 'equity' | 'pension' | 'crypto' | 'other'
+
+export type FinanceInvestmentMovementKind =
+  | 'contribution' | 'redemption' | 'yield' | 'tax' | 'fee'
+
+export interface FinanceInvestment {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  /** 'C6', 'XP', 'NUINVEST'... Vazio quando o extrato não nomeia a casa. */
+  institution: string
+  /** 'CDB', 'TESOURO SELIC', 'B3'... */
+  product: string
+  asset_class: FinanceInvestmentAssetClass
+  /** Identidade estável vinda do classificador ('c6|cdb'); chave do upsert. */
+  match_key: string
+  /** Conta corrente de origem/destino dos movimentos (FK SET NULL). */
+  account_id: string | null
+  /** Saldo anterior ao primeiro movimento importado, em centavos. */
+  opening_balance: number
+  archived: boolean
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceInvestmentMovement {
+  id: string
+  user_id: string
+  workspace_id: string | null
+  investment_id: string
+  kind: FinanceInvestmentMovementKind
+  /** true = o dinheiro atravessou a conta corrente; false = interno ao produto. */
+  settles_in_account: boolean
+  date: string
+  /** Sempre > 0 em centavos: o `kind` carrega o sinal. */
+  amount: number
+  account_id: string | null
+  /** Linha crua do extrato, para auditoria. */
+  description: string
+  source: 'import' | 'manual'
+  /** Chave de idempotência do import; vazia em lançamento manual. */
+  import_key: string
   created_at: string
   updated_at: string
 }

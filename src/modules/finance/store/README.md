@@ -7,19 +7,26 @@ a aba `store` do FinancePanel, dentro do `FinanceMobileContext.Provider`.
 ## Arquivos
 
 ```
-index.ts                 barrel público (FinancePanel faz lazy import daqui)
+index.ts                 barrel público
 FinanceStoreTab.tsx      orquestrador: sub-nav segmentada + modais
 useFinanceStore.ts       camada de dados otimista + integração com transações
 storeUi.ts               mapas de cor/label sem JSX (padrão projectsUi.ts)
+saleTransitions.ts       tabela de transições do pipeline de venda (sem JSX)
 StoreOverview.tsx        capital parado, resultado do mês, pipeline
 InventoryView.tsx        produtos com estoque derivado; repor via PurchaseModal
-SalesView.tsx            pipeline com transições de status + confirmações
+PurchasesBoard.tsx       funil de compra em kanban (quoting→purchased→received)
+SalesView.tsx            pipeline: toggle quadro/lista, transições + confirmações
+SalesBoard.tsx           kanban do pipeline de venda
+StatusConfirmModal.tsx   confirmação das transições que mexem em transações
 CustomersView.tsx        clientes com histórico derivado das vendas
 ProductModal.tsx         form de produto; criação embute a compra inicial
-PurchaseModal.tsx        reposição/edição de compra
+PurchaseModal.tsx        reposição/edição de compra, com seletor de fase
 SaleModal.tsx            form de venda (N itens, frete, taxas, lucro ao vivo)
 CustomerModal.tsx        form de cliente
 ```
+
+A Loja é a sub-aba `store` de **Projetos**; o `store` vem por prop (o
+Resumo de lá lê os mesmos dados e duas cópias divergiriam na primeira escrita).
 
 Lógica pura em `src/lib/financeStoreCalc.ts` (com testes ao lado).
 Migration: `supabase/migrations/20260728120000_finance_store_module.sql`.
@@ -29,6 +36,12 @@ Migration: `supabase/migrations/20260728120000_finance_store_module.sql`.
 * **Estoque é derivado, nunca armazenado**: disponível = comprado − vendido −
   reservado (`productStock`). Vendas `negotiating` reservam; `cancelled`
   devolve as unidades sozinha. Não existe coluna `quantity_on_hand`.
+* **Funil de compra** (`purchases.status`, migration `20260805120000`):
+  `quoting → purchased → received`. Só `quoting` fica **fora** do estoque e do
+  custo médio — é intenção, o dinheiro não saiu. `purchased` já conta (é meu,
+  ainda que a caminho). Linhas sem `status` contam, por compatibilidade.
+  Voltar de `purchased` para `quoting` **apaga a despesa vinculada**, espelhando
+  o `reopen` da venda.
 * **Modelo misto** numa tabela só: `products.kind 'unique'|'stock'`. Item único
   nasce com uma purchase de qty 1 embutida no ProductModal; reposição de stock
   é uma purchase nova.
