@@ -42,14 +42,18 @@ export function Donut({ data, size = 124, thickness = 16, centerValue, centerLab
 }
 
 // Color dot + label + value rows, paired with a Donut/SegmentedBar.
-export function Legend({ items }: { items: ChartDatum[] }) {
+// `formatValue` exists because the raw datum is a plain number: money is stored
+// in cents, so without it a slice reads "543895" instead of "R$ 5.438,95".
+export function Legend({ items, formatValue = String }: {
+  items: ChartDatum[]; formatValue?: (v: number) => string;
+}) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, minWidth: 0, flex: 1 }}>
       {items.map((it, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
           <span style={{ width: 9, height: 9, borderRadius: 3, backgroundColor: it.color, flexShrink: 0 }} />
           <span style={{ color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>{it.label}</span>
-          <span style={{ color: 'var(--color-text-muted)', fontWeight: 700, flexShrink: 0 }}>{it.value}</span>
+          <span style={{ color: 'var(--color-text-muted)', fontWeight: 700, flexShrink: 0 }}>{formatValue(it.value)}</span>
         </div>
       ))}
     </div>

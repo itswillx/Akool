@@ -1,4 +1,5 @@
 import type { FinanceTransaction } from '../types'
+import { classifyInvestment } from './investmentClassifier'
 
 // Shared types and pure logic for bank-statement import (C6 PDF + generic OFX).
 // Everything here is framework-agnostic and unit-tested in node; parsing of the
@@ -71,12 +72,15 @@ export function normalizeCounterparty(desc: string): string {
 export function classifyInternal(
   desc: string,
   sourceKind: string | undefined,
-  _type: 'income' | 'expense',
+  type: 'income' | 'expense',
 ): InternalReason | null {
   const d = desc.trim()
   if (/PGTO\s*FAT\s*CARTAO/i.test(d)) return 'card_payment'
-  if (/CDB/i.test(d) && /APLICA|RESGATE|LIM\.?\s*GARANT/i.test(d)) return 'investment'
-  if (/\bB3\b/i.test(d) && /ATIVO|OPERACAO/i.test(d)) return 'investment'
+  // Delegated so there is a single set of investment patterns in the codebase:
+  // the classifier recognizes a superset of the two rules that used to live
+  // here (CDB and B3) and also extracts the institution, product and direction
+  // the import needs to file the movement into a position.
+  if (classifyInvestment(d, sourceKind, type)) return 'investment'
   if (sourceKind === 'Devolução PIX') return 'refund'
   if (/ESTORN|DEVOLU|RECUSAD|^EST\s/i.test(d)) return 'refund'
   if (/TARIFA/i.test(d)) return 'fee'
@@ -88,18 +92,39 @@ export function classifyInternal(
 // Heuristic key: same day + same signed amount + same normalized counterparty.
 // No schema change (no FITID column), so re-importing an overlapping period
 // flags likely duplicates instead of guaranteeing uniqueness.
+//
+// The index counts occurrences instead of just holding keys: two identical
+// purchases on the same day (two R$ 12,00 coffees at the same merchant) share a
+// key, and a plain Set would flag the second one as a duplicate of the first —
+// leaving it unchecked and silently dropping real money from the import. With
+// counts, N identical statement lines only flag min(N, alreadySaved) of them.
 type ExistingTxLike = Pick<FinanceTransaction, 'date' | 'amount' | 'type' | 'description'>
+
+/** Remaining occurrences per dedup key. Consumed as rows are flagged. */
+export type ExistingTxIndex = Map<string, number>
 
 function dedupKey(date: string, type: 'income' | 'expense', amount: number, description: string): string {
   return `${date}|${type}|${amount}|${normalizeCounterparty(description)}`
 }
 
-export function buildExistingTxIndex(existing: ExistingTxLike[]): Set<string> {
-  return new Set(existing.map(tx => dedupKey(tx.date, tx.type, tx.amount, tx.description)))
+export function buildExistingTxIndex(existing: ExistingTxLike[]): ExistingTxIndex {
+  const index: ExistingTxIndex = new Map()
+  for (const tx of existing) {
+    const key = dedupKey(tx.date, tx.type, tx.amount, tx.description)
+    index.set(key, (index.get(key) ?? 0) + 1)
+  }
+  return index
 }
 
-export function isLikelyDuplicate(tx: ParsedTx, index: Set<string>): boolean {
-  return index.has(dedupKey(tx.date, tx.type, tx.amount, tx.description))
+// Consumes one occurrence when it matches, so the caller must feed the parsed
+// rows in order and only once — which is what the preview does, mapping over
+// `statement.txs` a single time.
+export function isLikelyDuplicate(tx: ParsedTx, index: ExistingTxIndex): boolean {
+  const key = dedupKey(tx.date, tx.type, tx.amount, tx.description)
+  const remaining = index.get(key) ?? 0
+  if (remaining <= 0) return false
+  index.set(key, remaining - 1)
+  return true
 }
 
 // ─── Grouping for the "categorize now" step ───────────────────────────────────

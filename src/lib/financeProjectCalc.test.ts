@@ -21,6 +21,8 @@ import {
   installmentSchedule,
   itemPurchase,
   activeProjectsSpent,
+  projectsCashSplit,
+  reconcileCandidates,
 } from './financeProjectCalc'
 
 // Factories carrying only the fields the calculations read; the rest of the row
@@ -72,6 +74,7 @@ const expense = (over: Partial<FinanceProjectExpense> = {}): FinanceProjectExpen
   item_id: null,
   supplier_id: null,
   account_id: null,
+  transaction_id: null,
   description: 'Compra',
   amount: 0,
   date: '2026-07-10',
@@ -359,5 +362,81 @@ describe('activeProjectsSpent', () => {
   })
   it('is zero with no projects', () => {
     expect(activeProjectsSpent([], [expense({ amount: 1000 })])).toBe(0)
+  })
+})
+
+describe('projectsCashSplit', () => {
+  const projects = [
+    { id: 'p1', status: 'active' as const },
+    { id: 'p2', status: 'cancelled' as const },
+  ]
+
+  // A works expense with a linked transaction is money the cash flow already
+  // counted; without one, the same money can be described twice with nothing
+  // saying so. The split is what lets the overview say which is which.
+  it('separates what is already in the cash flow from what is not', () => {
+    const expenses = [
+      expense({ project_id: 'p1', amount: 1000, transaction_id: 'tx1' }),
+      expense({ project_id: 'p1', amount: 500, transaction_id: null }),
+      expense({ project_id: 'p2', amount: 9999, transaction_id: null }),
+    ]
+    expect(projectsCashSplit(projects, expenses)).toEqual({ total: 1500, linked: 1000, unlinked: 500 })
+  })
+
+  it('is all zeros with no expenses', () => {
+    expect(projectsCashSplit(projects, [])).toEqual({ total: 0, linked: 0, unlinked: 0 })
+  })
+})
+
+describe('reconcileCandidates', () => {
+  const tx = (over: Partial<{ id: string; date: string; amount: number; type: 'income' | 'expense'; description: string }>) => ({
+    id: 't1', date: '2026-07-10', amount: 5000, type: 'expense' as const, description: 'LOJA MATERIAIS', ...over,
+  })
+
+  it('matches an expense of the same amount within a few days', () => {
+    const found = reconcileCandidates(
+      expense({ amount: 5000, date: '2026-07-10' }),
+      [tx({ id: 't1', date: '2026-07-12' })],
+      new Set(),
+    )
+    expect(found.map(f => f.id)).toEqual(['t1'])
+  })
+
+  it('rejects a different amount, an income, or a date outside the window', () => {
+    const candidates = [
+      tx({ id: 'wrong-amount', amount: 5001 }),
+      tx({ id: 'income', type: 'income' }),
+      tx({ id: 'too-late', date: '2026-07-20' }),
+      tx({ id: 'too-early', date: '2026-07-01' }),
+    ]
+    expect(reconcileCandidates(expense({ amount: 5000, date: '2026-07-10' }), candidates, new Set())).toEqual([])
+  })
+
+  it('skips transactions already claimed by another expense', () => {
+    const found = reconcileCandidates(
+      expense({ amount: 5000, date: '2026-07-10' }),
+      [tx({ id: 'taken' }), tx({ id: 'free' })],
+      new Set(['taken']),
+    )
+    expect(found.map(f => f.id)).toEqual(['free'])
+  })
+
+  it('ranks the closest date first', () => {
+    const found = reconcileCandidates(
+      expense({ amount: 5000, date: '2026-07-10' }),
+      [tx({ id: 'far', date: '2026-07-13' }), tx({ id: 'near', date: '2026-07-09' })],
+      new Set(),
+    )
+    expect(found.map(f => f.id)).toEqual(['near', 'far'])
+  })
+
+  // Month and year boundaries are where naive string slicing breaks.
+  it('crosses a month boundary correctly', () => {
+    const found = reconcileCandidates(
+      expense({ amount: 5000, date: '2026-08-01' }),
+      [tx({ id: 'prev-month', date: '2026-07-30' })],
+      new Set(),
+    )
+    expect(found.map(f => f.id)).toEqual(['prev-month'])
   })
 })

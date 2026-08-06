@@ -36,6 +36,9 @@ type NewQuote = Pick<FinanceProjectQuote,
 type NewExpense = Pick<FinanceProjectExpense,
   'project_id' | 'stage_id' | 'item_id' | 'supplier_id' | 'account_id' | 'description' | 'amount'
   | 'date' | 'payment_method' | 'installments' | 'attachments'>
+  // Set when the expense is reconciled against an imported transaction; the
+  // update path accepts it through the same Partial<NewExpense> patch.
+  & Partial<Pick<FinanceProjectExpense, 'transaction_id'>>
 
 function normalizeItem(row: FinanceProjectItem): FinanceProjectItem {
   return {

@@ -56,4 +56,11 @@ describe('Legend', () => {
     expect(out).toContain('>3<')
     expect(out).toContain('background-color:#00ff00')
   })
+
+  // Money is stored in cents, so a raw datum would read "543895".
+  it('formats values through formatValue when given one', () => {
+    const out = renderToStaticMarkup(<Legend items={data} formatValue={v => `R$ ${v},00`} />)
+    expect(out).toContain('R$ 3,00')
+    expect(out).not.toContain('>3<')
+  })
 })

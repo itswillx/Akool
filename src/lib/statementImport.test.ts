@@ -69,15 +69,33 @@ describe('duplicate detection', () => {
   const existing = [
     { date: '2026-07-15', amount: 4796, type: 'expense' as const, description: 'Meumarket24h HORTOLANDIA BRA' },
   ]
-  const index = buildExistingTxIndex(existing)
-
   it('flags same day + amount + normalized counterparty', () => {
+    const index = buildExistingTxIndex(existing)
     expect(isLikelyDuplicate(tx({ date: '2026-07-15', amount: 4796, description: 'Meumarket24h HORTOLANDIA BRA. Cartão 6403' }), index)).toBe(true)
   })
   it('does not flag different amount, date or type', () => {
+    const index = buildExistingTxIndex(existing)
     expect(isLikelyDuplicate(tx({ date: '2026-07-15', amount: 4797, description: 'Meumarket24h HORTOLANDIA BRA' }), index)).toBe(false)
     expect(isLikelyDuplicate(tx({ date: '2026-07-16', amount: 4796, description: 'Meumarket24h HORTOLANDIA BRA' }), index)).toBe(false)
     expect(isLikelyDuplicate(tx({ date: '2026-07-15', amount: 4796, type: 'income', description: 'Meumarket24h HORTOLANDIA BRA' }), index)).toBe(false)
+  })
+
+  // Two identical coffees on the same day are two real expenses. The old
+  // Set-based index flagged the second one as a duplicate of the first and left
+  // it unchecked, silently dropping real money from the import.
+  it('only flags as many rows as there are saved occurrences', () => {
+    const index = buildExistingTxIndex(existing)
+    const line = () => tx({ date: '2026-07-15', amount: 4796, description: 'Meumarket24h HORTOLANDIA BRA' })
+    expect(isLikelyDuplicate(line(), index)).toBe(true)
+    expect(isLikelyDuplicate(line(), index)).toBe(false)
+  })
+
+  it('flags both rows when the same transaction was already saved twice', () => {
+    const index = buildExistingTxIndex([...existing, ...existing])
+    const line = () => tx({ date: '2026-07-15', amount: 4796, description: 'Meumarket24h HORTOLANDIA BRA' })
+    expect(isLikelyDuplicate(line(), index)).toBe(true)
+    expect(isLikelyDuplicate(line(), index)).toBe(true)
+    expect(isLikelyDuplicate(line(), index)).toBe(false)
   })
 })
 

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Upload, AlertTriangle, CheckCircle2, FileText } from 'lucide-react'
+import { Upload, AlertTriangle, CheckCircle2, FileText, ChevronDown, ChevronRight } from 'lucide-react'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import type { TranslationKey } from '../../../i18n/translations'
 import { formatBRL } from '../../../lib/money'
@@ -8,11 +8,14 @@ import {
   buildExistingTxIndex, buildHistorySuggestions, groupForCategorization, groupKeyFor,
   isLikelyDuplicate, type InternalReason, type ParsedStatement, type ParsedTx,
 } from '../../../lib/statementImport'
+import {
+  classifyInvestment, investmentImportKey, type InvestmentMatch,
+} from '../../../lib/investmentClassifier'
 import { parseStatementFile, type ParseFileError } from './parseStatementFile'
 import {
   Modal, ScopePicker, useFinanceMobile,
   inputStyle, labelStyle, tabularNums, primaryBtnStyle, ghostBtnStyle,
-  FIN_ACCENT, FIN_POS, FIN_NEG, FIN_NEG_SOFT,
+  FIN_ACCENT, FIN_POS, FIN_NEG, FIN_NEG_SOFT, FIN_WARN,
 } from '../ui'
 
 // Multi-step statement import: pick a file → (password, if the PDF is
@@ -30,10 +33,28 @@ type Step =
   | { step: 'done'; count: number }
   | { step: 'error'; error: ParseFileError | 'generic' }
 
+// Where a statement line is headed. Investment rows do NOT become
+// transactions — that is the whole point: they would inflate the month's
+// income/expense. They go to finance_investment_movements instead, which the
+// account balance subtracts explicitly, so the money stops vanishing.
+type RowTarget = 'transaction' | 'investment' | 'skip'
+
 interface PreviewRow {
   tx: ParsedTx
   selected: boolean
   duplicate: boolean
+  /** Set when the classifier recognized an investment in the description. */
+  invest?: InvestmentMatch
+  target: RowTarget
+}
+
+/** One row headed to finance_investment_movements, resolved by the caller. */
+export interface ParsedInvestmentMovement {
+  match: InvestmentMatch
+  date: string
+  amount: number
+  description: string
+  importKey: string
 }
 
 const ERROR_KEYS: Record<ParseFileError | 'generic', TranslationKey> = {
@@ -52,6 +73,42 @@ const INTERNAL_KEYS: Record<InternalReason, TranslationKey> = {
   fee: 'finance_import_internal_fee',
 }
 
+// Parser warnings arrive as `code: payload` (and `c6_incomplete_tx (reason):
+// payload`), where the payload is the raw statement line or a line number.
+// Until now they were collected and never rendered, so lines the parser gave up
+// on vanished without a trace — the user saw a total that did not match the
+// bank and had no way to know why.
+const WARNING_KEYS: Record<string, TranslationKey> = {
+  c6_bad_amount: 'finance_import_warn_c6_bad_amount',
+  c6_incomplete_tx: 'finance_import_warn_c6_incomplete_tx',
+  c6_tx_before_section: 'finance_import_warn_c6_tx_before_section',
+  c6_unknown_kind: 'finance_import_warn_c6_unknown_kind',
+  ofx_skipped: 'finance_import_warn_ofx_skipped',
+  ofx_duplicate_fitid: 'finance_import_warn_ofx_duplicate_fitid',
+}
+
+const MOVEMENT_KIND_KEYS: Record<InvestmentMatch['movementKind'], TranslationKey> = {
+  contribution: 'finance_invest_kind_contribution',
+  redemption: 'finance_invest_kind_redemption',
+  yield: 'finance_invest_kind_yield',
+  tax: 'finance_invest_kind_tax',
+  fee: 'finance_invest_kind_fee',
+}
+
+function parseWarning(warning: string): { key: TranslationKey; detail: string } {
+  const sep = warning.indexOf(':')
+  const head = (sep === -1 ? warning : warning.slice(0, sep)).trim()
+  const detail = sep === -1 ? '' : warning.slice(sep + 1).trim()
+  // `c6_incomplete_tx (new_tx)` — the parenthetical reason is parser internals,
+  // useful in the detail line but not part of the lookup.
+  const code = head.replace(/\s*\(.*\)$/, '')
+  const suffix = head.slice(code.length).trim()
+  return {
+    key: WARNING_KEYS[code] ?? 'finance_import_warn_unknown',
+    detail: [suffix, detail].filter(Boolean).join(' '),
+  }
+}
+
 export default function ImportStatementModal({
   accounts, workspaceAccounts, categories, workspaceCategories, workspace,
   existingTransactions, onImport, onClose,
@@ -62,7 +119,11 @@ export default function ImportStatementModal({
   workspaceCategories: FinanceCategory[]
   workspace?: FinanceWorkspace | null
   existingTransactions: FinanceTransaction[]
-  onImport: (rows: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>[]) => Promise<void>
+  onImport: (
+    rows: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>[],
+    investments: ParsedInvestmentMovement[],
+    context: { accountId: string | null; workspaceId: string | null },
+  ) => Promise<void>
   onClose: () => void
 }) {
   const { t } = useLanguage()
@@ -76,21 +137,42 @@ export default function ImportStatementModal({
   const [scope, setScope] = useState<string | null>(null)
   const [accountId, setAccountId] = useState('')
   const [groupCategories, setGroupCategories] = useState<Record<string, string>>({})
+  const [showWarnings, setShowWarnings] = useState(false)
 
   const scopedAccounts = scope ? workspaceAccounts : accounts
   const scopedCategories = scope ? workspaceCategories : categories
 
-  // Dedup and category suggestions look at every transaction the user has,
-  // not just the visible month, so re-imports and merchant history both work.
-  const dupIndex = useMemo(() => buildExistingTxIndex(existingTransactions), [existingTransactions])
+  // Category suggestions look at every transaction the user has, not just the
+  // visible month, so merchant history works across the whole account.
+  //
+  // The dedup index is NOT memoized on purpose: it counts occurrences and is
+  // consumed as rows are flagged, so each parse needs a fresh one. Memoizing it
+  // would leave a second file picked in the same session comparing against an
+  // already-drained index.
   const suggestions = useMemo(() => buildHistorySuggestions(existingTransactions), [existingTransactions])
 
+  // Only plain transactions reach the categorize step: asking for a category
+  // for a CDB contribution makes no sense, and it never becomes a transaction.
   const selectedIdx = useMemo(
-    () => new Set(rows.flatMap((r, i) => (r.selected ? [i] : []))),
+    () => new Set(rows.flatMap((r, i) => (r.selected && r.target === 'transaction' ? [i] : []))),
     [rows],
   )
   const selectedCount = selectedIdx.size
-  const selectedTotal = rows.reduce((s, r) => (r.selected ? s + r.tx.amount : s), 0)
+  const selectedTotal = rows.reduce((s, r) => (r.selected && r.target === 'transaction' ? s + r.tx.amount : s), 0)
+
+  // Rendered in two sections, but `rows` stays a single array so the checkbox
+  // handlers keep addressing rows by their original index.
+  const indexed = rows.map((row, i) => ({ row, i }))
+  const txRows = indexed.filter(r => r.row.target !== 'investment')
+  const investRows = indexed.filter(r => r.row.target === 'investment')
+  const investIn = investRows.reduce(
+    (s, { row }) => (row.selected && row.invest?.movementKind === 'contribution' ? s + row.tx.amount : s), 0)
+  const investOut = investRows.reduce(
+    (s, { row }) => (row.selected && row.invest && row.invest.movementKind !== 'contribution' ? s + row.tx.amount : s), 0)
+  const investCount = investRows.filter(r => r.row.selected).length
+  // A statement with nothing but investment movements is a normal case, so
+  // "Importar sem categorias" must stay enabled when only those are selected.
+  const nothingToImport = selectedCount === 0 && investCount === 0
 
   const groups = useMemo(
     () => (state.step === 'categorize' ? groupForCategorization(rows.map(r => r.tx), selectedIdx, suggestions) : []),
@@ -107,9 +189,24 @@ export default function ImportStatementModal({
       return
     }
     setStatement(result.statement)
+    const dupIndex = buildExistingTxIndex(existingTransactions)
     setRows(result.statement.txs.map(tx => {
       const duplicate = isLikelyDuplicate(tx, dupIndex)
-      return { tx, duplicate, selected: !tx.internal && !duplicate }
+      const invest = classifyInvestment(tx.description, tx.sourceKind, tx.type) ?? undefined
+      if (invest) {
+        // Duplicate detection compares against transactions, which an
+        // investment row never becomes — the movement table has its own, real
+        // uniqueness (investment_id + import_key), so the flag is meaningless
+        // here. Only low-confidence guesses arrive unchecked, for the user to
+        // confirm.
+        return { tx, duplicate: false, invest, target: 'investment' as const, selected: invest.confidence === 'high' }
+      }
+      return {
+        tx,
+        duplicate,
+        target: (tx.internal || duplicate ? 'skip' : 'transaction') as RowTarget,
+        selected: !tx.internal && !duplicate,
+      }
     }))
     setAccountId(prev => prev || accounts[0]?.id || '')
     setState({ step: 'preview' })
@@ -118,7 +215,7 @@ export default function ImportStatementModal({
   const doImport = async (withCategories: boolean) => {
     setState({ step: 'saving' })
     const payload = rows.flatMap(r => {
-      if (!r.selected) return []
+      if (!r.selected || r.target !== 'transaction') return []
       const categoryId = withCategories ? (groupCategories[groupKeyFor(r.tx)] || null) : null
       return [{
         account_id: accountId || null,
@@ -131,9 +228,19 @@ export default function ImportStatementModal({
         workspace_id: scope,
       }]
     })
+    const investPayload = rows.flatMap<ParsedInvestmentMovement>(r => {
+      if (!r.selected || r.target !== 'investment' || !r.invest) return []
+      return [{
+        match: r.invest,
+        date: r.tx.date,
+        amount: r.tx.amount,
+        description: r.tx.description,
+        importKey: investmentImportKey(r.tx.date, r.invest.movementKind, r.tx.amount, r.tx.description),
+      }]
+    })
     try {
-      await onImport(payload)
-      setState({ step: 'done', count: payload.length })
+      await onImport(payload, investPayload, { accountId: accountId || null, workspaceId: scope })
+      setState({ step: 'done', count: payload.length + investPayload.length })
       setTimeout(onClose, 1400)
     } catch {
       setState({ step: 'error', error: 'generic' })
@@ -152,6 +259,12 @@ export default function ImportStatementModal({
 
   const setAllSelected = (value: boolean) => setRows(rs => rs.map(r => ({ ...r, selected: value })))
   const toggleRow = (i: number) => setRows(rs => rs.map((r, j) => (j === i ? { ...r, selected: !r.selected } : r)))
+
+  // Changing the destination also arms the row: picking "Lançamento" for a
+  // movement the classifier got wrong should not require a second click on the
+  // checkbox, and picking "Ignorar" should not leave it armed.
+  const setRowTarget = (i: number, target: RowTarget) => setRows(rs => rs.map((r, j) =>
+    (j === i ? { ...r, target, selected: target !== 'skip' } : r)))
 
   const chipStyle = (bg: string, color: string): React.CSSProperties => ({
     fontSize: 10.5, fontWeight: 600, padding: '2px 6px', borderRadius: 5,
@@ -272,12 +385,12 @@ export default function ImportStatementModal({
             </div>
 
             <div style={{ border: '1px solid var(--color-border)', borderRadius: 9, maxHeight: isMobile ? '42vh' : 300, overflowY: 'auto' }}>
-              {rows.map((row, i) => (
+              {txRows.map(({ row, i }, pos) => (
                 <label
                   key={`${row.tx.date}-${i}`}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 9, padding: '7px 11px', cursor: 'pointer',
-                    borderBottom: i === rows.length - 1 ? 'none' : '1px solid var(--color-border)',
+                    borderBottom: pos === txRows.length - 1 ? 'none' : '1px solid var(--color-border)',
                     opacity: row.selected ? 1 : 0.62,
                   }}
                 >
@@ -307,6 +420,104 @@ export default function ImportStatementModal({
               {t('finance_import_internal_hint')}
             </div>
 
+            {investRows.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text)' }}>
+                    {t('finance_import_invest_section')}
+                  </span>
+                  <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)', ...tabularNums }}>
+                    {t('finance_import_invest_totals', { inflow: formatBRL(investIn), outflow: formatBRL(investOut) })}
+                  </span>
+                </div>
+                <span style={{ fontSize: 11.5, color: 'var(--color-text-subtle)', lineHeight: 1.45 }}>
+                  {t('finance_import_invest_hint')}
+                </span>
+                <div style={{ border: `1px solid ${FIN_ACCENT}`, borderRadius: 9, maxHeight: isMobile ? '34vh' : 220, overflowY: 'auto' }}>
+                  {investRows.map(({ row, i }, pos) => (
+                    <div
+                      key={`inv-${row.tx.date}-${i}`}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 9, padding: '7px 11px', flexWrap: 'wrap',
+                        borderBottom: pos === investRows.length - 1 ? 'none' : '1px solid var(--color-border)',
+                        opacity: row.selected ? 1 : 0.62,
+                      }}
+                    >
+                      <input type="checkbox" checked={row.selected} onChange={() => toggleRow(i)} style={{ flexShrink: 0, cursor: 'pointer' }} />
+                      <span style={{ fontSize: 11.5, color: 'var(--color-text-subtle)', flexShrink: 0, ...tabularNums }}>
+                        {row.tx.date.slice(8)}/{row.tx.date.slice(5, 7)}
+                      </span>
+                      <span style={{ flex: 1, minWidth: 110, fontSize: 12.5, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {row.tx.description}
+                      </span>
+                      {row.invest && (
+                        <span style={chipStyle('var(--color-active)', 'var(--color-text-muted)')}>
+                          {[row.invest.institution, row.invest.product].filter(Boolean).join(' · ') || t('finance_import_internal_investment')}
+                        </span>
+                      )}
+                      {row.invest && (
+                        <span style={chipStyle('var(--color-active)', 'var(--color-text-muted)')}>
+                          {t(MOVEMENT_KIND_KEYS[row.invest.movementKind])}
+                        </span>
+                      )}
+                      <span style={{
+                        fontSize: 12.5, fontWeight: 600, flexShrink: 0, ...tabularNums,
+                        color: row.invest?.movementKind === 'contribution' ? FIN_NEG : FIN_POS,
+                      }}>
+                        {row.invest?.movementKind === 'contribution' ? '−' : '+'}{formatBRL(row.tx.amount)}
+                      </span>
+                      <select
+                        value={row.target}
+                        onChange={e => setRowTarget(i, e.target.value as RowTarget)}
+                        style={{ ...inputStyle, cursor: 'pointer', width: isMobile ? '100%' : 150, padding: '5px 8px', fontSize: 12 }}
+                      >
+                        <option value="investment">{t('finance_import_target_investment')}</option>
+                        <option value="transaction">{t('finance_import_target_transaction')}</option>
+                        <option value="skip">{t('finance_import_target_skip')}</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(statement?.warnings.length ?? 0) > 0 && (
+              <div style={{ border: `1px solid ${FIN_WARN}`, borderRadius: 9, overflow: 'hidden' }}>
+                <button
+                  onClick={() => setShowWarnings(v => !v)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '9px 11px',
+                    border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left',
+                    fontSize: 12.5, fontWeight: 600, color: FIN_WARN,
+                  }}
+                >
+                  <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                  <span style={{ flex: 1 }}>{t('finance_import_warnings_title', { n: statement!.warnings.length })}</span>
+                  {showWarnings ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                </button>
+                {showWarnings && (
+                  <div style={{ padding: '0 11px 10px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)', lineHeight: 1.45 }}>
+                      {t('finance_import_warnings_hint')}
+                    </span>
+                    {statement!.warnings.map((w, i) => {
+                      const { key, detail } = parseWarning(w)
+                      return (
+                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          <span style={{ fontSize: 12, color: 'var(--color-text)' }}>{t(key)}</span>
+                          {detail && (
+                            <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--color-text-subtle)', wordBreak: 'break-all' }}>
+                              {detail}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {workspace && (
               <ScopePicker
                 value={scope}
@@ -332,13 +543,18 @@ export default function ImportStatementModal({
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text)', ...tabularNums }}>
                   {t('finance_import_selected_sum', { n: selectedCount, total: formatBRL(selectedTotal) })}
                 </span>
+                {investCount > 0 && (
+                  <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)', ...tabularNums }}>
+                    {t('finance_import_invest_selected', { n: investCount })}
+                  </span>
+                )}
               </div>
               <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>{t('finance_import_now_or_later_hint')}</span>
               <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
                 <button
                   onClick={() => doImport(false)}
-                  disabled={selectedCount === 0 || !accountId}
-                  style={{ ...ghostBtnStyle, flex: 1, justifyContent: 'center', opacity: selectedCount === 0 || !accountId ? 0.55 : 1 }}
+                  disabled={nothingToImport || !accountId}
+                  style={{ ...ghostBtnStyle, flex: 1, justifyContent: 'center', opacity: nothingToImport || !accountId ? 0.55 : 1 }}
                 >
                   {t('finance_import_without_categories')}
                 </button>

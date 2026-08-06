@@ -1,8 +1,6 @@
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { formatBRL } from '../../../lib/money'
-// Only Donut is reused: the shared Legend prints the raw datum value, which for
-// cents would read "543895" instead of "R$ 5.438,95".
-import { Donut, type ChartDatum } from '../../../components/Charts'
+import { Donut, Legend, type ChartDatum } from '../../../components/Charts'
 import { projectTotals, spentBySupplier, stageTotals } from '../../../lib/financeProjectCalc'
 import type { FinanceProject } from '../../../types'
 import { cardSurfaceStyle, sectionCaptionStyle, tabularNums } from '../ui'
@@ -83,15 +81,7 @@ export function ProjectOverview({ project, store }: { project: FinanceProject; s
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
               <Donut data={byStage} size={128} centerValue="" centerLabel={t('finance_proj_spent')} />
-              <div style={{ flex: 1, minWidth: 150, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {byStage.map(d => (
-                  <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 3, backgroundColor: d.color, flexShrink: 0 }} />
-                    <span style={{ color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>{d.label}</span>
-                    <span style={{ color: 'var(--color-text-muted)', fontWeight: 600, flexShrink: 0, ...tabularNums }}>{formatBRL(d.value)}</span>
-                  </div>
-                ))}
-              </div>
+              <Legend items={byStage} formatValue={formatBRL} />
             </div>
           )}
         </div>

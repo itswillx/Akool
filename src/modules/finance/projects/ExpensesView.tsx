@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Paperclip, Plus, Receipt } from 'lucide-react'
+import { Link2, Paperclip, Plus, Receipt } from 'lucide-react'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { formatBRL } from '../../../lib/money'
 import { expensesTotal } from '../../../lib/financeProjectCalc'
 import type { FinanceAccount, FinanceProject, FinanceProjectExpense } from '../../../types'
-import { cardSurfaceStyle, primaryBtnStyle, tabularNums } from '../ui'
+import { cardSurfaceStyle, ghostBtnStyle, primaryBtnStyle, tabularNums } from '../ui'
 import { ExpenseModal } from './ExpenseModal'
+import { ReconcileModal } from './ReconcileModal'
 import { PAYMENT_KEY, emptyStateStyle, rowStyle } from './projectsUi'
 import type { FinanceProjectsStore } from './useFinanceProjects'
 
@@ -16,8 +17,10 @@ export function ExpensesView({ project, store, accounts }: {
 }) {
   const { t, lang } = useLanguage()
   const [modal, setModal] = useState<{ open: boolean; expense?: FinanceProjectExpense }>({ open: false })
+  const [reconciling, setReconciling] = useState(false)
 
   const expenses = store.expenses.filter(e => e.project_id === project.id)
+  const unlinkedCount = expenses.filter(e => !e.transaction_id).length
   const stageName = (id: string | null) => store.stages.find(s => s.id === id)?.name
   const supplierName = (id: string | null) => store.suppliers.find(s => s.id === id)?.name
 
@@ -34,9 +37,19 @@ export function ExpensesView({ project, store, accounts }: {
         <div style={{ fontSize: 13, color: 'var(--color-text-muted)', ...tabularNums }}>
           {t('finance_proj_expenses_total', { n: expenses.length, value: formatBRL(expensesTotal(expenses)) })}
         </div>
-        <button style={primaryBtnStyle} onClick={() => setModal({ open: true })}>
-          <Plus size={15} />{t('finance_proj_expense_new')}
-        </button>
+        <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+          {expenses.length > 0 && (
+            <button style={ghostBtnStyle} onClick={() => setReconciling(true)}>
+              <Link2 size={14} />
+              {unlinkedCount > 0
+                ? t('finance_reconcile_open_pending', { n: unlinkedCount })
+                : t('finance_reconcile_open')}
+            </button>
+          )}
+          <button style={primaryBtnStyle} onClick={() => setModal({ open: true })}>
+            <Plus size={15} />{t('finance_proj_expense_new')}
+          </button>
+        </div>
       </div>
 
       {expenses.length === 0 ? (
@@ -87,6 +100,17 @@ export function ExpensesView({ project, store, accounts }: {
             else await store.createExpense({ ...draft, project_id: project.id })
           }}
           onDelete={modal.expense ? () => store.deleteExpense(modal.expense!.id) : undefined}
+        />
+      )}
+
+      {reconciling && (
+        <ReconcileModal
+          project={project}
+          // The whole list, not just this project's: a transaction claimed by
+          // another project must not be offered again here.
+          expenses={store.expenses}
+          onLink={(expenseId, transactionId) => store.updateExpense(expenseId, { transaction_id: transactionId })}
+          onClose={() => setReconciling(false)}
         />
       )}
     </div>

@@ -3,7 +3,8 @@ import { jsPDF } from 'jspdf'
 import { exportToBlob as excalidrawExportToBlob } from '@excalidraw/excalidraw'
 import { supabase } from '../lib/supabase'
 import { formatBRL } from '../lib/money'
-import type { Page, FinanceTransaction, FinanceAccount, FinanceCategory, FinanceBudget, FinanceGoal, FinanceGoalContribution, FinanceRecurring } from '../types'
+import { accountBalance } from '../lib/financeCalc'
+import type { Page, FinanceTransaction, FinanceAccount, FinanceCategory, FinanceBudget, FinanceGoal, FinanceGoalContribution, FinanceRecurring, FinanceInvestmentMovement } from '../types'
 
 const MARGIN = 15
 const PAGE_W = 210
@@ -348,6 +349,9 @@ export async function exportPagesToPdf(pages: Page[], filename: string): Promise
 export interface FinancePdfData {
   transactions: FinanceTransaction[]
   accounts: FinanceAccount[]
+  /** Needed for the balance table: contributions leave the bank without ever
+   *  becoming a transaction. Optional so older callers keep compiling. */
+  investmentMovements?: FinanceInvestmentMovement[]
   categories: FinanceCategory[]
   budgets: FinanceBudget[]
   goals: FinanceGoal[]
@@ -676,6 +680,7 @@ function drawMonthlyBarsChart(
 export async function exportFinanceToPdf({
   transactions,
   accounts,
+  investmentMovements = [],
   categories,
   budgets,
   goals,
@@ -898,10 +903,7 @@ export async function exportFinanceToPdf({
     ], y, { bold: true, color: [80, 80, 80] })
     for (const acc of accounts) {
       y = finHRule(doc, y)
-      const txs = transactions.filter(tx => tx.account_id === acc.id)
-      const aInc = txs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0)
-      const aExp = txs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0)
-      const bal = acc.initial_balance + aInc - aExp
+      const bal = accountBalance(acc, transactions, investmentMovements)
       y = finRow(doc, [
         { text: `${acc.icon ? finSafe(acc.icon) + ' ' : ''}${acc.name}`, ...AC.name },
         { text: typeLabels[acc.type] ?? acc.type, ...AC.tp },

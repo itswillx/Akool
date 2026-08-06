@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import QuickNotes from './QuickNotes'
 import DashboardProjects, { useDashboardProjects } from './DashboardProjects'
-import type { Page, PageType, Todo, FinanceAccount, FinanceTransaction, FinanceCategory } from '../types'
+import type { Page, PageType, Todo, FinanceAccount, FinanceTransaction, FinanceCategory, FinanceInvestmentMovement } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../i18n/LanguageContext'
 import ErrorBoundary from './ErrorBoundary'
 import { formatBRL } from '../lib/money'
+import { accountBalance } from '../lib/financeCalc'
 
 interface DashboardProps {
   isMobile?: boolean
@@ -81,15 +82,18 @@ function useDashboardFinance(userId: string | undefined, enabled: boolean): Fina
       supabase.from('finance_accounts').select('*').eq('user_id', userId),
       supabase.from('finance_transactions').select('*').eq('user_id', userId),
       supabase.from('finance_categories').select('*').eq('user_id', userId),
-    ]).then(([accRes, txRes, catRes]) => {
+      supabase.from('finance_investment_movements').select('*').eq('user_id', userId),
+    ]).then(([accRes, txRes, catRes, invMovRes]) => {
       const accounts: FinanceAccount[] = (accRes.data ?? []) as FinanceAccount[]
       const transactions: FinanceTransaction[] = (txRes.data ?? []) as FinanceTransaction[]
       const categories: FinanceCategory[] = (catRes.data ?? []) as FinanceCategory[]
+      const investmentMovements: FinanceInvestmentMovement[] = (invMovRes.data ?? []) as FinanceInvestmentMovement[]
 
-      const totalAccountsBalance = accounts.reduce((s, a) => s + a.initial_balance, 0)
-      const totalIncome = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-      const totalExpense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-      const totalBalance = totalAccountsBalance + totalIncome - totalExpense
+      // Via the shared helper: contributions leave the bank without ever
+      // becoming a transaction, so summing transactions alone overstated the
+      // balance shown on the home screen.
+      const totalBalance = accounts.reduce(
+        (s, acc) => s + accountBalance(acc, transactions, investmentMovements), 0)
 
       const monthTx = transactions.filter(t => t.date.startsWith(ym))
       const monthIncome = monthTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)

@@ -267,3 +267,86 @@ export function activeProjectsSpent(
   const live = new Set(projects.filter(p => p.status !== 'cancelled').map(p => p.id))
   return expensesTotal(expenses.filter(e => live.has(e.project_id)))
 }
+
+// ─── Reconciling works expenses with the cash flow ────────────────────────────
+
+/** Days either side of the expense date a candidate transaction may fall on.
+ *  A card purchase posts a day or two after the receipt, so an exact-date match
+ *  would miss most of them. */
+const RECONCILE_DAY_WINDOW = 3
+
+// Shifts a 'YYYY-MM-DD' by whole days without going through Date parsing of the
+// string itself (which shifts a day in UTC-3). Building from the numeric parts
+// uses the local constructor, which is safe.
+function shiftDay(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number)
+  const shifted = new Date(y, m - 1, d + days)
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-${String(shifted.getDate()).padStart(2, '0')}`
+}
+
+type ReconcileTxLike = { id: string; date: string; amount: number; type: 'income' | 'expense'; description: string }
+
+// Transactions that could be the cash-flow side of a works expense: an expense
+// of the same amount, within a few days, not already claimed by another
+// works expense or by the store.
+//
+// Amount has to match exactly — a works expense and its statement line are the
+// same payment, so a "close enough" amount would be a different purchase.
+export function reconcileCandidates(
+  expense: Pick<FinanceProjectExpense, 'amount' | 'date'>,
+  transactions: ReconcileTxLike[],
+  claimedTransactionIds: ReadonlySet<string>,
+): ReconcileTxLike[] {
+  const from = shiftDay(expense.date, -RECONCILE_DAY_WINDOW)
+  const to = shiftDay(expense.date, RECONCILE_DAY_WINDOW)
+  return transactions
+    .filter(tx =>
+      tx.type === 'expense'
+      && tx.amount === expense.amount
+      && tx.date >= from && tx.date <= to
+      && !claimedTransactionIds.has(tx.id))
+    // Closest date first: with several identical payments, the nearest one is
+    // the likeliest match.
+    .sort((a, b) => {
+      const da = Math.abs(dayDiff(a.date, expense.date))
+      const db = Math.abs(dayDiff(b.date, expense.date))
+      return da === db ? a.date.localeCompare(b.date) : da - db
+    })
+}
+
+function dayDiff(a: string, b: string): number {
+  const [ya, ma, da] = a.split('-').map(Number)
+  const [yb, mb, db] = b.split('-').map(Number)
+  return Math.round((new Date(ya, ma - 1, da).getTime() - new Date(yb, mb - 1, db).getTime()) / 86400000)
+}
+
+export interface ProjectsCashSplit {
+  /** Everything spent on live projects. */
+  total: number
+  /** The part backed by a finance_transactions row — already in the cash flow. */
+  linked: number
+  /** The part with no linked transaction. */
+  unlinked: number
+}
+
+// Splits the works total by whether each expense has a transaction behind it.
+//
+// This is what dissolves the double-counting question. A works expense never
+// creates a transaction on its own, but the money did leave the bank and shows
+// up when the statement is imported — so the same money was described twice
+// with nothing saying so. `linked` is the part already counted in the cash
+// flow; `unlinked` is the part still floating outside it.
+export function projectsCashSplit(
+  projects: Pick<FinanceProject, 'id' | 'status'>[],
+  expenses: Pick<FinanceProjectExpense, 'project_id' | 'amount' | 'transaction_id'>[],
+): ProjectsCashSplit {
+  const live = new Set(projects.filter(p => p.status !== 'cancelled').map(p => p.id))
+  let linked = 0
+  let unlinked = 0
+  for (const e of expenses) {
+    if (!live.has(e.project_id)) continue
+    if (e.transaction_id) linked += e.amount
+    else unlinked += e.amount
+  }
+  return { total: linked + unlinked, linked, unlinked }
+}
