@@ -38,39 +38,42 @@ src/modules/finance/
   index.ts            ← barrel (entrada pública)
   FinancePanel.tsx    ← orquestrador atual
   ui/                 ← primitivos compartilhados: Modal, Drawer, EmojiInput,
-                        FinanceMobileContext e os design tokens (FIN_*, estilos)
-  myprojects/         ← aba "Projetos": Resumo + as três abaixo (README próprio)
-  projects/           ← submódulo "Obras" (ver README próprio)
-  investments/        ← submódulo "Investimentos" (ver README próprio)
+                        AttachmentField, FinanceMobileContext e os design
+                        tokens (FIN_*, estilos, badgeStyle)
+  myprojects/         ← aba "Projetos": Resumo + Loja + Metas (README próprio)
   store/              ← submódulo "Loja" (ver README próprio)
   integrations/       ← provedores externos
   tabs/ modals/ hooks/ utils/   ← split incremental do FinancePanel (a criar)
 ```
 
-`ui/` foi extraído do `FinancePanel.tsx` para que o submódulo `projects/` reuse
-o mesmo modal/drawer em vez de duplicá-los. O `Modal` depende do
+`ui/` foi extraído do `FinancePanel.tsx` para que os submódulos reusem o mesmo
+modal/drawer em vez de duplicá-los. O `Modal` depende do
 `FinanceMobileContext`, então qualquer coisa que o use precisa renderizar dentro
 do provider do `FinancePanel`.
 
-### Aba "Obras" (`projects/`)
+### Submódulos removidos: Obras e Investimentos (2026-08-07)
 
-Controle de gastos de obra/reforma: etapas com teto de orçamento, lista de itens
-a comprar, cotações por fornecedor e gastos realizados com anexos.
+**Obras** (`projects/`, 6 tabelas `finance_project*`) virou Metas: cada
+`finance_projects` foi migrada para `finance_goals` e cada gasto para
+`finance_goal_contributions`, pela migration
+`20260807120000_finance_drop_works_investments`. Etapas, itens a comprar e
+cotações não sobreviveram — só o nome do fornecedor, colado na nota da
+contribuição. Backup em `supabase/backups/20260807_obras_investimentos.json`.
 
-> ⚠️ `finance_projects` **não** tem relação com `project_boards`/`project_cards`
-> do módulo de Projetos — a fronteira acima continua valendo. Detalhes em
-> `projects/README.md`.
+Duas coisas de Obras continuam vivas porque a Loja também as usa:
+`finance_suppliers` (restaurada em `20260807130000_finance_restore_suppliers`
+depois de ter sido dropada por engano) e o `AttachmentField`, que subiu para
+`ui/`.
 
-Investimentos é a exceção deliberada a essa regra: o movimento vive em
-`finance_investment_movements` (fora de `finance_transactions`, para não inflar
-receita/despesa do mês), mas `accountBalance` o subtrai explicitamente via o 3º
-parâmetro — senão o dinheiro que sai da conta para aplicar simplesmente some do
-saldo. Obras ganhou `transaction_id` para poder dizer quanto do seu total já
-está no fluxo de caixa (aba Obras → Conciliar).
+**Investimentos** (`investments/`, `finance_investments` +
+`finance_investment_movements`) foi removido inteiro, tabelas incluídas. As duas
+estavam vazias, então nada foi migrado e nenhum saldo mudou — o 3º parâmetro de
+`accountBalance`, que descontava os aportes, sempre somou zero neste banco e
+deixou de existir.
 
-Acoplamento com o resto de finanças é só de leitura e numa direção: um gasto de
-obra nunca vira `finance_transaction`; o Resumo mostra apenas o total
-consolidado, via `useProjectsSummary`.
+`src/lib/investmentClassifier.ts` **ficou**: não depende das tabelas e é o que
+faz `statementImport` marcar um aporte como transferência **interna**, para ele
+não virar despesa fantasma na importação de extrato.
 
 ### Abas
 
@@ -79,7 +82,6 @@ consolidado, via `useProjectsSummary`.
 `finance_tab_change` derivam todos dele. Adicionar uma aba é acrescentar uma
 entrada ali e outra em `FINANCE_NAV`.
 
-Obras, Investimentos e Loja **não são mais abas**: viraram sub-abas de
-`'myprojects'`. Os ids antigos continuam sendo aceitos por `resolveTabRequest`
-(a única função que os conhece), que os traduz para a sub-aba correspondente —
-ver `myprojects/README.md`.
+Loja e Metas **não são abas**: são sub-abas de `'myprojects'`. Os ids antigos
+continuam sendo aceitos por `resolveTabRequest` (a única função que os conhece),
+que os traduz para a sub-aba correspondente — ver `myprojects/README.md`.

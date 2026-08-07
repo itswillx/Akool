@@ -58,11 +58,13 @@ Migration: `supabase/migrations/20260728120000_finance_store_module.sql`.
 * Todo write em `finance_transactions` dispara o CustomEvent
   `finance_transactions_changed`; o FinancePanel escuta e dá `reload()` — a
   transação aparece na aba Transações sem F5.
-* **Fornecedores são os mesmos `finance_suppliers` de Obras** (uma agenda só);
-  clientes são tabela própria (`finance_store_customers`).
-* Workspace: toda linha usa o `workspaceId` da prop no momento da criação (a
-  Loja é um domínio único, diferente de Obras onde filhos herdam do projeto).
-* Anexos no bucket privado `store-files` via `AttachmentField` (prop `bucket`);
-  leitura só por signed URL; remover a linha remove os objetos antes.
+* **`finance_suppliers` veio de Obras e a Loja é a última dona.** Obras foi
+  removida em 2026-08-07; a tabela sobreviveu por causa daqui (ver
+  `../README.md`). Clientes são tabela própria (`finance_store_customers`).
+* Workspace: toda linha usa o `workspaceId` da prop no momento da criação — a
+  Loja é um domínio único, sem hierarquia de onde herdar.
+* Anexos no bucket privado `store-files` via `AttachmentField` (prop `bucket`,
+  hoje em `../ui/`); leitura só por signed URL; remover a linha remove os
+  objetos antes.
 * Dinheiro em centavos (`toCents`/`formatBRL`), datas `'YYYY-MM-DD'` fatiadas
   como texto.

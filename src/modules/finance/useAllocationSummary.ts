@@ -1,25 +1,23 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { projectsCashSplit, type ProjectsCashSplit } from '../../lib/financeProjectCalc'
 import { stockCapital } from '../../lib/financeStoreCalc'
 import type {
-  FinanceProject, FinanceProjectExpense,
   FinanceStoreProduct, FinanceStorePurchase, FinanceStoreSale, FinanceStoreSaleItem,
 } from '../../types'
 
-// Read-only bridge from the works and store submodules to the finance overview,
-// following useProjectsSummary: deliberately separate from the full hooks so the
-// overview does not pay for loading stages, quotes, customers and sale pipelines
-// it will never render.
+// Read-only bridge from the store submodule to the finance overview:
+// deliberately separate from the full hook so the overview does not pay for
+// loading customers and sale pipelines it will never render.
 //
 // It answers the question the overview could not answer before: net worth was
-// only the sum of account balances, so money sitting in a works project or in
-// unsold stock was invisible — and the works total sat next to the cash flow
-// with nothing saying the two describe the same money.
+// only the sum of account balances, so money sitting in unsold stock was
+// invisible.
+//
+// Já trouxe também o total de Obras (gasto conciliado × não conciliado). O
+// submódulo foi removido e as obras viraram metas, cujo acumulado sai das
+// contribuições — não há mais um bolso fora do fluxo de caixa para reportar.
 
 export interface AllocationSummary {
-  projects: ProjectsCashSplit
-  projectCount: number
   /** Available units × average cost, across non-archived products. */
   stockCapital: number
   loading: boolean
@@ -27,8 +25,6 @@ export interface AllocationSummary {
 }
 
 export function useAllocationSummary(userId: string | undefined): AllocationSummary {
-  const [projects, setProjects] = useState<ProjectsCashSplit>({ total: 0, linked: 0, unlinked: 0 })
-  const [projectCount, setProjectCount] = useState(0)
   const [stock, setStock] = useState(0)
   const [loading, setLoading] = useState(true)
 
@@ -36,19 +32,13 @@ export function useAllocationSummary(userId: string | undefined): AllocationSumm
   // (which must ignore a late response) and the manual reload can use it.
   const fetchSummary = useCallback(async () => {
     if (!userId) return null
-    const [pr, ex, prod, pur, saleItems, sales] = await Promise.all([
-      supabase.from('finance_projects').select('id,status'),
-      supabase.from('finance_project_expenses').select('project_id,amount,transaction_id'),
+    const [prod, pur, saleItems, sales] = await Promise.all([
       supabase.from('finance_store_products').select('id,archived'),
       supabase.from('finance_store_purchases').select('product_id,quantity,unit_cost,other_costs'),
       supabase.from('finance_store_sale_items').select('product_id,sale_id,quantity'),
       supabase.from('finance_store_sales').select('id,status'),
     ])
-    const projectRows = (pr.data as Pick<FinanceProject, 'id' | 'status'>[]) ?? []
-    const expenseRows = (ex.data as Pick<FinanceProjectExpense, 'project_id' | 'amount' | 'transaction_id'>[]) ?? []
     return {
-      projects: projectsCashSplit(projectRows, expenseRows),
-      projectCount: projectRows.filter(p => p.status === 'active' || p.status === 'planning').length,
       stockCapital: stockCapital(
         (prod.data as Pick<FinanceStoreProduct, 'id' | 'archived'>[]) ?? [],
         (pur.data as Pick<FinanceStorePurchase, 'product_id' | 'quantity' | 'unit_cost' | 'other_costs'>[]) ?? [],
@@ -60,8 +50,6 @@ export function useAllocationSummary(userId: string | undefined): AllocationSumm
 
   const apply = (data: Awaited<ReturnType<typeof fetchSummary>>) => {
     if (!data) return
-    setProjects(data.projects)
-    setProjectCount(data.projectCount)
     setStock(data.stockCapital)
     setLoading(false)
   }
@@ -76,5 +64,5 @@ export function useAllocationSummary(userId: string | undefined): AllocationSumm
 
   const reload = useCallback(async () => { apply(await fetchSummary()) }, [fetchSummary])
 
-  return { projects, projectCount, stockCapital: stock, loading, reload }
+  return { stockCapital: stock, loading, reload }
 }

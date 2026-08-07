@@ -17,17 +17,22 @@ describe('parseFinanceLocation', () => {
   it('maps every legacy tab id to its sub-tab', () => {
     // Isto é o que salva quem tinha 'store' gravado no localStorage antes da
     // unificação: sem o mapa, cairia no Resumo geral sem entender o porquê.
-    expect(parseFinanceLocation('projects')).toEqual({ tab: 'myprojects', section: 'works' })
     expect(parseFinanceLocation('store')).toEqual({ tab: 'myprojects', section: 'store' })
-    expect(parseFinanceLocation('investments')).toEqual({ tab: 'myprojects', section: 'investments' })
     expect(parseFinanceLocation('goals')).toEqual({ tab: 'myprojects', section: 'goals' })
   })
 
-  it('never resolves the tab id itself to the legacy Obras sub-tab', () => {
+  it('lands the removed sub-tabs on the Resumo', () => {
+    // Obras e Investimentos deixaram de existir. Mandar para o id antigo faria
+    // isProjectsSection recusar e a navegação virar um no-op silencioso.
+    expect(parseFinanceLocation('projects')).toEqual({ tab: 'myprojects', section: 'summary' })
+    expect(parseFinanceLocation('investments')).toEqual({ tab: 'myprojects', section: 'summary' })
+  })
+
+  it('never resolves the tab id itself like the legacy Obras id', () => {
     // É por isto que o TabId continua 'myprojects' mesmo com o rótulo
     // "Projetos": se ele fosse 'projects', o mesmo texto significaria "abra a
     // seção" e "abra Obras", e quem tem 'projects' gravado cairia no lugar errado.
-    expect(parseFinanceLocation('projects')?.section).toBe('works')
+    expect(parseFinanceLocation('projects')?.section).toBe('summary')
     expect(parseFinanceLocation('myprojects')?.section).toBeNull()
   })
 
@@ -50,7 +55,10 @@ describe('parseFinanceLocation', () => {
 describe('isProjectsSection', () => {
   it('accepts every declared section and nothing else', () => {
     for (const s of PROJECTS_SECTIONS) expect(isProjectsSection(s)).toBe(true)
-    expect(isProjectsSection('works ')).toBe(false)
+    expect(isProjectsSection('store ')).toBe(false)
+    // Sub-abas removidas: um localStorage antigo cai no padrão, não passa.
+    expect(isProjectsSection('works')).toBe(false)
+    expect(isProjectsSection('investments')).toBe(false)
     expect(isProjectsSection(null)).toBe(false)
     expect(isProjectsSection(42)).toBe(false)
   })

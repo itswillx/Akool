@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { ChevronLeft, Settings, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react'
 import type {
-  FinanceAccount, FinanceBudget, FinanceCategory, FinanceInvestmentMovement,
+  FinanceAccount, FinanceBudget, FinanceCategory,
   FinanceTransaction, FinanceWorkspace, FinanceWorkspaceMember,
 } from '../../../types'
 import { formatBRL } from '../../../lib/money'
@@ -32,7 +32,6 @@ interface Props {
   transactions: FinanceTransaction[]
   budgets: FinanceBudget[]
   accounts: FinanceAccount[]
-  investmentMovements: FinanceInvestmentMovement[]
   categories: FinanceCategory[]
   month: string
   onBack: () => void
@@ -40,7 +39,7 @@ interface Props {
 }
 
 export default function CoworkspaceOverviewTab({
-  workspace, members, transactions, budgets, accounts, investmentMovements, categories, month, onBack, onManage,
+  workspace, members, transactions, budgets, accounts, categories, month, onBack, onManage,
 }: Props) {
   const { t, lang } = useLanguage()
   const isMobile = useFinanceMobile()
@@ -219,7 +218,7 @@ export default function CoworkspaceOverviewTab({
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {accounts.map(acc => {
-                const bal = accountBalance(acc, transactions, investmentMovements)
+                const bal = accountBalance(acc, transactions)
                 return (
                   <div key={acc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: 10, background: 'var(--color-bg)' }}>
                     <span style={{ fontSize: 16 }}>{acc.icon}</span>

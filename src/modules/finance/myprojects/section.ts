@@ -2,7 +2,7 @@
 // estaticamente pelo FinancePanel — são poucas linhas e a resolução da aba
 // acontece no primeiro render, antes de qualquer lazy chunk carregar.
 
-export const PROJECTS_SECTIONS = ['summary', 'works', 'investments', 'store', 'goals'] as const
+export const PROJECTS_SECTIONS = ['summary', 'store', 'goals'] as const
 export type ProjectsSection = typeof PROJECTS_SECTIONS[number]
 
 export const MYPROJECTS_TAB_ID = 'myprojects'
@@ -14,11 +14,15 @@ export const FINANCE_TAB_KEY = 'finance_active_tab'
  *
  * Sem isto, quem tinha 'store' gravado no localStorage cairia no Resumo geral
  * do financeiro depois do deploy, sem entender para onde a Loja foi.
+ *
+ * `projects` (Obras) e `investments` caem no Resumo: as sub-abas deixaram de
+ * existir, e mandar para um id inválido faria `isProjectsSection` recusar e a
+ * navegação virar um no-op silencioso.
  */
 export const LEGACY_TAB_TO_SECTION: Record<string, ProjectsSection> = {
-  projects: 'works',
+  projects: 'summary',
   store: 'store',
-  investments: 'investments',
+  investments: 'summary',
   goals: 'goals',
 }
 

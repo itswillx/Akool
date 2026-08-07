@@ -1,26 +1,20 @@
 import type React from 'react'
 import { useMemo } from 'react'
-import { HardHat, PiggyBank, Star, Store } from 'lucide-react'
+import { Star, Store } from 'lucide-react'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { formatBRL } from '../../../lib/money'
-import type {
-  FinanceGoal, FinanceGoalContribution, FinanceInvestment, FinanceInvestmentMovement,
-} from '../../../types'
+import type { FinanceGoal, FinanceGoalContribution } from '../../../types'
 import { FIN_POS, cardSurfaceStyle, sectionCaptionStyle, tabularNums } from '../ui'
-import type { FinanceProjectsStore } from '../projects/useFinanceProjects'
 import type { FinanceStoreStore } from '../store/useFinanceStore'
 import { SummaryBoard } from './SummaryBoard'
 import { KIND_SECTION, buildUnifiedCards, type UnifiedKind } from './unifiedCards'
 import type { ProjectsSection } from './section'
 
-// Resumo de "Projetos": quatro cartões de entrada (um por domínio) e, abaixo,
-// o kanban unificado por fase.
+// Resumo de "Projetos": um cartão de entrada por domínio e, abaixo, o kanban
+// unificado por fase.
 
-export function SummaryView({ projects, store, investments, movements, goals, contributions, onOpenSection }: {
-  projects: FinanceProjectsStore
+export function SummaryView({ store, goals, contributions, onOpenSection }: {
   store: FinanceStoreStore
-  investments: FinanceInvestment[]
-  movements: FinanceInvestmentMovement[]
   goals: FinanceGoal[]
   contributions: FinanceGoalContribution[]
   onOpenSection: (s: ProjectsSection) => void
@@ -29,24 +23,22 @@ export function SummaryView({ projects, store, investments, movements, goals, co
 
   const cards = useMemo(
     () => buildUnifiedCards(
-      projects, store, investments, movements, goals, contributions,
+      store, goals, contributions,
       {
         noCustomer: t('finance_store_no_customer'),
         sale: t('finance_store_sale'),
         goalTarget: target => t('finance_myproj_goal_target', { target }),
       },
-      { sale: FIN_POS, investment: 'var(--color-btn-primary)' },
+      { sale: FIN_POS },
     ),
-    [projects, store, investments, movements, goals, contributions, t],
+    [store, goals, contributions, t],
   )
 
-  const loading = projects.loading || store.loading
+  const loading = store.loading
 
   // Um card por domínio: quantos estão em andamento e quanto somam. O "ativo"
   // exclui concluído e cancelado — é o que ainda exige atenção.
   const tiles: { kind: UnifiedKind; icon: React.ReactNode; label: string }[] = [
-    { kind: 'work', icon: <HardHat size={16} />, label: t('finance_tab_projects') },
-    { kind: 'investment', icon: <PiggyBank size={16} />, label: t('finance_tab_investments') },
     { kind: 'sale', icon: <Store size={16} />, label: t('finance_tab_store') },
     { kind: 'goal', icon: <Star size={16} />, label: t('finance_tab_goals') },
   ]
@@ -81,10 +73,9 @@ export function SummaryView({ projects, store, investments, movements, goals, co
 
       <div>
         <h3 style={{ ...sectionCaptionStyle, marginBottom: 4 }}>{t('finance_myproj_board_title')}</h3>
-        {/* O rótulo diz "valor envolvido" e não "total": somar obra +
-            investimento + venda + meta num R$ só é uma ordem de grandeza, não
-            um saldo. Sem o rótulo, vira um número que ninguém sabe
-            interpretar. */}
+        {/* O rótulo diz "valor envolvido" e não "total": somar venda + meta num
+            R$ só é uma ordem de grandeza, não um saldo. Sem o rótulo, vira um
+            número que ninguém sabe interpretar. */}
         <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginBottom: 10 }}>
           {t('finance_myproj_board_hint')}
         </div>

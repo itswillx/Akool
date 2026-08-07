@@ -1,23 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FINANCE_PHASES, goalPhase, investmentPhase, projectPhase, salePhase } from './financePhase'
-
-describe('projectPhase', () => {
-  it('maps planning to planned and done to done', () => {
-    expect(projectPhase('planning')).toBe('planned')
-    expect(projectPhase('done')).toBe('done')
-  })
-
-  it('keeps a paused work in doing', () => {
-    // The work exists and already has money in it — pausing does not turn it
-    // back into a plan.
-    expect(projectPhase('active')).toBe('doing')
-    expect(projectPhase('paused')).toBe('doing')
-  })
-
-  it('keeps cancelled as its own phase', () => {
-    expect(projectPhase('cancelled')).toBe('cancelled')
-  })
-})
+import { FINANCE_PHASES, goalPhase, salePhase } from './financePhase'
 
 describe('salePhase', () => {
   it('treats a sale still being negotiated as planned', () => {
@@ -36,28 +18,9 @@ describe('salePhase', () => {
   })
 })
 
-describe('investmentPhase', () => {
-  it('is done once archived, even with money still applied', () => {
-    // Archiving is a declaration of intent and wins over the number.
-    expect(investmentPhase({ archived: true }, 500_00)).toBe('done')
-  })
-
-  it('is doing while there is an applied position', () => {
-    expect(investmentPhase({ archived: false }, 1)).toBe('doing')
-  })
-
-  it('is planned for a position with nothing applied yet', () => {
-    expect(investmentPhase({ archived: false }, 0)).toBe('planned')
-  })
-
-  it('is planned when the position went negative (bad data, not a phase)', () => {
-    expect(investmentPhase({ archived: false }, -100)).toBe('planned')
-  })
-})
-
 describe('goalPhase', () => {
   it('is done once the goal is marked completed, even with nothing saved', () => {
-    // Same rule as an archived investment: the declaration beats the number.
+    // The declaration beats the number.
     expect(goalPhase({ status: 'completed' }, 0)).toBe('done')
   })
 

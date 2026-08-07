@@ -1,12 +1,15 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Download, Paperclip, Trash2, X } from 'lucide-react'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { supabase } from '../../../lib/supabase'
 import { resolveSignedUrl } from '../../../lib/storageUrl'
 import type { FinanceAttachment } from '../../../types'
-import { ghostBtnStyle, labelStyle } from '../ui'
-import { ATTACHMENT_BUCKET } from './useFinanceProjects'
+import { ghostBtnStyle, labelStyle } from './tokens'
+
+// Nasceu em `projects/` (Obras) com a Loja passando o próprio bucket por prop.
+// Obras foi removida e a Loja ficou como única consumidora, então subiu para
+// `ui/` em vez de virar um arquivo solto dentro de `store/`.
 
 // Small inline preview so a receipt photo can be seen without downloading it.
 // Images resolve their signed URL once on mount (same shape as the transaction
@@ -72,14 +75,14 @@ function Lightbox({ url, name, onClose }: { url: string; name: string; onClose: 
 }
 
 // Multi-file field for receipts and product photos. Uploads land in a private
-// bucket under `<uid>/<projectId>/`, which is what the storage policies key on,
-// and are read back through signed URLs (never getPublicUrl). The bucket
-// defaults to the obras one; the store submodule passes its own.
-export function AttachmentField({ projectId, value, onChange, bucket = ATTACHMENT_BUCKET }: {
-  projectId: string
+// bucket under `<uid>/<ownerId>/`, which is what the storage policies key on,
+// and are read back through signed URLs (never getPublicUrl).
+export function AttachmentField({ ownerId, value, onChange, bucket }: {
+  /** Id da linha dona dos arquivos — vira o segundo nível do path. */
+  ownerId: string
   value: FinanceAttachment[]
   onChange: (next: FinanceAttachment[]) => void
-  bucket?: string
+  bucket: string
 }) {
   const { user } = useAuth()
   const { t } = useLanguage()
@@ -94,7 +97,7 @@ export function AttachmentField({ projectId, value, onChange, bucket = ATTACHMEN
     const added: FinanceAttachment[] = []
     for (const file of Array.from(files)) {
       const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin'
-      const path = `${user.id}/${projectId}/${crypto.randomUUID()}.${ext}`
+      const path = `${user.id}/${ownerId}/${crypto.randomUUID()}.${ext}`
       const { error: err } = await supabase.storage.from(bucket).upload(path, file)
       if (err) { setError(err.message); continue }
       added.push({
@@ -123,7 +126,7 @@ export function AttachmentField({ projectId, value, onChange, bucket = ATTACHMEN
 
   return (
     <div>
-      <label style={labelStyle}>{t('finance_proj_attachments')}</label>
+      <label style={labelStyle}>{t('finance_attachments')}</label>
       {value.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
           {value.map(a => (
@@ -132,7 +135,7 @@ export function AttachmentField({ projectId, value, onChange, bucket = ATTACHMEN
               <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {a.name}
               </span>
-              <button type="button" onClick={() => handleOpen(a)} title={t('finance_proj_open_file')}
+              <button type="button" onClick={() => handleOpen(a)} title={t('finance_attachment_open')}
                 style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2 }}>
                 <Download size={14} />
               </button>
@@ -146,7 +149,7 @@ export function AttachmentField({ projectId, value, onChange, bucket = ATTACHMEN
       )}
       <label style={{ ...ghostBtnStyle, opacity: busy ? 0.6 : 1 }}>
         <Paperclip size={14} />
-        {busy ? t('finance_proj_uploading') : t('finance_proj_add_file')}
+        {busy ? t('finance_attachment_uploading') : t('finance_attachment_add')}
         <input type="file" multiple hidden disabled={busy} onChange={e => { handlePick(e.target.files); e.target.value = '' }} />
       </label>
       {error && <div style={{ marginTop: 6, fontSize: 12, color: 'var(--color-error)' }}>{error}</div>}

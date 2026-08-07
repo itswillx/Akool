@@ -5,7 +5,7 @@ import { formatBRL, fromCents, toCents } from '../../../lib/money'
 import { averageUnitCost, productStock, saleProfit } from '../../../lib/financeStoreCalc'
 import type { FinanceAccount, FinanceStoreChannel, FinanceStoreSale } from '../../../types'
 import { Modal, FIN_NEG, FIN_POS, ghostBtnStyle, inputStyle, labelStyle, primaryBtnStyle, sectionCaptionStyle, tabularNums, useFinanceMobile } from '../ui'
-import { AttachmentField } from '../projects/AttachmentField'
+import { AttachmentField } from '../ui'
 import { CHANNELS, CHANNEL_KEY } from './storeUi'
 import { CustomerModal } from './CustomerModal'
 import { STORE_ATTACHMENT_BUCKET, type FinanceStoreStore } from './useFinanceStore'
@@ -316,7 +316,7 @@ export function SaleModal({ store, sale, accounts, onClose }: {
           </div>
 
           {sale && (
-            <AttachmentField projectId={sale.id} bucket={STORE_ATTACHMENT_BUCKET}
+            <AttachmentField ownerId={sale.id} bucket={STORE_ATTACHMENT_BUCKET}
               value={attachments} onChange={setAttachments} />
           )}
 

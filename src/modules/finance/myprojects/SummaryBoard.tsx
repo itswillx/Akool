@@ -6,19 +6,17 @@ import { formatBRL } from '../../../lib/money'
 import { FINANCE_PHASES, type FinancePhaseOrCancelled } from '../../../lib/financePhase'
 import { stepIndexOf, type StepDef } from '../../../lib/boardStepper'
 import { BoardStepper, KanbanBoard, type BoardColumnDef, type BoardSortOption } from '../../../components/board'
-import { FIN_NEG, FIN_POS, FIN_WARN, tabularNums } from '../ui'
-import { badgeStyle } from '../projects/projectsUi'
+import { FIN_NEG, FIN_POS, FIN_WARN, badgeStyle, tabularNums } from '../ui'
 import { KIND_SECTION, type UnifiedCard, type UnifiedKind } from './unifiedCards'
 import type { ProjectsSection } from './section'
 
-// Kanban unificado do Resumo: obras, posições de investimento e vendas nas
-// mesmas colunas de fase.
+// Kanban unificado do Resumo: vendas e metas nas mesmas colunas de fase.
 //
-// Read-only de propósito. "Em andamento → Concluído" significa três coisas
-// diferentes (finance_projects.status='done', sales.status='delivered' COM
-// efeito em finance_transactions, investment.archived=true). Reimplementar o
-// modal de confirmação da venda aqui duplicaria a lógica mais perigosa do
-// módulo. Clicar no card leva à sub-aba de origem, onde o movimento é seguro.
+// Read-only de propósito. "Em andamento → Concluído" significa duas coisas
+// diferentes (sales.status='delivered' COM efeito em finance_transactions,
+// finance_goals.status='completed'). Reimplementar o modal de confirmação da
+// venda aqui duplicaria a lógica mais perigosa do módulo. Clicar no card leva à
+// sub-aba de origem, onde o movimento é seguro.
 
 const PHASE_COLOR: Record<FinancePhaseOrCancelled, string> = {
   planned: 'var(--color-text-muted)',
@@ -35,8 +33,6 @@ const PHASE_KEY = {
 } as const
 
 const KIND_KEY: Record<UnifiedKind, TranslationKey> = {
-  work: 'finance_tab_projects',
-  investment: 'finance_tab_investments',
   sale: 'finance_myproj_kind_sale',
   goal: 'finance_tab_goals',
 }

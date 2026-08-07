@@ -4,6 +4,7 @@
 export { Modal } from './Modal'
 export { Drawer } from './Drawer'
 export { EmojiInput } from './EmojiInput'
+export { AttachmentField } from './AttachmentField'
 export { FinanceMobileContext, useFinanceMobile, MOBILE_NAV_HEIGHT } from './mobileContext'
 export { ScopePicker } from './ScopePicker'
 export {
@@ -16,6 +17,7 @@ export {
   ghostBtnStyle,
   cardSurfaceStyle,
   sectionCaptionStyle,
+  badgeStyle,
   FIN_ACCENT,
   FIN_ACCENT_TEXT,
   FIN_POS,

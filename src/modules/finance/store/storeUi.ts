@@ -106,20 +106,9 @@ export function uniqueStateColor(state: UniqueItemState): string {
   }
 }
 
-export function badgeStyle(color: string): CSSProperties {
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    fontSize: 11,
-    fontWeight: 600,
-    padding: '2px 8px',
-    borderRadius: 999,
-    color,
-    background: 'color-mix(in srgb, currentColor 14%, transparent)',
-    whiteSpace: 'nowrap',
-  }
-}
+// Reexportado dos tokens compartilhados: as views da Loja continuam importando
+// tudo daqui, mas o estilo é o mesmo do resto do módulo.
+export { badgeStyle } from '../ui/tokens'
 
 export const rowStyle: CSSProperties = {
   display: 'flex',

@@ -106,6 +106,24 @@ export const cardSurfaceStyle: CSSProperties = {
   borderRadius: 12,
 }
 
+// Pill badge tinted by the colour it is given (status, kind, channel...).
+// Viveu duplicado em cada submódulo até Obras e Investimentos saírem; o Resumo
+// usava a cópia de Obras, então subiu para cá em vez de virar mais uma cópia.
+export function badgeStyle(color: string): CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 11,
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: 999,
+    color,
+    background: 'color-mix(in srgb, currentColor 14%, transparent)',
+    whiteSpace: 'nowrap',
+  }
+}
+
 // Uppercase section caption (e.g. "EVOLUÇÃO MENSAL").
 export const sectionCaptionStyle: CSSProperties = {
   fontSize: 12,

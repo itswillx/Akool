@@ -165,21 +165,10 @@ export interface FinanceWorkspaceInvite {
   inviter_profile?: ProfileBadge
 }
 
-// ─── Finance Projects / Obras ───────────────────────────────────────────────
-// Controle de gastos de obra (construção/reforma). Entidade PRÓPRIA de
-// finanças: `finance_projects` não tem nenhuma relação com `ProjectBoard`/
-// `ProjectCard` (o kanban do módulo de projetos) — ver
-// src/modules/finance/projects/README.md. Valores monetários em centavos.
-
-export type FinanceProjectStatus = 'planning' | 'active' | 'paused' | 'done' | 'cancelled'
-export type FinanceProjectItemStatus = 'planned' | 'quoted' | 'purchased' | 'cancelled'
-export type FinanceProjectItemPriority = 'low' | 'normal' | 'high'
-export type FinancePaymentMethod =
-  | 'cash' | 'pix' | 'debit' | 'credit' | 'boleto' | 'transfer' | 'financing'
-
-// Coleção embutida (jsonb) apontando para objetos do bucket privado
-// `project-expense-files`. `path` é a chave do Storage, resolvida sob demanda
-// com resolveSignedUrl().
+// ─── Finance: anexos ────────────────────────────────────────────────────────
+// Coleção embutida (jsonb) apontando para objetos de um bucket privado. `path`
+// é a chave do Storage, resolvida sob demanda com resolveSignedUrl(). Nasceu
+// com Obras; hoje só a Loja usa, via `ui/AttachmentField`.
 export interface FinanceAttachment {
   id: string
   path: string
@@ -189,38 +178,14 @@ export interface FinanceAttachment {
   uploaded_at: string
 }
 
-export interface FinanceProject {
-  id: string
-  user_id: string
-  workspace_id: string | null
-  name: string
-  description: string
-  icon: string
-  color: string
-  status: FinanceProjectStatus
-  /** Teto geral em centavos. 0 = sem teto definido. */
-  budget_total: number
-  started_on: string | null
-  target_end_on: string | null
-  created_at: string
-  updated_at: string
-}
+// ─── Finance Store / Loja ───────────────────────────────────────────────────
+// Estoque de revenda (hardware etc.), pipeline de venda e clientes. O estoque
+// disponível é DERIVADO (comprado − vendido − reservado) em
+// src/lib/financeStoreCalc.ts; sale_items guardam snapshot de preço/custo para
+// o lucro histórico não mudar com edições no produto. Valores em centavos.
 
-export interface FinanceProjectStage {
-  id: string
-  user_id: string
-  workspace_id: string | null
-  project_id: string
-  name: string
-  icon: string
-  color: string
-  /** Teto da etapa em centavos. 0 = sem teto. */
-  budget_amount: number
-  sort_order: number
-  created_at: string
-  updated_at: string
-}
-
+// Fornecedor de uma compra. Veio de Obras e sobreviveu à remoção dela: a Loja
+// cria e lê as mesmas linhas de `finance_suppliers`.
 export interface FinanceSupplier {
   id: string
   user_id: string
@@ -232,79 +197,6 @@ export interface FinanceSupplier {
   created_at: string
   updated_at: string
 }
-
-export interface FinanceProjectItem {
-  id: string
-  user_id: string
-  workspace_id: string | null
-  project_id: string
-  stage_id: string | null
-  name: string
-  notes: string
-  /** Decimal (60.5 m²), diferente das colunas de dinheiro. */
-  quantity: number
-  unit: string
-  /** Preço unitário estimado em centavos. */
-  estimated_unit_price: number
-  status: FinanceProjectItemStatus
-  priority: FinanceProjectItemPriority
-  chosen_quote_id: string | null
-  attachments: FinanceAttachment[]
-  sort_order: number
-  created_at: string
-  updated_at: string
-}
-
-export interface FinanceProjectQuote {
-  id: string
-  user_id: string
-  workspace_id: string | null
-  item_id: string
-  supplier_id: string | null
-  /** Nome livre da loja quando o fornecedor não foi cadastrado. */
-  supplier_name: string
-  unit_price: number
-  /** Preço fechado da loja (centavos). Vence quantity × unit_price quando presente. */
-  total_price: number | null
-  quoted_on: string | null
-  url: string
-  notes: string
-  created_at: string
-  updated_at: string
-}
-
-export interface FinanceProjectExpense {
-  id: string
-  user_id: string
-  workspace_id: string | null
-  project_id: string
-  stage_id: string | null
-  item_id: string | null
-  supplier_id: string | null
-  /** Legado: de qual conta saiu. Quem move saldo é a transação vinculada. */
-  account_id: string | null
-  /**
-   * Lançamento correspondente em finance_transactions (FK ON DELETE SET NULL),
-   * mesma convenção da Loja. Preenchido quando o gasto foi atribuído a partir
-   * do extrato; null significa "gasto registrado, ainda fora do fluxo de caixa".
-   */
-  transaction_id: string | null
-  description: string
-  /** Valor TOTAL pago em centavos (não o valor da parcela). */
-  amount: number
-  date: string
-  payment_method: FinancePaymentMethod
-  installments: number
-  attachments: FinanceAttachment[]
-  created_at: string
-  updated_at: string
-}
-
-// ─── Finance Store / Loja ───────────────────────────────────────────────────
-// Estoque de revenda (hardware etc.), pipeline de venda e clientes. O estoque
-// disponível é DERIVADO (comprado − vendido − reservado) em
-// src/lib/financeStoreCalc.ts; sale_items guardam snapshot de preço/custo para
-// o lucro histórico não mudar com edições no produto. Valores em centavos.
 
 export type FinanceStoreProductKind = 'unique' | 'stock'
 export type FinanceStoreCondition = 'new' | 'used'
@@ -414,67 +306,6 @@ export interface FinanceStoreSaleItem {
   unit_price: number
   /** Snapshot do custo médio no momento da venda, em centavos. */
   unit_cost_at_sale: number
-  created_at: string
-  updated_at: string
-}
-
-// ─── Finance: Investimentos ─────────────────────────────────────────────────
-// A posição é DERIVADA dos movimentos (mesma disciplina do estoque da Loja),
-// nunca armazenada — apagar ou reimportar um movimento restaura o número
-// sozinho. `opening_balance` é uma constante editável, como
-// finance_accounts.initial_balance, para quem já tinha saldo antes do primeiro
-// extrato importado. Valores em centavos (bigint no banco).
-//
-// Um extrato de conta corrente só mostra dinheiro que ATRAVESSOU a conta, então
-// toda linha importada nasce com settles_in_account=true: a capitalização
-// interna do produto não aparece nele. Por isso o "aplicado" aqui é custo
-// líquido / principal, não valor de mercado — e a UI precisa dizer isso.
-
-export type FinanceInvestmentAssetClass =
-  | 'fixed_income' | 'treasury' | 'savings' | 'fund'
-  | 'equity' | 'pension' | 'crypto' | 'other'
-
-export type FinanceInvestmentMovementKind =
-  | 'contribution' | 'redemption' | 'yield' | 'tax' | 'fee'
-
-export interface FinanceInvestment {
-  id: string
-  user_id: string
-  workspace_id: string | null
-  /** 'C6', 'XP', 'NUINVEST'... Vazio quando o extrato não nomeia a casa. */
-  institution: string
-  /** 'CDB', 'TESOURO SELIC', 'B3'... */
-  product: string
-  asset_class: FinanceInvestmentAssetClass
-  /** Identidade estável vinda do classificador ('c6|cdb'); chave do upsert. */
-  match_key: string
-  /** Conta corrente de origem/destino dos movimentos (FK SET NULL). */
-  account_id: string | null
-  /** Saldo anterior ao primeiro movimento importado, em centavos. */
-  opening_balance: number
-  archived: boolean
-  notes: string
-  created_at: string
-  updated_at: string
-}
-
-export interface FinanceInvestmentMovement {
-  id: string
-  user_id: string
-  workspace_id: string | null
-  investment_id: string
-  kind: FinanceInvestmentMovementKind
-  /** true = o dinheiro atravessou a conta corrente; false = interno ao produto. */
-  settles_in_account: boolean
-  date: string
-  /** Sempre > 0 em centavos: o `kind` carrega o sinal. */
-  amount: number
-  account_id: string | null
-  /** Linha crua do extrato, para auditoria. */
-  description: string
-  source: 'import' | 'manual'
-  /** Chave de idempotência do import; vazia em lançamento manual. */
-  import_key: string
   created_at: string
   updated_at: string
 }

@@ -5,7 +5,7 @@ import { formatBRL, fromCents, toCents } from '../../../lib/money'
 import { purchaseTotal } from '../../../lib/financeStoreCalc'
 import type { FinanceAccount, FinanceStoreCondition, FinanceStoreProduct, FinanceStoreProductKind, FinanceStorePurchase } from '../../../types'
 import { Modal, ghostBtnStyle, inputStyle, labelStyle, primaryBtnStyle, sectionCaptionStyle, segBtnStyle, segTrackStyle, tabularNums } from '../ui'
-import { AttachmentField } from '../projects/AttachmentField'
+import { AttachmentField } from '../ui'
 import { CATEGORY_SUGGESTIONS, CONDITIONS, CONDITION_KEY, KIND_KEY, PRODUCT_KINDS } from './storeUi'
 import { STORE_ATTACHMENT_BUCKET, todayISO, type FinanceStoreStore } from './useFinanceStore'
 
@@ -242,7 +242,7 @@ export function ProductModal({ store, product, accounts, onClose, onEditPurchase
         )}
 
         {product && (
-          <AttachmentField projectId={product.id} bucket={STORE_ATTACHMENT_BUCKET}
+          <AttachmentField ownerId={product.id} bucket={STORE_ATTACHMENT_BUCKET}
             value={attachments} onChange={setAttachments} />
         )}
 

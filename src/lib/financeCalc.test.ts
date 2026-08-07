@@ -58,21 +58,7 @@ describe('accountBalance', () => {
     expect(accountBalance({ id: 'a1', initial_balance: 500 }, txs)).toBe(1200)
   })
 
-  // Investment movements deliberately never become transactions, so before the
-  // third argument existed the balance stayed higher than the bank's.
-  it('nets the investment movements settled through the account', () => {
-    const txs = [tx('income', 1000, { account_id: 'a1' })]
-    const movements = [
-      { account_id: 'a1', kind: 'contribution' as const, amount: 400, settles_in_account: true },
-      { account_id: 'a1', kind: 'redemption' as const, amount: 100, settles_in_account: true },
-      { account_id: 'a2', kind: 'contribution' as const, amount: 9999, settles_in_account: true },
-      // Capitalized inside the product: never touched the bank.
-      { account_id: 'a1', kind: 'yield' as const, amount: 50, settles_in_account: false },
-    ]
-    expect(accountBalance({ id: 'a1', initial_balance: 500 }, txs, movements)).toBe(1500 - 400 + 100)
-  })
-
-  it('keeps the old behaviour when no movements are passed', () => {
+  it('subtracts an expense from the initial balance', () => {
     const txs = [tx('expense', 300, { account_id: 'a1' })]
     expect(accountBalance({ id: 'a1', initial_balance: 500 }, txs)).toBe(200)
   })

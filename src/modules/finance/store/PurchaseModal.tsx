@@ -3,7 +3,7 @@ import { useLanguage } from '../../../i18n/LanguageContext'
 import { formatBRL, fromCents, toCents } from '../../../lib/money'
 import type { FinanceAccount, FinanceCategory, FinanceStoreProduct, FinanceStorePurchase, FinanceStorePurchaseStatus } from '../../../types'
 import { Modal, ghostBtnStyle, inputStyle, labelStyle, primaryBtnStyle, tabularNums } from '../ui'
-import { AttachmentField } from '../projects/AttachmentField'
+import { AttachmentField } from '../ui'
 import { PURCHASE_STATUSES, PURCHASE_STATUS_KEY } from './storeUi'
 import { STORE_ATTACHMENT_BUCKET, todayISO, type FinanceStoreStore } from './useFinanceStore'
 
@@ -173,7 +173,7 @@ export function PurchaseModal({ store, product, purchase, accounts, categories, 
         </div>
 
         {purchase && (
-          <AttachmentField projectId={purchase.id} bucket={STORE_ATTACHMENT_BUCKET}
+          <AttachmentField ownerId={purchase.id} bucket={STORE_ATTACHMENT_BUCKET}
             value={attachments} onChange={setAttachments} />
         )}
 

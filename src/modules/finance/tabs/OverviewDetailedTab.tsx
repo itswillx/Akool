@@ -2,10 +2,8 @@ import { useMemo } from 'react'
 import { ChevronRight, Landmark, Layers, TrendingDown, TrendingUp, Users } from 'lucide-react'
 import type {
   FinanceAccount, FinanceBudget, FinanceCategory, FinanceGoal, FinanceGoalContribution,
-  FinanceInvestment, FinanceInvestmentMovement,
   FinanceRecurring, FinanceRecurringEntry, FinanceTransaction,
 } from '../../../types'
-import { totalApplied } from '../../../lib/financeInvestmentCalc'
 import { useAllocationSummary } from '../useAllocationSummary'
 import { formatBRL } from '../../../lib/money'
 import {
@@ -36,8 +34,6 @@ interface Props {
   transactions: FinanceTransaction[]
   categories: FinanceCategory[]
   accounts: FinanceAccount[]
-  investments: FinanceInvestment[]
-  investmentMovements: FinanceInvestmentMovement[]
   budgets: FinanceBudget[]
   goals: FinanceGoal[]
   contributions: FinanceGoalContribution[]
@@ -50,7 +46,7 @@ interface Props {
 }
 
 export default function OverviewDetailedTab({
-  transactions, categories, accounts, investments, investmentMovements, budgets, goals, contributions,
+  transactions, categories, accounts, budgets, goals, contributions,
   recurring, recurringEntries, month, onNavigate, workspaceName, onOpenWorkspaceView,
 }: Props) {
   const { t, lang } = useLanguage()
@@ -72,18 +68,10 @@ export default function OverviewDetailedTab({
   )
 
   const balances = useMemo(
-    () => accounts.map(acc => ({ acc, balance: accountBalance(acc, transactions, investmentMovements) })),
-    [accounts, transactions, investmentMovements],
+    () => accounts.map(acc => ({ acc, balance: accountBalance(acc, transactions) })),
+    [accounts, transactions],
   )
-  // Net worth is where the money IS, so it has to count both sides of an
-  // investment: the balance above already lost the contribution that left the
-  // bank, and `invested` is where it went. Subtracting without adding would make
-  // the number fall — the same money would simply disappear again.
-  const invested = useMemo(
-    () => totalApplied(investments, investmentMovements),
-    [investments, investmentMovements],
-  )
-  const netWorth = balances.reduce((s, b) => s + b.balance, 0) + invested
+  const netWorth = balances.reduce((s, b) => s + b.balance, 0)
   const sumOf = (types: FinanceAccount['type'][]) =>
     balances.filter(b => types.includes(b.acc.type)).reduce((s, b) => s + b.balance, 0)
   const availableBalance = sumOf(['checking', 'cash'])
@@ -181,20 +169,17 @@ export default function OverviewDetailedTab({
     <>
       {statRow(t('finance_detail_net_worth_available'), fmt(availableBalance))}
       {statRow(t('finance_detail_net_worth_saved'), fmt(savedBalance))}
-      {invested !== 0 && statRow(t('finance_detail_net_worth_invested'), fmt(invested))}
       {statRow(t('finance_detail_net_worth_cards'), fmt(cardsBalance), cardsBalance < 0 ? FIN_NEG : 'var(--color-text)')}
     </>,
     goalsReserved > 0 ? t('finance_detail_net_worth_goals', { amount: fmt(goalsReserved) }) : undefined,
   )
 
-  // Nothing invested, no works and no stock means every asset is already in the
-  // account balances above — the card would just repeat net worth.
-  const hasAllocation = invested !== 0 || allocation.projects.total > 0 || allocation.stockCapital > 0
+  // Sem estoque, todo ativo já está nos saldos das contas acima — o card só
+  // repetiria o patrimônio.
+  const hasAllocation = allocation.stockCapital > 0
 
   // Answers "where is the money", which the overview could not answer before:
-  // works spending and unsold stock are real assets that never appeared here,
-  // and the works total sat elsewhere in the app with nothing saying that part
-  // of it is the same money the cash flow already counted.
+  // unsold stock is a real asset that never appeared here.
   const allocationCard = (
     <div style={{ ...cardSurfaceStyle, padding: '16px 18px', minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -203,26 +188,8 @@ export default function OverviewDetailedTab({
           <Layers size={17} />
         </span>
       </div>
-      {statRow(t('finance_alloc_in_accounts'), fmt(netWorth - invested))}
-      {invested !== 0 && statRow(t('finance_detail_net_worth_invested'), fmt(invested))}
+      {statRow(t('finance_alloc_in_accounts'), fmt(netWorth))}
       {allocation.stockCapital > 0 && statRow(t('finance_alloc_stock'), fmt(allocation.stockCapital))}
-      {allocation.projects.total > 0 && (
-        <>
-          <div style={{ ...dividerStyle, margin: '10px 0' }} />
-          {statRow(t('finance_alloc_projects'), fmt(allocation.projects.total))}
-          <div style={{ paddingLeft: 12 }}>
-            {statRow(t('finance_alloc_projects_linked'), fmt(allocation.projects.linked), 'var(--color-text-muted)')}
-            {statRow(t('finance_alloc_projects_unlinked'), fmt(allocation.projects.unlinked),
-              allocation.projects.unlinked > 0 ? FIN_WARN : 'var(--color-text-muted)')}
-          </div>
-          <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-            {allocation.projects.unlinked > 0
-              ? t('finance_alloc_projects_hint')
-              : t('finance_alloc_projects_ok')}
-          </div>
-          <div style={{ marginTop: 8 }}>{navigateLink('myprojects', t('finance_alloc_open_projects'), 'works')}</div>
-        </>
-      )}
     </div>
   )
 

@@ -4,7 +4,6 @@
 // Side-effect free and framework-agnostic.
 
 import type { FinanceTransaction, FinanceAccount, FinanceRecurring, FinanceRecurringEntry, FinanceTxType, FinanceBudget } from '../types'
-import { accountInvestmentFlow, type AccountMovementLike } from './financeInvestmentCalc'
 
 type AmountTx = Pick<FinanceTransaction, 'type' | 'amount'>
 
@@ -27,22 +26,18 @@ export function transactionsInMonth<T extends { date: string }>(transactions: T[
   return transactions.filter(tx => tx.date.startsWith(month))
 }
 
-// Current balance of an account: initial balance + its income − its expense,
-// plus the net of the investment movements settled through it.
+// Current balance of an account: initial balance + its income − its expense.
 //
-// Investment movements deliberately live outside finance_transactions so they
-// never inflate the month's income/expense — but the money did leave the bank,
-// so the balance has to see them. Omitting the third argument keeps the old
-// behaviour, which is why every call site had to be revisited rather than
-// trusting the default.
+// Já teve um terceiro argumento com os movimentos de investimento, que viviam
+// fora de finance_transactions mas saíam da conta de verdade. O submódulo de
+// Investimentos foi removido, então todo dinheiro que mexe no saldo é
+// transação de novo.
 export function accountBalance(
   account: Pick<FinanceAccount, 'id' | 'initial_balance'>,
   transactions: (AmountTx & Pick<FinanceTransaction, 'account_id'>)[],
-  investmentMovements: AccountMovementLike[] = [],
 ): number {
   const { income, expense } = monthTotals(transactions.filter(tx => tx.account_id === account.id))
   return account.initial_balance + income - expense
-    + accountInvestmentFlow(account.id, investmentMovements)
 }
 
 // Total expense per category id (only expense transactions with a category).

@@ -1,21 +1,15 @@
-import { positionApplied } from '../../../lib/financeInvestmentCalc'
-import { projectTotals } from '../../../lib/financeProjectCalc'
 import { saleNetReceived } from '../../../lib/financeStoreCalc'
 import { formatBRL } from '../../../lib/money'
-import { goalPhase, investmentPhase, projectPhase, salePhase, type FinancePhaseOrCancelled } from '../../../lib/financePhase'
-import type {
-  FinanceGoal, FinanceGoalContribution, FinanceInvestment, FinanceInvestmentMovement,
-} from '../../../types'
-import type { FinanceProjectsStore } from '../projects/useFinanceProjects'
+import { goalPhase, salePhase, type FinancePhaseOrCancelled } from '../../../lib/financePhase'
+import type { FinanceGoal, FinanceGoalContribution } from '../../../types'
 import type { FinanceStoreStore } from '../store/useFinanceStore'
 import type { ProjectsSection } from './section'
 
-// Achata obras, posições de investimento e vendas num card só, para o kanban
-// unificado do Resumo. Sem JSX de propósito (mesma divisão de projectsUi.ts /
-// storeUi.ts): um arquivo que exporta componentes E funções quebra o fast
-// refresh.
+// Achata vendas e metas num card só, para o kanban unificado do Resumo. Sem JSX
+// de propósito (mesma divisão de storeUi.ts): um arquivo que exporta
+// componentes E funções quebra o fast refresh.
 
-export type UnifiedKind = 'work' | 'investment' | 'sale' | 'goal'
+export type UnifiedKind = 'sale' | 'goal'
 
 export interface UnifiedCard {
   /** Namespaced: dois UUIDs de tabelas diferentes colidiriam no dnd-kit. */
@@ -34,52 +28,17 @@ export interface UnifiedCard {
 
 /** Onde cada tipo de card mora, para o clique navegar até lá. */
 export const KIND_SECTION: Record<UnifiedKind, ProjectsSection> = {
-  work: 'works',
-  investment: 'investments',
   sale: 'store',
   goal: 'goals',
 }
 
 export function buildUnifiedCards(
-  projects: FinanceProjectsStore,
   store: FinanceStoreStore,
-  investments: FinanceInvestment[],
-  movements: FinanceInvestmentMovement[],
   goals: FinanceGoal[],
   contributions: FinanceGoalContribution[],
   labels: { noCustomer: string; sale: string; goalTarget: (target: string) => string },
-  colors: { sale: string; investment: string },
+  colors: { sale: string },
 ): UnifiedCard[] {
-  const works: UnifiedCard[] = projects.projects.map(p => ({
-    id: `work:${p.id}`,
-    kind: 'work',
-    title: p.name,
-    subtitle: p.description,
-    icon: p.icon || '🏗️',
-    accent: p.color,
-    // `committed` = gasto + o que ainda falta comprar. É o tamanho real da
-    // obra, não só o que já saiu do bolso.
-    amount: projectTotals(p, projects.stages, projects.items, projects.expenses, projects.quotes).committed,
-    phase: projectPhase(p.status),
-    updatedAt: p.updated_at,
-  }))
-
-  const positions: UnifiedCard[] = investments.map(inv => {
-    // Posição é DERIVADA dos movimentos, nunca armazenada.
-    const applied = positionApplied(inv, movements)
-    return {
-      id: `inv:${inv.id}`,
-      kind: 'investment',
-      title: inv.product || inv.institution,
-      subtitle: inv.product ? inv.institution : '',
-      icon: '💰',
-      accent: colors.investment,
-      amount: applied,
-      phase: investmentPhase(inv, applied),
-      updatedAt: inv.updated_at,
-    }
-  })
-
   const sales: UnifiedCard[] = store.sales.map(sale => {
     const items = store.saleItems.filter(i => i.sale_id === sale.id)
     const customer = sale.customer_id ? store.customers.find(c => c.id === sale.customer_id) : null
@@ -118,5 +77,5 @@ export function buildUnifiedCards(
     }
   })
 
-  return [...works, ...positions, ...sales, ...targets]
+  return [...sales, ...targets]
 }
