@@ -6,7 +6,6 @@ import ErrorBoundary from './ErrorBoundary'
 
 const Dashboard = lazy(() => import('./Dashboard'))
 const FinancePanel = lazy(() => import('../modules/finance'))
-const ProjectsPanel = lazy(() => import('./ProjectsPanel'))
 const HelpPanel = lazy(() => import('./HelpPanel'))
 const DocumentsPanel = lazy(() => import('./DocumentsPanel'))
 
@@ -25,14 +24,13 @@ export default function MainContent({ isMobile = false }: MainContentProps) {
   }
 
   // Finance as an inline panel only exists in the "all" (everything) mode.
-  // In "projects"/"documents" modes this branch is skipped and falls through.
+  // In "documents" mode this branch is skipped and falls through.
   if (activePanel === 'finance' && mode === 'all') {
     return <ErrorBoundary><Lazy><FinancePanel isMobile={isMobile} /></Lazy></ErrorBoundary>
   }
 
-  if (activePanel === 'projects') {
-    return <Lazy><ProjectsPanel isMobile={isMobile} /></Lazy>
-  }
+  // Projetos não é mais um painel: vive dentro do DocumentsPanel como seção
+  // (chunk puxado por lá). Chaves legadas migram em lib/docsNavigation.
 
   if (activePanel === 'documents') {
     return <Lazy><DocumentsPanel isMobile={isMobile} /></Lazy>

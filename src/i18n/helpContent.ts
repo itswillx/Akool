@@ -359,7 +359,7 @@ const pt: HelpContent = {
           mock: 'kanban',
           keywords: 'projeto kanban quadro board coluna wip limite arrastar',
           steps: [
-            { text: 'Abra "Projetos" e crie um quadro com ícone e cor.' },
+            { text: 'Abra Documentos → "Projetos" e crie um quadro com ícone e cor.' },
             { text: 'Adicione colunas e, se quiser, defina um limite de WIP.' },
             { text: 'Arraste cards entre colunas para mudar o status.' },
           ],
@@ -807,7 +807,7 @@ const en: HelpContent = {
           mock: 'kanban',
           keywords: 'project kanban board column wip limit drag',
           steps: [
-            { text: 'Open "Projects" and create a board with icon and color.' },
+            { text: 'Open Documents → "Projects" and create a board with icon and color.' },
             { text: 'Add columns and, if you want, set a WIP limit.' },
             { text: 'Drag cards between columns to change their status.' },
           ],

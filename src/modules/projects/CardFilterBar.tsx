@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Filter, Search, ChevronDown, ChevronUp, X } from 'lucide-react'
-import type { ProjectColumn, ProjectCardPriority } from '../types'
-import type { DueDatePreset, ProjectCardFilters, CompletionFilter } from '../lib/projectCardFilters'
-import { countActiveFilters, defaultCardFilters } from '../lib/projectCardFilters'
-import { useLanguage } from '../i18n/LanguageContext'
+import type { ProjectColumn, ProjectCardPriority } from '../../types'
+import type { DueDatePreset, ProjectCardFilters, CompletionFilter } from '../../lib/projectCardFilters'
+import { countActiveFilters, defaultCardFilters } from '../../lib/projectCardFilters'
+import { useLanguage } from '../../i18n/LanguageContext'
 
 interface Member {
   id: string

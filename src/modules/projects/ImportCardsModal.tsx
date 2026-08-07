@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Upload, X, AlertTriangle } from 'lucide-react'
-import { useLanguage } from '../i18n/LanguageContext'
-import { parseBacklogMarkdown } from '../lib/backlogMarkdownParser'
-import { importParsedCards } from '../lib/importProjectCards'
-import { supabase } from '../lib/supabase'
-import type { ProjectCardPriority } from '../types'
+import { useLanguage } from '../../i18n/LanguageContext'
+import { parseBacklogMarkdown } from '../../lib/backlogMarkdownParser'
+import { importParsedCards } from '../../lib/importProjectCards'
+import { supabase } from '../../lib/supabase'
+import type { ProjectCardPriority } from '../../types'
 
 const PRIORITY_LABELS: Record<ProjectCardPriority, 'projects_priority_low' | 'projects_priority_medium' | 'projects_priority_high' | 'projects_priority_urgent'> = {
   low: 'projects_priority_low',

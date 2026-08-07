@@ -5,12 +5,13 @@ import {
 } from 'lucide-react'
 import QuickNotes from './QuickNotes'
 import DashboardProjects, { useDashboardProjects } from './DashboardProjects'
-import type { Page, PageType, Todo, FinanceAccount, FinanceTransaction, FinanceCategory, FinanceInvestmentMovement } from '../types'
+import type { Page, PageType, Todo, FinanceAccount, FinanceTransaction, FinanceCategory } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { supabase } from '../lib/supabase'
+import { setDocsSelection } from '../lib/docsNavigation'
 import { useLanguage } from '../i18n/LanguageContext'
 import ErrorBoundary from './ErrorBoundary'
 import { formatBRL } from '../lib/money'
@@ -82,18 +83,14 @@ function useDashboardFinance(userId: string | undefined, enabled: boolean): Fina
       supabase.from('finance_accounts').select('*').eq('user_id', userId),
       supabase.from('finance_transactions').select('*').eq('user_id', userId),
       supabase.from('finance_categories').select('*').eq('user_id', userId),
-      supabase.from('finance_investment_movements').select('*').eq('user_id', userId),
-    ]).then(([accRes, txRes, catRes, invMovRes]) => {
+    ]).then(([accRes, txRes, catRes]) => {
       const accounts: FinanceAccount[] = (accRes.data ?? []) as FinanceAccount[]
       const transactions: FinanceTransaction[] = (txRes.data ?? []) as FinanceTransaction[]
       const categories: FinanceCategory[] = (catRes.data ?? []) as FinanceCategory[]
-      const investmentMovements: FinanceInvestmentMovement[] = (invMovRes.data ?? []) as FinanceInvestmentMovement[]
 
-      // Via the shared helper: contributions leave the bank without ever
-      // becoming a transaction, so summing transactions alone overstated the
-      // balance shown on the home screen.
+      // Via the shared helper, para não divergir do saldo mostrado no painel.
       const totalBalance = accounts.reduce(
-        (s, acc) => s + accountBalance(acc, transactions, investmentMovements), 0)
+        (s, acc) => s + accountBalance(acc, transactions), 0)
 
       const monthTx = transactions.filter(t => t.date.startsWith(ym))
       const monthIncome = monthTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
@@ -303,7 +300,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
           />
           {showProjects && (
             <StatCard
-              onClick={() => setActivePanel('projects')}
+              onClick={() => { setDocsSelection({ kind: 'projects' }); setActivePanel('documents') }}
               icon={<FolderKanban size={15} />} iconColor="#6366f1"
               label={t('dashboard_projects_section')} sub={t('dashboard_stat_projects')}
               value={String(projects.boards.length)}

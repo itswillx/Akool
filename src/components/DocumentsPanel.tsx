@@ -1,40 +1,25 @@
 import { lazy, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Files, FileText, ArrowLeft, StickyNote, GraduationCap } from 'lucide-react'
-import type { PageType } from '../types'
+import { Files, FileText, ArrowLeft, StickyNote, GraduationCap, FolderKanban, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import type { Page, PageType } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useLanguage } from '../i18n/LanguageContext'
+import { setDocsSelection, type DocsSelection } from '../lib/docsNavigation'
+import { useDocsSelection } from '../hooks/useDocsSelection'
 import { PageItem, CreateNewDropdown, flattenPages } from './PageTree'
 import PageEditor, { Lazy } from './PageEditor'
 import QuickNotes from './QuickNotes'
 
 const StudySection = lazy(() => import('../modules/study'))
+const ProjectsSection = lazy(() => import('../modules/projects'))
 
-const SELECTED_KEY = 'excalinotion_docs_selected_id'
+// A seleção (página ou seção fixa: projetos / notas rápidas / estudos) mora no
+// store de lib/docsNavigation, observável de fora — deep links (Dashboard,
+// QuickNotes, bloco de card) trocam a seção mesmo com o painel já montado.
 
-// The panel can show a document page or one of the fixed sections (quick
-// notes / studies). Persisted as JSON under the legacy key — plain strings
-// stored by older builds are read back as a page id.
-type DocsSelection =
-  | { kind: 'page'; id: string }
-  | { kind: 'quick-notes' }
-  | { kind: 'studies' }
+const COLLAPSED_KEY = 'excalinotion_docs_rail_collapsed'
 
-function readSelected(): DocsSelection | null {
-  try {
-    const raw = localStorage.getItem(SELECTED_KEY)
-    if (!raw) return null
-    try {
-      const parsed = JSON.parse(raw) as unknown
-      if (parsed && typeof parsed === 'object' && 'kind' in parsed) {
-        const sel = parsed as { kind: unknown; id?: unknown }
-        if (sel.kind === 'quick-notes') return { kind: 'quick-notes' }
-        if (sel.kind === 'studies') return { kind: 'studies' }
-        if (sel.kind === 'page' && typeof sel.id === 'string') return { kind: 'page', id: sel.id }
-        return null
-      }
-    } catch { /* not JSON → legacy plain page id */ }
-    return { kind: 'page', id: raw }
-  } catch { return null }
+function readCollapsed(): boolean {
+  try { return localStorage.getItem(COLLAPSED_KEY) === '1' } catch { return false }
 }
 
 function RailItem({ icon, label, active, onClick }: {
@@ -69,9 +54,10 @@ interface DocumentsPanelProps {
 // LOCAL (not the global activePage) so the panel stays mounted while the user
 // switches documents inside it.
 export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps) {
-  const { pages, loading, createPage } = usePages()
+  const { pages, loading, createPage, setActivePage } = usePages()
   const { t } = useLanguage()
-  const [selection, setSelection] = useState<DocsSelection | null>(readSelected)
+  const selection = useDocsSelection()
+  const [railCollapsed, setRailCollapsed] = useState(readCollapsed)
 
   const flat = useMemo(() => flattenPages(pages), [pages])
   const selectedPage = useMemo(
@@ -79,12 +65,24 @@ export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps
     [flat, selection],
   )
 
-  const select = (sel: DocsSelection | null) => {
-    setSelection(sel)
-    try {
-      if (sel) localStorage.setItem(SELECTED_KEY, JSON.stringify(sel))
-      else localStorage.removeItem(SELECTED_KEY)
-    } catch { /* ignore */ }
+  const select = (sel: DocsSelection | null) => setDocsSelection(sel)
+
+  const toggleRail = () => {
+    setRailCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
+  }
+
+  // Navegação card → página vinculada, vinda do ProjectsPanel. Páginas
+  // compartilhadas não estão na árvore de Documentos (flat só cobre `pages`);
+  // para essas o único destino possível continua sendo a navegação global —
+  // um select() nelas deixaria selectedPage nulo e o cleanup abaixo zeraria
+  // a seleção, jogando o usuário no empty state.
+  const handleOpenPageFromCard = (page: Page) => {
+    if (flat.some(p => p.id === page.id)) select({ kind: 'page', id: page.id })
+    else setActivePage(page)
   }
 
   // Drop a stale page selection (e.g. the selected document was deleted).
@@ -104,11 +102,27 @@ export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps
       <div style={{ padding: '12px 12px 8px', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <Files size={16} style={{ color: 'var(--color-text-muted)' }} />
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>{t('sidebar_section_documents')}</span>
+        {!isMobile && (
+          <button
+            onClick={toggleRail}
+            title={t('docs_rail_collapse')}
+            aria-label={t('docs_rail_collapse')}
+            style={{ marginLeft: 'auto', display: 'flex', padding: 4, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-muted)' }}
+          >
+            <PanelLeftClose size={15} />
+          </button>
+        )}
       </div>
       <div style={{ padding: '0 8px 8px', flexShrink: 0 }}>
         <CreateNewDropdown onNewPage={handleNewPage} />
       </div>
       <div style={{ padding: '0 8px 8px', flexShrink: 0, borderBottom: '1px solid var(--color-border)', marginBottom: 8 }}>
+        <RailItem
+          icon={<FolderKanban size={14} />}
+          label={t('docs_section_projects')}
+          active={selection?.kind === 'projects'}
+          onClick={() => select({ kind: 'projects' })}
+        />
         <RailItem
           icon={<StickyNote size={14} />}
           label={t('docs_section_quick_notes')}
@@ -149,7 +163,13 @@ export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps
     </div>
   )
 
-  const detail = selection?.kind === 'quick-notes'
+  const detail = selection?.kind === 'projects'
+    ? (
+      <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
+        <Lazy><ProjectsSection isMobile={isMobile} onOpenPage={handleOpenPageFromCard} /></Lazy>
+      </div>
+    )
+    : selection?.kind === 'quick-notes'
     ? (
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflowY: 'auto', padding: isMobile ? 16 : 24 }}>
         <div style={{ maxWidth: 980, margin: '0 auto' }}>
@@ -193,12 +213,40 @@ export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps
     )
   }
 
-  // Desktop: list on the left as a persistent menu, detail on the right.
+  // Desktop: list on the left as a persistent menu, detail on the right. The
+  // aside collapses to a 44px icon strip (persisted) — recupera largura para
+  // seções largas como o kanban de Projetos sem sumir com a navegação.
+  const collapsedIconBtn = (icon: ReactNode, title: string, active: boolean, onClick: () => void) => (
+    <button
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30,
+        borderRadius: 6, border: 'none', cursor: 'pointer',
+        backgroundColor: active ? 'var(--color-active)' : 'transparent',
+        color: active ? 'var(--color-text)' : 'var(--color-text-muted)',
+      }}
+    >
+      {icon}
+    </button>
+  )
+
   return (
     <div style={{ display: 'flex', height: '100%', backgroundColor: 'var(--color-bg)', overflow: 'hidden' }}>
-      <aside style={{ width: 300, minWidth: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderRight: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-secondary)' }}>
-        {list}
-      </aside>
+      {railCollapsed ? (
+        <aside style={{ width: 44, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', padding: '12px 0', borderRight: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-secondary)', boxSizing: 'border-box' }}>
+          {collapsedIconBtn(<PanelLeftOpen size={15} />, t('docs_rail_expand'), false, toggleRail)}
+          <div style={{ width: 22, borderBottom: '1px solid var(--color-border)', margin: '4px 0' }} />
+          {collapsedIconBtn(<FolderKanban size={15} />, t('docs_section_projects'), selection?.kind === 'projects', () => select({ kind: 'projects' }))}
+          {collapsedIconBtn(<StickyNote size={15} />, t('docs_section_quick_notes'), selection?.kind === 'quick-notes', () => select({ kind: 'quick-notes' }))}
+          {collapsedIconBtn(<GraduationCap size={15} />, t('docs_section_studies'), selection?.kind === 'studies', () => select({ kind: 'studies' }))}
+        </aside>
+      ) : (
+        <aside style={{ width: 300, minWidth: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderRight: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-secondary)' }}>
+          {list}
+        </aside>
+      )}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {detail}
       </div>

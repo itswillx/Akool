@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { ChevronDown, ChevronRight, GanttChartSquare, Plus, Share2 } from 'lucide-react'
-import type { ProjectCard, ProjectColumn, ProjectCardPriority } from '../types'
-import { useLanguage } from '../i18n/LanguageContext'
+import type { ProjectCard, ProjectColumn, ProjectCardPriority } from '../../types'
+import { useLanguage } from '../../i18n/LanguageContext'
 import {
   buildTree, flattenTree, nodeBar, barsRange, diffDays, addDays, startOfMonth, endOfMonth,
   monthSegments, weekSegments, daySegments, yearSegments, isoWeek, buildLinks, linkPath,
   type GanttBar, type GanttNode, type Segment,
-} from '../lib/ganttLayout'
+} from '../../lib/ganttLayout'
 
 type Zoom = 'day' | 'week' | 'month'
 const PX_PER_DAY: Record<Zoom, number> = { day: 34, week: 16, month: 5 }

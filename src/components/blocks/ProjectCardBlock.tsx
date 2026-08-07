@@ -4,6 +4,7 @@ import type { ProjectCardPriority } from '../../types'
 import type { ProjectCardSnapshot } from '../../lib/projectImport'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { usePages } from '../../contexts/PagesContext'
+import { setDocsSelection } from '../../lib/docsNavigation'
 import { MarkdownText } from '../MarkdownText'
 
 const PRIORITY_COLORS: Record<ProjectCardPriority, string> = {
@@ -57,7 +58,11 @@ export const ProjectCardBlock = createReactBlockSpec(
         if (block.props.boardId) {
           try { localStorage.setItem(ACTIVE_BOARD_KEY, block.props.boardId) } catch { /* ignore */ }
         }
-        setActivePanel('projects')
+        // Projetos é uma seção de Documentos: trocar a seleção mantém o usuário
+        // dentro da visão (antes, setActivePanel('projects') desmontava o
+        // documento que ele estava editando).
+        setDocsSelection({ kind: 'projects' })
+        setActivePanel('documents')
       }
 
       return (

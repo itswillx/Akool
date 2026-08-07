@@ -2,16 +2,19 @@ import { createContext, useContext, useEffect, useMemo, useState, useCallback, u
 import type { ReactNode } from 'react'
 import type { Page, PageType, PageShareRole } from '../types'
 import { supabase } from '../lib/supabase'
+import { normalizeActivePanel, type ActivePanel } from '../lib/docsNavigation'
 import { useAuth } from './AuthContext'
 
+// 'projects' saiu da união de painéis: Projetos é uma seção do DocumentsPanel.
+// A migração da chave legada roda no boot (main.tsx → lib/docsNavigation).
 interface PagesContextType {
   pages: Page[]
   sharedPages: Page[]
   loading: boolean
   activePage: Page | null
   setActivePage: (page: Page | null) => void
-  activePanel: 'users' | 'finance' | 'projects' | 'help' | 'backup' | 'documents' | null
-  setActivePanel: (panel: 'users' | 'finance' | 'projects' | 'help' | 'backup' | 'documents' | null) => void
+  activePanel: ActivePanel | null
+  setActivePanel: (panel: ActivePanel | null) => void
   createPage: (opts?: { parent_id?: string; type?: PageType }) => Promise<Page | null>
   updatePage: (id: string, updates: Partial<Page>) => Promise<void>
   deletePage: (id: string) => Promise<void>
@@ -55,7 +58,7 @@ export function PagesProvider({ children }: { children: ReactNode }) {
   const [sharedPages, setSharedPages] = useState<Page[]>([])
   const [loading, setLoading] = useState(true)
   const [activePage, setActivePageRaw] = useState<Page | null>(null)
-  const [activePanel, setActivePanelRaw] = useState<'users' | 'finance' | 'projects' | 'help' | 'backup' | 'documents' | null>(null)
+  const [activePanel, setActivePanelRaw] = useState<ActivePanel | null>(null)
   const restoredRef = useRef(false)
 
   const ACTIVE_PAGE_KEY = 'excalinotion_active_page_id'
@@ -72,7 +75,7 @@ export function PagesProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const setActivePanel = useCallback((panel: 'users' | 'finance' | 'projects' | 'help' | 'backup' | 'documents' | null) => {
+  const setActivePanel = useCallback((panel: ActivePanel | null) => {
     setActivePanelRaw(panel)
     if (panel !== null) {
       setActivePageRaw(null)
@@ -164,8 +167,10 @@ export function PagesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loading && !restoredRef.current) {
       restoredRef.current = true
-      const savedPanel = localStorage.getItem(ACTIVE_PANEL_KEY)
-      if (savedPanel === 'users' || savedPanel === 'finance' || savedPanel === 'projects' || savedPanel === 'help' || savedPanel === 'backup' || savedPanel === 'documents') {
+      // A migração no boot já reescreveu chaves legadas; o normalize aqui é
+      // cinto e suspensório para valores gravados por builds antigos.
+      const savedPanel = normalizeActivePanel(localStorage.getItem(ACTIVE_PANEL_KEY))
+      if (savedPanel) {
         setActivePanelRaw(savedPanel)
       } else {
         const savedId = localStorage.getItem(ACTIVE_PAGE_KEY)

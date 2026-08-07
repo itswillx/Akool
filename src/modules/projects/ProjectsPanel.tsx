@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
-  Plus, X, Trash2, Pencil, Share2, FolderKanban, LayoutGrid, List as ListIcon,
-  BarChart3, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Link2, ExternalLink, Search,
-  Calendar, CheckSquare, Image, Download, Smartphone, Upload, GanttChartSquare,
+  Plus, X, Trash2, Pencil, Share2, FolderKanban,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Link2, ExternalLink, Search,
+  Calendar, CheckSquare, Image, Download, Upload,
   GripVertical, Check,
 } from 'lucide-react'
 import {
@@ -12,25 +12,28 @@ import {
 import type { CollisionDetection, DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { ProjectBoard, ProjectColumn, ProjectCard, ProjectCardChecklistItem, ProjectCardAttachment, ProjectCardLink, ProjectShare, ProjectCardPriority, ProjectShareRole, Page } from '../types'
-import { supabase } from '../lib/supabase'
-import { UserAvatar } from './UserAvatar'
-import { sanitizeIlikeTerm } from '../lib/profileSearch'
-import { resolveSignedUrl } from '../lib/storageUrl'
-import { SignedImage } from './SignedImage'
-import { useAuth } from '../contexts/AuthContext'
-import { useLanguage } from '../i18n/LanguageContext'
-import { usePages } from '../contexts/PagesContext'
-import { useIsMobile } from '../hooks/useIsMobile'
-import ConfirmDeleteModal from './ConfirmDeleteModal'
+import type { ProjectBoard, ProjectColumn, ProjectCard, ProjectCardChecklistItem, ProjectCardAttachment, ProjectCardLink, ProjectShare, ProjectCardPriority, ProjectShareRole, Page } from '../../types'
+import { supabase } from '../../lib/supabase'
+import { UserAvatar } from '../../components/UserAvatar'
+import { sanitizeIlikeTerm } from '../../lib/profileSearch'
+import { resolveSignedUrl } from '../../lib/storageUrl'
+import { SignedImage } from '../../components/SignedImage'
+import { useAuth } from '../../contexts/AuthContext'
+import { useLanguage } from '../../i18n/LanguageContext'
+import { usePages } from '../../contexts/PagesContext'
+import { useIsMobile } from '../../hooks/useIsMobile'
+import ConfirmDeleteModal from '../../components/ConfirmDeleteModal'
 import ImportCardsModal from './ImportCardsModal'
 import CardFilterBar from './CardFilterBar'
 import GanttView from './GanttView'
-import { MarkdownText } from './MarkdownText'
-import { RichTextEditor } from './RichTextEditor'
-import { normalizeLinkUrl, linkDisplay } from '../lib/cardLinks'
-import { Donut, Legend, SegmentedBar, AreaTrend, type ChartDatum } from './Charts'
-import { overviewSummary, countByColumnId, countByPriority, countByAssignee, dueBuckets, createdPerWeek, PRIORITY_ORDER } from '../lib/projectStats'
+import ProjectsNav, { type ViewMode } from './ProjectsNav'
+
+const VALID_VIEWS: ViewMode[] = ['kanban', 'compact', 'list', 'overview', 'timeline']
+import { MarkdownText } from '../../components/MarkdownText'
+import { RichTextEditor } from '../../components/RichTextEditor'
+import { normalizeLinkUrl, linkDisplay } from '../../lib/cardLinks'
+import { Donut, Legend, SegmentedBar, AreaTrend, type ChartDatum } from '../../components/Charts'
+import { overviewSummary, countByColumnId, countByPriority, countByAssignee, dueBuckets, createdPerWeek, PRIORITY_ORDER } from '../../lib/projectStats'
 import {
   type ProjectCardFilters,
   filterProjectCards,
@@ -39,7 +42,7 @@ import {
   collectBoardLabels,
   hasActiveFilters,
   defaultCardFilters,
-} from '../lib/projectCardFilters'
+} from '../../lib/projectCardFilters'
 
 // ─── Constants & helpers ──────────────────────────────────────────────────────
 
@@ -1941,12 +1944,15 @@ function ListView({ columns, cards, totalCount, onCardClick }: { columns: Projec
 }
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
+// ViewMode/VALID_VIEWS moram no ProjectsNav, como StudyViewName mora no StudyNav.
 
-type ViewMode = 'kanban' | 'compact' | 'list' | 'overview' | 'timeline'
-
-const VALID_VIEWS: ViewMode[] = ['kanban', 'compact', 'list', 'overview', 'timeline']
-
-export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean }) {
+export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
+  isMobile?: boolean
+  /** Navegação para a página vinculada a um card. Quando o host fornece
+   *  (DocumentsPanel resolve dentro da própria visão), setActivePage não é
+   *  chamado — chamar desmontaria a visão Documentos inteira. */
+  onOpenPage?: (page: Page) => void
+}) {
   const { user } = useAuth()
   const { t } = useLanguage()
   const { pages, sharedPages, setActivePage } = usePages()
@@ -2392,7 +2398,9 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
   const openLinkedPage = (pageId: string) => {
     const all = [...flattenPages(pages), ...flattenPages(sharedPages)]
     const page = all.find(p => p.id === pageId)
-    if (page) setActivePage(page)
+    if (!page) return
+    if (onOpenPage) onOpenPage(page) // o host resolve (Documentos: seleciona no próprio painel)
+    else setActivePage(page) // fallback autônomo
   }
 
   const handleRescheduleCard = async (
@@ -2540,12 +2548,30 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
   const activeDragColumn = activeDragId ? columns.find(c => c.id === activeDragId) : null
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--color-bg)', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{ padding: isMobile ? '12px 14px' : '14px 16px', borderBottom: '1px solid var(--color-border)', flexShrink: 0, backgroundColor: 'var(--color-bg-secondary)' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', height: '100%', minWidth: 0, minHeight: 0, backgroundColor: 'var(--color-bg)', overflow: 'hidden' }}>
+      {/* Faixa lateral (desktop) / chips de visualização (mobile) */}
+      <ProjectsNav
+        boards={boards}
+        activeBoardId={activeBoardId}
+        view={view}
+        isOwner={isOwner}
+        isMobile={isMobile}
+        onSelectBoard={setActiveBoardId}
+        onNewBoard={() => setBoardModal({ open: true, board: null })}
+        onSelectView={setView}
+        onImport={() => setImportOpen(true)}
+        onShare={() => setShareOpen(true)}
+        onEditBoard={() => setBoardModal({ open: true, board: activeBoard })}
+        onDeleteBoard={deleteBoard}
+      />
+
+      <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Cabeçalho slim: só identifica o quadro. Navegação e ações moram na
+          faixa lateral; no mobile o seletor de quadros continua dropdown e as
+          ações do dono seguem como botões de ícone. */}
+      <div style={{ padding: isMobile ? '12px 14px' : '10px 16px', borderBottom: '1px solid var(--color-border)', flexShrink: 0, backgroundColor: 'var(--color-bg-secondary)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {/* Board selector */}
-          {boards.length > 0 ? (
+          {isMobile && boards.length > 0 ? (
             <div style={{ position: 'relative' }}>
               <button onClick={() => setBoardSelectorOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: 'var(--color-text)', maxWidth: 260 }}>
                 <span>{activeBoard?.icon}</span>
@@ -2569,37 +2595,32 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
                 </div>
               )}
             </div>
+          ) : !isMobile && activeBoard ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>{activeBoard.icon}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeBoard.name}</span>
+              {activeBoard.is_shared && <span style={{ fontSize: 9, fontWeight: 700, color: '#6366f1', backgroundColor: '#6366f11f', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>{t('projects_shared_badge')}</span>}
+            </div>
           ) : (
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>{t('projects_title')}</h2>
           )}
 
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-            {activeBoard && (
-              <div style={{ display: 'flex', borderRadius: 8, border: '1px solid var(--color-border)', overflow: 'hidden' }}>
-                {([['kanban', LayoutGrid], ['timeline', GanttChartSquare], ['list', ListIcon], ['overview', BarChart3], ['compact', Smartphone]] as const).map(([v, Icon]) => (
-                  <button key={v} onClick={() => setView(v)} title={t(`projects_view_${v}` as 'projects_view_kanban')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '6px 8px' : '6px 11px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: view === v ? 600 : 400, backgroundColor: view === v ? '#6366f1' : 'var(--color-bg)', color: view === v ? '#fff' : 'var(--color-text-muted)' }}>
-                    <Icon size={13} />{!isMobile && t(`projects_view_${v}` as 'projects_view_kanban')}
-                  </button>
-                ))}
-              </div>
-            )}
-            {activeBoard && isOwner && (
-              <>
-                <button onClick={() => setImportOpen(true)} title={t('projects_import')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? 8 : '6px 11px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', fontSize: 12, color: 'var(--color-text-muted)' }}>
-                  <Upload size={13} />{!isMobile && t('projects_import')}
-                </button>
-                <button onClick={() => setShareOpen(true)} title={t('projects_share')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? 8 : '6px 11px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', fontSize: 12, color: 'var(--color-text-muted)' }}>
-                  <Share2 size={13} />{!isMobile && t('projects_share')}
-                </button>
-                <button onClick={() => setBoardModal({ open: true, board: activeBoard })} title={t('projects_edit')} style={{ display: 'flex', padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
-                  <Pencil size={13} />
-                </button>
-                <button onClick={deleteBoard} title={t('projects_delete')} style={{ display: 'flex', padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: '#ef4444' }}>
-                  <Trash2 size={13} />
-                </button>
-              </>
-            )}
-          </div>
+          {isMobile && activeBoard && isOwner && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => setImportOpen(true)} title={t('projects_import')} style={{ display: 'flex', padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                <Upload size={13} />
+              </button>
+              <button onClick={() => setShareOpen(true)} title={t('projects_share')} style={{ display: 'flex', padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                <Share2 size={13} />
+              </button>
+              <button onClick={() => setBoardModal({ open: true, board: activeBoard })} title={t('projects_edit')} style={{ display: 'flex', padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                <Pencil size={13} />
+              </button>
+              <button onClick={deleteBoard} title={t('projects_delete')} style={{ display: 'flex', padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: '#ef4444' }}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+          )}
         </div>
         {!canEdit && activeBoard && (
           <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--color-text-muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -2715,8 +2736,9 @@ export default function ProjectsPanel({ isMobile = false }: { isMobile?: boolean
           </div>
         )}
       </div>
+      </div>
 
-      {/* Modals */}
+      {/* Modals — position: fixed, seguros como filhos do root */}
       {boardModal.open && (
         <BoardModal board={boardModal.board ?? null} onClose={() => setBoardModal({ open: false })} onSave={boardModal.board ? updateBoard : createBoard} />
       )}

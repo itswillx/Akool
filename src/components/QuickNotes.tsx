@@ -3,6 +3,7 @@ import { StickyNote, Trash2, Plus, Link2, X, FileText, FolderKanban } from 'luci
 import type { QuickNote, QuickNoteColor, QuickNoteLinkedItem } from '../types'
 import { useQuickNotes } from '../hooks/useQuickNotes'
 import { usePages } from '../contexts/PagesContext'
+import { setDocsSelection } from '../lib/docsNavigation'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import ItemPicker, { type PickedItem } from './ItemPicker'
@@ -164,9 +165,13 @@ function QuickNoteCard({ note, onUpdate, onRequestDelete }: {
       const p = [...flatten(pages), ...flatten(sharedPages)].find(x => x.id === item.targetId)
       if (p) setActivePage(p)
     } else if (item.boardId) {
+      // Chaves gravadas ANTES da troca: o ProjectsPanel as lê no mount. Quando
+      // este componente roda dentro do DocumentsPanel (já montado), é o
+      // setDocsSelection que efetivamente troca a seção — setActivePanel vira no-op.
       localStorage.setItem('projects_active_board', item.boardId)
       localStorage.setItem('projects_open_card', item.targetId)
-      setActivePanel('projects')
+      setDocsSelection({ kind: 'projects' })
+      setActivePanel('documents')
     }
   }
 

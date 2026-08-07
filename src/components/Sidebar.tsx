@@ -11,6 +11,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
 import type { WorkspaceMode } from '../contexts/WorkspaceModeContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useDocsSelection } from '../hooks/useDocsSelection'
+import { setDocsSelection } from '../lib/docsNavigation'
 import { useLanguage } from '../i18n/LanguageContext'
 import ExportPdfModal from './ExportPdfModal'
 import { PageItem, CreateNewDropdown, flattenPages } from './PageTree'
@@ -67,7 +69,7 @@ function SidebarFooterMenu({
   setMode,
 }: {
   activePanel: string | null
-  setActivePanel: (panel: 'users' | 'finance' | 'projects' | 'help' | 'backup' | 'documents' | null) => void
+  setActivePanel: (panel: 'users' | 'finance' | 'help' | 'backup' | 'documents' | null) => void
   setShowExport: (v: boolean) => void
   onNavigate?: () => void
   mode: WorkspaceMode
@@ -190,6 +192,7 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
   const { pages, sharedPages, createPage, setActivePage, activePage, activePanel, setActivePanel } = usePages()
   const { user, profile } = useAuth()
   const { mode, setMode } = useWorkspaceMode()
+  const docsSelection = useDocsSelection()
   const { t } = useLanguage()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
@@ -283,15 +286,16 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
               <Wallet size={13} /><span>{t('sidebar_section_finance')}</span>
             </SidebarAction>
           )}
+          {/* Atalho: Projetos vive dentro de Documentos como seção. */}
           <SidebarAction
-            onClick={() => { setActivePage(null); setActivePanel('projects'); onNavigate?.() }}
-            active={activePanel === 'projects'}
+            onClick={() => { setActivePage(null); setDocsSelection({ kind: 'projects' }); setActivePanel('documents'); onNavigate?.() }}
+            active={activePanel === 'documents' && docsSelection?.kind === 'projects'}
           >
             <FolderKanban size={13} /><span>{t('sidebar_section_projects')}</span>
           </SidebarAction>
           <SidebarAction
             onClick={() => { setActivePage(null); setActivePanel('documents'); onNavigate?.() }}
-            active={activePanel === 'documents'}
+            active={activePanel === 'documents' && docsSelection?.kind !== 'projects'}
           >
             <Files size={13} /><span>{t('sidebar_section_documents')}</span>
           </SidebarAction>

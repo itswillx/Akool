@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { FolderKanban, CalendarClock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { usePages } from '../contexts/PagesContext'
+import { setDocsSelection } from '../lib/docsNavigation'
 import { useLanguage } from '../i18n/LanguageContext'
 import { Panel, Empty, listStyle } from './Dashboard'
 
@@ -105,15 +106,20 @@ export default function DashboardProjects({ data, isMobile = false }: { data: Da
   const { t } = useLanguage()
   const { setActivePanel } = usePages()
 
+  // Chaves gravadas ANTES da troca de seleção: o ProjectsPanel lê
+  // projects_active_board num inicializador de useState e projects_open_card
+  // num efeito de mount — ele monta dentro do DocumentsPanel logo em seguida.
   const openBoard = (boardId: string) => {
     localStorage.setItem('projects_active_board', boardId)
-    setActivePanel('projects')
+    setDocsSelection({ kind: 'projects' })
+    setActivePanel('documents')
   }
 
   const openCard = (boardId: string, cardId: string) => {
     localStorage.setItem('projects_active_board', boardId)
     localStorage.setItem('projects_open_card', cardId)
-    setActivePanel('projects')
+    setDocsSelection({ kind: 'projects' })
+    setActivePanel('documents')
   }
 
   return (
