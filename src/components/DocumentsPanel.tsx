@@ -1,5 +1,5 @@
 import { lazy, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Files, FileText, ArrowLeft, StickyNote, GraduationCap, FolderKanban, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Files, FileText, ArrowLeft, StickyNote, GraduationCap, FolderKanban, Waypoints, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import type { Page, PageType } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -11,6 +11,7 @@ import QuickNotes from './QuickNotes'
 
 const StudySection = lazy(() => import('../modules/study'))
 const ProjectsSection = lazy(() => import('../modules/projects'))
+const NetworkSection = lazy(() => import('../modules/docsnetwork'))
 
 // A seleção (página ou seção fixa: projetos / notas rápidas / estudos) mora no
 // store de lib/docsNavigation, observável de fora — deep links (Dashboard,
@@ -135,6 +136,12 @@ export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps
           active={selection?.kind === 'studies'}
           onClick={() => select({ kind: 'studies' })}
         />
+        <RailItem
+          icon={<Waypoints size={14} />}
+          label={t('docs_section_network')}
+          active={selection?.kind === 'network'}
+          onClick={() => select({ kind: 'network' })}
+        />
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 12px' }}>
         {loading
@@ -163,29 +170,49 @@ export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps
     </div>
   )
 
-  const detail = selection?.kind === 'projects'
-    ? (
-      <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
-        <Lazy><ProjectsSection isMobile={isMobile} onOpenPage={handleOpenPageFromCard} /></Lazy>
-      </div>
-    )
-    : selection?.kind === 'quick-notes'
-    ? (
-      <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflowY: 'auto', padding: isMobile ? 16 : 24 }}>
-        <div style={{ maxWidth: 980, margin: '0 auto' }}>
-          <QuickNotes isMobile={isMobile} />
-        </div>
-      </div>
-    )
-    : selection?.kind === 'studies'
-      ? (
-        <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
-          <Lazy><StudySection isMobile={isMobile} /></Lazy>
-        </div>
-      )
-      : selectedPage
-        ? <PageEditor page={selectedPage} isMobile={isMobile} />
-        : emptyState
+  // Uma função com switch em vez da cadeia ternária que isto era: com cinco
+  // seções o encadeamento deixava de caber na cabeça, e a próxima adição só
+  // piora. Cada ramo carrega o wrapper que a sua seção precisa.
+  const renderDetail = () => {
+    switch (selection?.kind) {
+      case 'projects':
+        return (
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
+            <Lazy><ProjectsSection isMobile={isMobile} onOpenPage={handleOpenPageFromCard} /></Lazy>
+          </div>
+        )
+      case 'quick-notes':
+        return (
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflowY: 'auto', padding: isMobile ? 16 : 24 }}>
+            <div style={{ maxWidth: 980, margin: '0 auto' }}>
+              <QuickNotes isMobile={isMobile} />
+            </div>
+          </div>
+        )
+      case 'studies':
+        return (
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
+            <Lazy><StudySection isMobile={isMobile} /></Lazy>
+          </div>
+        )
+      case 'network':
+        // Sem overflow no desktop: o grafo se estica até a altura do painel e
+        // a coluna de detalhe rola sozinha. No mobile a seção é empilhada e
+        // precisa rolar como um todo.
+        return (
+          <div style={{
+            flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column',
+            overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? 14 : 22,
+          }}>
+            <Lazy><NetworkSection isMobile={isMobile} pages={flat} onOpenPage={handleOpenPageFromCard} /></Lazy>
+          </div>
+        )
+      default:
+        return selectedPage ? <PageEditor page={selectedPage} isMobile={isMobile} /> : emptyState
+    }
+  }
+
+  const detail = renderDetail()
 
   // Mobile: single column. Show the detail (with a back button) when a section
   // or document is selected, otherwise the list.
@@ -241,6 +268,7 @@ export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps
           {collapsedIconBtn(<FolderKanban size={15} />, t('docs_section_projects'), selection?.kind === 'projects', () => select({ kind: 'projects' }))}
           {collapsedIconBtn(<StickyNote size={15} />, t('docs_section_quick_notes'), selection?.kind === 'quick-notes', () => select({ kind: 'quick-notes' }))}
           {collapsedIconBtn(<GraduationCap size={15} />, t('docs_section_studies'), selection?.kind === 'studies', () => select({ kind: 'studies' }))}
+          {collapsedIconBtn(<Waypoints size={15} />, t('docs_section_network'), selection?.kind === 'network', () => select({ kind: 'network' }))}
         </aside>
       ) : (
         <aside style={{ width: 300, minWidth: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderRight: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-secondary)' }}>

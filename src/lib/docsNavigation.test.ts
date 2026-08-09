@@ -9,6 +9,7 @@ describe('parseDocsSelection', () => {
     expect(parseDocsSelection('{"kind":"projects"}')).toEqual({ kind: 'projects' })
     expect(parseDocsSelection('{"kind":"quick-notes"}')).toEqual({ kind: 'quick-notes' })
     expect(parseDocsSelection('{"kind":"studies"}')).toEqual({ kind: 'studies' })
+    expect(parseDocsSelection('{"kind":"network"}')).toEqual({ kind: 'network' })
     expect(parseDocsSelection('{"kind":"page","id":"abc"}')).toEqual({ kind: 'page', id: 'abc' })
   })
 

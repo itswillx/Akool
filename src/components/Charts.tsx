@@ -157,8 +157,8 @@ export function DualAreaTrend({ labels, series, height = 190, formatValue = Stri
 
 // Filled area + line trend. Stroke kept crisp via non-scaling-stroke so the SVG
 // can stretch to full width (preserveAspectRatio none). Values + labels below.
-export function AreaTrend({ points, color, height = 110 }: {
-  points: { label: string; value: number }[]; color: string; height?: number;
+export function AreaTrend({ points, color, height = 110, formatValue = String }: {
+  points: { label: string; value: number }[]; color: string; height?: number; formatValue?: (v: number) => string;
 }) {
   const n = points.length
   if (n === 0) return null
@@ -177,7 +177,7 @@ export function AreaTrend({ points, color, height = 110 }: {
       <div style={{ display: 'flex', marginTop: 6 }}>
         {points.map((p, i) => (
           <div key={i} style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text)' }}>{p.value}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text)' }}>{formatValue(p.value)}</div>
             <div style={{ fontSize: 10, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.label}</div>
           </div>
         ))}

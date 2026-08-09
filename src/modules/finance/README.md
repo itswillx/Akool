@@ -14,6 +14,15 @@ importação bancária, conciliação, etc.).
 - **Não importa nada do mundo de projetos** (páginas, ProjectsPanel, Kanban, etc.).
   Essa fronteira deve ser mantida.
 
+> Quando a seção **Rede** de Documentos nasceu, o que era genérico aqui subiu
+> para a infraestrutura compartilhada em vez de ser importado de dentro deste
+> módulo (o que violaria a fronteira) ou duplicado:
+> `ui/tokens.ts` → `components/uiTokens.ts`, `ui/Drawer.tsx` →
+> `components/Drawer.tsx`, o SVG do grafo → `components/graph/GraphCanvas.tsx`,
+> o slider duplo → `components/DualRange.tsx`, e os helpers neutros de grafo →
+> `lib/graph.ts`. Os arquivos antigos continuam existindo como re-export, então
+> nenhum import daqui mudou. O prefixo `FIN_` dos tokens é histórico.
+
 > `components/board` **não** é o kanban do ProjectsPanel. É um primitivo neutro
 > criado à parte (colunas, cards, DnD, busca, chips de visibilidade) que não
 > conhece nenhum tipo de nenhum domínio — infraestrutura compartilhada, como

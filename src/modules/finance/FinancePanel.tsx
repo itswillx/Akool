@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
-import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, Link2, FileDown, Camera, Download, Upload, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal, Search, Zap, PanelLeft, PanelTop, FolderKanban } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Plus, Target, ChevronDown, CheckCircle2, XCircle, Users, Link2, FileDown, Camera, Download, Upload, BarChart2, List, CreditCard, Star, Tag, RefreshCw, MoreHorizontal, Search, Zap, PanelLeft, PanelTop, FolderKanban, Waypoints } from 'lucide-react'
 import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceBudget, FinanceTxType, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceWorkspace, FinanceWorkspaceMember, FinanceWorkspaceInvite } from '../../types'
 import { supabase } from '../../lib/supabase'
 import { toCents, fromCents, formatBRL } from '../../lib/money'
@@ -26,6 +26,10 @@ import {
 // "Projetos", que é quem faz o lazy import de cada uma agora.
 const MyProjectsTab = lazy(() => import('./myprojects/MyProjectsTab'))
 
+// Lazy pelo mesmo motivo: o layout de força e o SVG do grafo só entram no
+// bundle quando alguém abre a aba Rede.
+const NetworkTab = lazy(() => import('./network/NetworkTab'))
+
 // Lazy so the statement parsers (and, behind them, pdfjs) stay out of the
 // main finance chunk until someone actually opens the import flow.
 const ImportStatementModal = lazy(() => import('./integrations/ImportStatementModal'))
@@ -46,7 +50,7 @@ import CoworkspaceOverviewTab from './tabs/CoworkspaceOverviewTab'
 // Single source of truth for the tabs: the union, the localStorage validator and
 // the CustomEvent whitelist below all derive from this array, so adding a tab in
 // one place can't silently desync the other two.
-const TAB_IDS = ['overview', 'transactions', 'budgets', 'accounts', 'categories', 'recurring', 'myprojects'] as const
+const TAB_IDS = ['overview', 'transactions', 'budgets', 'accounts', 'categories', 'recurring', 'network', 'myprojects'] as const
 export type TabId = typeof TAB_IDS[number]
 
 function isTabId(value: unknown): value is TabId {
@@ -3115,6 +3119,7 @@ const FINANCE_NAV: { id: TabId; icon: React.ReactNode }[] = [
   { id: 'accounts', icon: <CreditCard size={18} /> },
   { id: 'categories', icon: <Tag size={18} /> },
   { id: 'recurring', icon: <RefreshCw size={18} /> },
+  { id: 'network', icon: <Waypoints size={18} /> },
   { id: 'myprojects', icon: <FolderKanban size={18} /> },
 ]
 
@@ -3171,7 +3176,7 @@ function FinanceSidebar({ tab, onSelect, accountsBalance, accountCount }: {
   )
 }
 
-const MORE_TABS: TabId[] = ['accounts', 'categories', 'recurring', 'myprojects']
+const MORE_TABS: TabId[] = ['accounts', 'categories', 'recurring', 'network', 'myprojects']
 
 function MobileBottomNav({ tab, onSelect, onMore, onQuickAdd }: {
   tab: TabId
@@ -3866,7 +3871,8 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   // por sub-aba: a Loja usa o mês nos seus cards de resumo, Metas e o Resumo
   // por fase não.
   const monthlessSection = projSection === 'summary' || projSection === 'goals'
-  const monthNavVisible = tab !== 'categories' && tab !== 'recurring'
+  // A aba Rede tem seletor de período próprio (1m/3m/6m/12m nos filtros).
+  const monthNavVisible = tab !== 'categories' && tab !== 'recurring' && tab !== 'network'
     && !(tab === 'myprojects' && monthlessSection)
 
   // Desktop nav arrangement (mobile always uses the bottom nav).
@@ -4096,6 +4102,17 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                 onMarkPaid={handleMarkPaid}
                 onSkip={skipEntry}
               />
+            )}
+            {tab === 'network' && (
+              <Suspense fallback={<div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>}>
+                <NetworkTab
+                  accounts={accounts}
+                  categories={workspace ? resolveCategories : categories}
+                  transactions={transactions}
+                  goals={goals}
+                  contributions={contributions}
+                />
+              </Suspense>
             )}
             {tab === 'myprojects' && (
               <Suspense fallback={<div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>}>

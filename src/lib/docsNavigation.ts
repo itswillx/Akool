@@ -26,6 +26,7 @@ export type DocsSelection =
   | { kind: 'projects' }
   | { kind: 'quick-notes' }
   | { kind: 'studies' }
+  | { kind: 'network' }
 
 /**
  * PURA — aceita o JSON atual e a string solta gravada por builds antigos
@@ -40,6 +41,7 @@ export function parseDocsSelection(raw: string | null): DocsSelection | null {
       if (sel.kind === 'projects') return { kind: 'projects' }
       if (sel.kind === 'quick-notes') return { kind: 'quick-notes' }
       if (sel.kind === 'studies') return { kind: 'studies' }
+      if (sel.kind === 'network') return { kind: 'network' }
       if (sel.kind === 'page' && typeof sel.id === 'string') return { kind: 'page', id: sel.id }
       return null
     }
