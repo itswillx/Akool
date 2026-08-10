@@ -69,12 +69,10 @@ const MAX_BACKUPS = 10;
 const STORAGE_PAGE_SIZE = 1000;
 const STORAGE_REMOVE_BATCH = 100;
 
-type BackupTable = (typeof BACKUP_TABLES)[number];
-
 interface BackupPayload {
   version: 1;
   created_at: string;
-  type: "manual" | "automatic";
+  type: "manual" | "automatic" | "pre_restore";
   tables: Record<string, unknown[]>;
   storage_manifest: Record<string, string[]>;
 }
@@ -293,7 +291,7 @@ async function enforceRetention(serviceClient: SupabaseClient): Promise<void> {
 
 async function createBackup(
   serviceClient: SupabaseClient,
-  type: "manual" | "automatic",
+  type: "manual" | "automatic" | "pre_restore",
   userId: string | null,
 ): Promise<unknown> {
   const backupId = crypto.randomUUID();
@@ -355,15 +353,21 @@ async function createBackup(
   }
 }
 
-async function clearTable(serviceClient: SupabaseClient, table: BackupTable): Promise<void> {
-  const { error } = await serviceClient.from(table).delete().not("id", "is", null);
-  if (error) {
-    const { error: err2 } = await serviceClient.from(table).delete().gte("created_at", "1970-01-01");
-    if (err2) throw new Error(`Failed to clear ${table}: ${err2.message}`);
-  }
+interface BackupValidation {
+  payload: BackupPayload;
+  summary: Record<string, number>;
+  unknownTables: string[];
 }
 
-async function restoreBackup(serviceClient: SupabaseClient, backupId: string): Promise<void> {
+// Download + decompress + parse a backup archive and sanity-check its shape.
+// Read-only: never touches the database. Used both as the standalone
+// "validate_backup" action and as the mandatory first step of restoreBackup,
+// so a corrupt or unsupported-version archive is caught before anything is
+// locked or overwritten.
+async function downloadAndValidateBackup(
+  serviceClient: SupabaseClient,
+  backupId: string,
+): Promise<BackupValidation> {
   const { data: meta, error: metaErr } = await serviceClient
     .from("site_backups")
     .select("*")
@@ -382,33 +386,145 @@ async function restoreBackup(serviceClient: SupabaseClient, backupId: string): P
 
   if (payload.version !== 1) throw new Error("Unsupported backup version");
 
-  // Clear in reverse dependency order
-  for (const table of [...BACKUP_TABLES].reverse()) {
-    await clearTable(serviceClient, table);
-  }
-
-  // Insert in forward order
-  for (const table of BACKUP_TABLES) {
+  const summary: Record<string, number> = {};
+  const unknownTables: string[] = [];
+  for (const table of Object.keys(payload.tables ?? {})) {
     const rows = payload.tables[table] ?? [];
-    if (rows.length === 0) continue;
-
-    const chunkSize = 500;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-      const { error } = await serviceClient.from(table).insert(chunk);
-      if (error) throw new Error(`Failed to restore ${table}: ${error.message}`);
+    if ((BACKUP_TABLES as readonly string[]).includes(table)) {
+      summary[table] = rows.length;
+    } else {
+      unknownTables.push(table);
     }
   }
 
-  // Restore storage files
-  for (const bucket of STORAGE_BUCKETS) {
-    const files = payload.storage_manifest?.[bucket] ?? [];
-    for (const filePath of files) {
-      const srcPath = `${backupId}/storage/${bucket}/${filePath}`;
-      const { data, error } = await serviceClient.storage.from(BACKUP_BUCKET).download(srcPath);
-      if (error || !data) continue;
-      await serviceClient.storage.from(bucket).upload(filePath, data, { upsert: true });
+  return { payload, summary, unknownTables };
+}
+
+// Best-effort append to the audit trail. Never throws — a broken audit_log
+// insert must not block or mask the outcome of the action being logged.
+async function logAudit(
+  serviceClient: SupabaseClient,
+  entry: {
+    actorId: string | null;
+    actorLabel?: string;
+    action: string;
+    targetType?: string;
+    targetId?: string;
+    details?: Record<string, unknown>;
+    success: boolean;
+    errorMessage?: string;
+  },
+): Promise<void> {
+  try {
+    await serviceClient.from("audit_log").insert({
+      actor_id: entry.actorId,
+      actor_label: entry.actorLabel ?? null,
+      action: entry.action,
+      target_type: entry.targetType ?? null,
+      target_id: entry.targetId ?? null,
+      details: entry.details ?? {},
+      success: entry.success,
+      error_message: entry.errorMessage ?? null,
+    });
+  } catch (err) {
+    console.error("[site-backup] audit log insert failed", err);
+  }
+}
+
+// Claims the restore lock with a single conditional UPDATE — atomic at the DB
+// level, so two concurrent restores can't both believe they won the race.
+async function acquireRestoreLock(serviceClient: SupabaseClient): Promise<void> {
+  const { data, error } = await serviceClient
+    .from("site_backup_settings")
+    .update({ restore_in_progress: true, restore_started_at: new Date().toISOString() })
+    .eq("id", 1)
+    .eq("restore_in_progress", false)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error("Restore already in progress");
+}
+
+async function releaseRestoreLock(serviceClient: SupabaseClient): Promise<void> {
+  await serviceClient
+    .from("site_backup_settings")
+    .update({ restore_in_progress: false, restore_started_at: null })
+    .eq("id", 1);
+}
+
+async function restoreBackup(
+  serviceClient: SupabaseClient,
+  backupId: string,
+  userId: string | null,
+  isCron: boolean,
+): Promise<void> {
+  const actorLabel = isCron ? "cron" : undefined;
+
+  // 1. Validate the archive before touching anything else.
+  const { payload } = await downloadAndValidateBackup(serviceClient, backupId);
+
+  // 2. Claim the restore lock (throws if one is already in progress).
+  await acquireRestoreLock(serviceClient);
+
+  let preRestoreBackupId: string | null = null;
+  try {
+    // 3. Automatic safety backup of current state before it gets overwritten.
+    const safety = await createBackup(serviceClient, "pre_restore", userId) as { backup?: { id: string } };
+    preRestoreBackupId = safety.backup?.id ?? null;
+    if (!preRestoreBackupId) throw new Error("Safety backup did not produce a record");
+
+    await logAudit(serviceClient, {
+      actorId: userId,
+      actorLabel,
+      action: "restore_backup",
+      targetType: "site_backup",
+      targetId: backupId,
+      details: { phase: "started", pre_restore_backup_id: preRestoreBackupId },
+      success: true,
+    });
+
+    // 4. Atomic clear + repopulate: one Postgres function call, one transaction.
+    //    Any error rolls back every DELETE/INSERT it already made.
+    const { data: rowsRestored, error: rpcErr } = await serviceClient.rpc("restore_site_backup", {
+      p_tables: payload.tables,
+    });
+    if (rpcErr) throw new Error(rpcErr.message);
+
+    // 5. Restore storage files. Can't be part of the SQL transaction (these
+    //    are storage API calls, not DB rows) — best-effort, same as before.
+    for (const bucket of STORAGE_BUCKETS) {
+      const files = payload.storage_manifest?.[bucket] ?? [];
+      for (const filePath of files) {
+        const srcPath = `${backupId}/storage/${bucket}/${filePath}`;
+        const { data, error } = await serviceClient.storage.from(BACKUP_BUCKET).download(srcPath);
+        if (error || !data) continue;
+        await serviceClient.storage.from(bucket).upload(filePath, data, { upsert: true });
+      }
     }
+
+    await logAudit(serviceClient, {
+      actorId: userId,
+      actorLabel,
+      action: "restore_backup",
+      targetType: "site_backup",
+      targetId: backupId,
+      details: { phase: "completed", pre_restore_backup_id: preRestoreBackupId, rows_restored: rowsRestored },
+      success: true,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await logAudit(serviceClient, {
+      actorId: userId,
+      actorLabel,
+      action: "restore_backup",
+      targetType: "site_backup",
+      targetId: backupId,
+      details: { phase: "failed", pre_restore_backup_id: preRestoreBackupId },
+      success: false,
+      errorMessage: msg,
+    });
+    throw err;
+  } finally {
+    await releaseRestoreLock(serviceClient);
   }
 }
 
@@ -468,7 +584,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(req, result);
     }
 
-    const { userId } = await verifyAdmin(req, serviceClient);
+    const { userId, isCron } = await verifyAdmin(req, serviceClient);
 
     switch (action) {
       case "create_backup": {
@@ -495,8 +611,13 @@ Deno.serve(async (req: Request) => {
       }
       case "restore_backup": {
         if (!body.backup_id) throw new Error("backup_id required");
-        await restoreBackup(serviceClient, body.backup_id);
+        await restoreBackup(serviceClient, body.backup_id, userId, isCron);
         return jsonResponse(req, { success: true });
+      }
+      case "validate_backup": {
+        if (!body.backup_id) throw new Error("backup_id required");
+        const { summary, unknownTables } = await downloadAndValidateBackup(serviceClient, body.backup_id);
+        return jsonResponse(req, { valid: true, summary, unknown_tables: unknownTables });
       }
       case "delete_backup": {
         if (!body.backup_id) throw new Error("backup_id required");

@@ -15,7 +15,7 @@ function card(overrides: Partial<ProjectCard> = {}): ProjectCard {
   return {
     id: Math.random().toString(36).slice(2),
     board_id: 'b1', column_id: 'c1', title: 't', description: '',
-    priority: 'medium', start_date: null, due_date: null, assignee_user_id: null,
+    priority: 'medium', start_date: null, due_date: null, estimated_days: 1, assignee_user_id: null,
     labels: [], linked_page_id: null, parent_card_id: null, depends_on: [],
     completed: false, checklist: [], attachments: [], links: [],
     sort_order: 0, created_at: `${TODAY}T10:00:00Z`, updated_at: `${TODAY}T10:00:00Z`,

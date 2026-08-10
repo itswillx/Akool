@@ -33,16 +33,16 @@ export default function MainContent({ isMobile = false }: MainContentProps) {
   // (chunk puxado por lá). Chaves legadas migram em lib/docsNavigation.
 
   if (activePanel === 'documents') {
-    return <Lazy><DocumentsPanel isMobile={isMobile} /></Lazy>
+    return <ErrorBoundary><Lazy><DocumentsPanel isMobile={isMobile} /></Lazy></ErrorBoundary>
   }
 
   if (activePanel === 'help') {
-    return <Lazy><HelpPanel /></Lazy>
+    return <ErrorBoundary><Lazy><HelpPanel /></Lazy></ErrorBoundary>
   }
 
   if (!activePage) {
-    return <Lazy><Dashboard isMobile={isMobile} /></Lazy>
+    return <ErrorBoundary><Lazy><Dashboard isMobile={isMobile} /></Lazy></ErrorBoundary>
   }
 
-  return <PageEditor page={activePage} isMobile={isMobile} />
+  return <ErrorBoundary><PageEditor page={activePage} isMobile={isMobile} /></ErrorBoundary>
 }

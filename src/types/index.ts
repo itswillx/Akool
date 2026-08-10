@@ -443,6 +443,7 @@ export interface ProjectCard {
   priority: ProjectCardPriority
   start_date: string | null
   due_date: string | null
+  estimated_days: number
   assignee_user_id: string | null
   labels: string[]
   linked_page_id: string | null
@@ -589,7 +590,7 @@ export interface SiteBackup {
   id: string
   created_at: string
   created_by: string | null
-  type: 'manual' | 'automatic'
+  type: 'manual' | 'automatic' | 'pre_restore'
   status: 'running' | 'completed' | 'failed'
   storage_path: string
   size_bytes: number
@@ -601,6 +602,8 @@ export interface SiteBackupSettings {
   auto_enabled: boolean
   interval_days: number
   last_auto_at: string | null
+  restore_in_progress: boolean
+  restore_started_at: string | null
 }
 
 export interface NoteContent {

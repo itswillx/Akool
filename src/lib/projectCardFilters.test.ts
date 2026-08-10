@@ -25,6 +25,7 @@ function makeCard(overrides: Partial<ProjectCard> = {}): ProjectCard {
     priority: 'medium',
     start_date: null,
     due_date: null,
+    estimated_days: 1,
     assignee_user_id: null,
     labels: [],
     linked_page_id: null,

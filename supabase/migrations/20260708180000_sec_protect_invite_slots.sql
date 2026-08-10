@@ -1,7 +1,10 @@
--- SEC (achado extra, PENDENTE DE APLICAR): prevent_profile_privilege_escalation
+-- SEC (achado extra, aplicado em 2026-07-09 via MCP): prevent_profile_privilege_escalation
 -- congelava apenas role/is_active. invite_slots_remaining tambem e' privilegio:
 -- sem isso, um usuario comum pode se conceder slots de convite ilimitados via
--- UPDATE na propria linha (profiles_update_own permite).
+-- UPDATE na propria linha (profiles_update_own permite). Confirmado aplicado no
+-- remoto (SEC-001, 2026-08-10): ledger tem sec_protect_invite_slots em
+-- 20260709184028 e o corpo da funcao ao vivo ja inclui o congelamento de
+-- invite_slots_remaining.
 
 create or replace function public.prevent_profile_privilege_escalation()
 returns trigger

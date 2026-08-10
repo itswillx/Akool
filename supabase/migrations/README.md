@@ -38,12 +38,19 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
 
 ## Pendências conhecidas de versionamento
 
-- **Baseline ausente.** As ~55 migrações mais antigas (excalinotion/pages, profiles,
-  convites, financeiro-base) foram aplicadas via MCP e nunca tiveram arquivo no repo.
-  Enquanto o baseline não existir, **não é possível recriar o banco do zero a partir
-  deste diretório**. Para gerar: `npx supabase login` e depois
-  `npx supabase db dump --linked -f supabase/migrations/20260509000000_baseline_remote_schema.sql`.
-  Buckets e policies de storage não entram no dump (schema `storage`).
+- ~~**Baseline ausente.**~~ Resolvido em 2026-08-10 (SEC-001):
+  `20260509000000_baseline_remote_schema.sql` reconstrói os ~58 objetos do gap
+  (excalinotion/pages, profiles, convites, financeiro-base, workspace/family
+  sharing, projects module) lendo o schema ao vivo via `pg_catalog`/`pg_policies`
+  (não é um `supabase db dump` bruto — foi curado à mão para não duplicar o que
+  os arquivos já existentes redefinem). Nunca aplicar este arquivo via MCP
+  `apply_migration` nem `db push`: os objetos já existem no remoto, o arquivo só
+  serve para o `supabase db reset` local funcionar. Policies de storage ficam em
+  `20260811120000_sec_storage_policies_baseline.sql` (schema `storage` não entra
+  no dump/reconstrução do schema `public`). Auto-promoção de role em
+  `page_shares`/`project_shares` foi auditada e está bloqueada pelo RLS (ver
+  comentário na policy `project_shares_update`/`page_shares_update` no baseline
+  e `docs/matriz-rls.md`).
 - **Edge functions defasadas.** `supabase/functions/` tem 4 funções, mas o projeto
   remoto roda **6** — `admin-ops` e `categorize-transactions` não têm fonte aqui. Além
   disso, ao menos `ai-chat` está **atrás** da versão publicada (a v9 no remoto lê

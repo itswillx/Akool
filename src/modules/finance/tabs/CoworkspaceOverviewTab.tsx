@@ -8,6 +8,7 @@ import { formatBRL } from '../../../lib/money'
 import {
   accountBalance, budgetStatus, monthTotals, topCategories, totalsByCategory,
   totalsByUser, transactionsInMonth,
+  type FinanceTxAgg,
 } from '../../../lib/financeCalc'
 import { Donut } from '../../../components/Charts'
 import { UserAvatar } from '../../../components/UserAvatar'
@@ -30,6 +31,7 @@ interface Props {
   workspace: FinanceWorkspace
   members: FinanceWorkspaceMember[]
   transactions: FinanceTransaction[]
+  transactionsAgg: FinanceTxAgg[]
   budgets: FinanceBudget[]
   accounts: FinanceAccount[]
   categories: FinanceCategory[]
@@ -39,7 +41,7 @@ interface Props {
 }
 
 export default function CoworkspaceOverviewTab({
-  workspace, members, transactions, budgets, accounts, categories, month, onBack, onManage,
+  workspace, members, transactions, transactionsAgg, budgets, accounts, categories, month, onBack, onManage,
 }: Props) {
   const { t, lang } = useLanguage()
   const isMobile = useFinanceMobile()
@@ -218,7 +220,7 @@ export default function CoworkspaceOverviewTab({
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {accounts.map(acc => {
-                const bal = accountBalance(acc, transactions)
+                const bal = accountBalance(acc, transactionsAgg)
                 return (
                   <div key={acc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: 10, background: 'var(--color-bg)' }}>
                     <span style={{ fontSize: 16 }}>{acc.icon}</span>

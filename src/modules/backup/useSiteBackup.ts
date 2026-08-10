@@ -40,7 +40,16 @@ async function callSiteBackup(body: Record<string, unknown>) {
     backup?: SiteBackup
     success?: boolean
     error?: string
+    valid?: boolean
+    summary?: Record<string, number>
+    unknown_tables?: string[]
   }
+}
+
+export interface BackupValidationResult {
+  valid: boolean
+  summary: Record<string, number>
+  unknownTables: string[]
 }
 
 async function fetchListAndSettings(): Promise<{ backups: SiteBackup[]; settings: SiteBackupSettings | null }> {
@@ -125,6 +134,21 @@ export function useSiteBackup(enabled: boolean) {
     }
   }, [enabled])
 
+  const validateBackup = useCallback(async (backupId: string): Promise<BackupValidationResult> => {
+    if (!enabled) return { valid: false, summary: {}, unknownTables: [] }
+    setRunningAction(`validate-${backupId}`)
+    try {
+      const res = await callSiteBackup({ action: 'validate_backup', backup_id: backupId })
+      return {
+        valid: res.valid ?? false,
+        summary: res.summary ?? {},
+        unknownTables: res.unknown_tables ?? [],
+      }
+    } finally {
+      setRunningAction(null)
+    }
+  }, [enabled])
+
   const deleteBackup = useCallback(async (backupId: string) => {
     if (!enabled) return
     setRunningAction(`delete-${backupId}`)
@@ -155,6 +179,7 @@ export function useSiteBackup(enabled: boolean) {
     refreshList,
     createManualBackup,
     restoreBackup,
+    validateBackup,
     deleteBackup,
     toggleAutoBackup,
   }

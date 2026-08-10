@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, memo } from 'react'
-import { Database, RefreshCw, Trash2, RotateCcw, AlertTriangle } from 'lucide-react'
+import { Database, RefreshCw, Trash2, RotateCcw, AlertTriangle, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePages } from '../../contexts/PagesContext'
 import { useLanguage } from '../../i18n/LanguageContext'
@@ -23,7 +23,7 @@ const STATUS_COLORS: Record<SiteBackup['status'], { bg: string; text: string }> 
   failed: { bg: '#fee2e2', text: '#dc2626' },
 }
 
-const GRID_COLUMNS = '1fr 100px 120px 90px 220px'
+const GRID_COLUMNS = '1fr 100px 120px 90px 300px'
 
 export default function BackupPanel() {
   const { session, isAdmin } = useAuth()
@@ -33,7 +33,7 @@ export default function BackupPanel() {
   const {
     backups, settings, loading, runningAction,
     refreshList, createManualBackup,
-    restoreBackup, deleteBackup, toggleAutoBackup,
+    restoreBackup, validateBackup, deleteBackup, toggleAutoBackup,
   } = useSiteBackup(isAdmin && !!session)
 
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
@@ -99,6 +99,25 @@ export default function BackupPanel() {
     }
   }
 
+  const handleValidate = async (backup: SiteBackup) => {
+    try {
+      const result = await validateBackup(backup.id)
+      if (!result.valid) {
+        showFeedback('error', t('backup_validate_invalid'))
+        return
+      }
+      if (result.unknownTables.length > 0) {
+        showFeedback('error', t('backup_validate_unknown_tables', { tables: result.unknownTables.join(', ') }))
+        return
+      }
+      const tableCount = Object.keys(result.summary).length
+      const rowCount = Object.values(result.summary).reduce((a, b) => a + b, 0)
+      showFeedback('success', t('backup_validate_ok', { tables: tableCount, rows: rowCount }))
+    } catch (err) {
+      showError(err)
+    }
+  }
+
   const handleToggleAuto = async () => {
     if (!settings) return
     try {
@@ -111,6 +130,8 @@ export default function BackupPanel() {
   }
 
   const isBusy = runningAction !== null
+  const restoreLocked = settings?.restore_in_progress ?? false
+  const actionsDisabled = isBusy || restoreLocked
 
   if (!isAdmin) {
     return (
@@ -157,6 +178,13 @@ export default function BackupPanel() {
           </div>
         )}
 
+        {restoreLocked && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '12px 16px', borderRadius: 8, backgroundColor: '#fef9c3', border: '1px solid #fde047', fontSize: 13, color: '#854d0e', fontWeight: 500 }}>
+            <AlertTriangle size={13} />
+            {t('backup_maintenance_banner')}
+          </div>
+        )}
+
         {isBusy && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '12px 16px', borderRadius: 8, backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', fontSize: 13, color: 'var(--color-text-muted)' }}>
             <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
@@ -168,11 +196,11 @@ export default function BackupPanel() {
         <div style={{ padding: 20, borderRadius: 12, backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
           <button
             onClick={handleCreate}
-            disabled={isBusy}
+            disabled={actionsDisabled}
             className="backup-primary-btn"
             style={{
-              padding: '10px 18px', borderRadius: 8, border: 'none', cursor: isBusy ? 'not-allowed' : 'pointer',
-              backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', fontSize: 14, fontWeight: 600, opacity: isBusy ? 0.6 : 1,
+              padding: '10px 18px', borderRadius: 8, border: 'none', cursor: actionsDisabled ? 'not-allowed' : 'pointer',
+              backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', fontSize: 14, fontWeight: 600, opacity: actionsDisabled ? 0.6 : 1,
             }}
           >
             {t('backup_create_now')}
@@ -235,12 +263,13 @@ export default function BackupPanel() {
                 backup={backup}
                 lang={lang}
                 t={t}
-                isBusy={isBusy}
+                isBusy={actionsDisabled}
                 isMobile={isMobile}
                 isLast={i === backups.length - 1}
                 runningAction={runningAction}
                 onRestore={() => setConfirmRestore(backup)}
                 onDelete={() => setConfirmDelete(backup)}
+                onValidate={() => handleValidate(backup)}
               />
             ))
           )}
@@ -274,7 +303,7 @@ export default function BackupPanel() {
 }
 
 const BackupRow = memo(function BackupRow({
-  backup, lang, t, isBusy, isMobile, isLast, runningAction, onRestore, onDelete,
+  backup, lang, t, isBusy, isMobile, isLast, runningAction, onRestore, onDelete, onValidate,
 }: {
   backup: SiteBackup
   lang: string
@@ -285,6 +314,7 @@ const BackupRow = memo(function BackupRow({
   runningAction: string | null
   onRestore: () => void
   onDelete: () => void
+  onValidate: () => void
 }) {
   const statusLabel = backup.status === 'running'
     ? t('backup_status_running')
@@ -292,8 +322,12 @@ const BackupRow = memo(function BackupRow({
       ? t('backup_status_failed')
       : t('backup_status_completed')
 
-  const typeLabel = backup.type === 'automatic' ? t('backup_type_automatic') : t('backup_type_manual')
-  const rowBusy = runningAction === `restore-${backup.id}` || runningAction === `delete-${backup.id}`
+  const typeLabel = backup.type === 'automatic'
+    ? t('backup_type_automatic')
+    : backup.type === 'pre_restore'
+      ? t('backup_type_pre_restore')
+      : t('backup_type_manual')
+  const rowBusy = runningAction === `restore-${backup.id}` || runningAction === `delete-${backup.id}` || runningAction === `validate-${backup.id}`
   const sc = STATUS_COLORS[backup.status] ?? STATUS_COLORS.completed
 
   const statusPill = (
@@ -304,6 +338,19 @@ const BackupRow = memo(function BackupRow({
 
   const actions = (
     <div style={{ display: 'flex', gap: 6 }}>
+      {backup.status === 'completed' && (
+        <button
+          onClick={onValidate}
+          disabled={isBusy}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', borderRadius: 7,
+            border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)',
+            color: 'var(--color-text)', fontSize: 12, cursor: isBusy ? 'not-allowed' : 'pointer', fontWeight: 500, opacity: isBusy ? 0.5 : 1,
+          }}
+        >
+          <ShieldCheck size={13} /> {t('backup_validate')}
+        </button>
+      )}
       {backup.status === 'completed' && (
         <button
           onClick={onRestore}

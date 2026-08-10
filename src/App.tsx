@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Menu } from 'lucide-react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { ToastProvider } from './contexts/ToastContext'
 import { PagesProvider } from './contexts/PagesContext'
 import { NotificationsProvider } from './contexts/NotificationsContext'
 import { OnboardingProvider } from './contexts/OnboardingContext'
@@ -135,8 +136,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppInner />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <AppInner />
+      </AuthProvider>
+    </ToastProvider>
   )
 }

@@ -16,7 +16,7 @@ const board = (id: string, name: string): ProjectBoard => ({
 })
 const card = (id: string, boardId: string, title: string, extra: Partial<ProjectCard> = {}): ProjectCard => ({
   id, board_id: boardId, column_id: 'col1', title, description: '', priority: 'medium',
-  start_date: null, due_date: null, assignee_user_id: null, labels: [],
+  start_date: null, due_date: null, estimated_days: 1, assignee_user_id: null, labels: [],
   linked_page_id: null, parent_card_id: null, depends_on: [], completed: false,
   checklist: [], attachments: [], links: [], sort_order: 0,
   created_at: '2026-01-01', updated_at: '2026-01-01', ...extra,

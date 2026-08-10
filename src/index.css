@@ -26,6 +26,8 @@
   --color-done: #10b981;
   --color-primary: #3b82f6;
   --color-error: #ef4444;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
   --sticky-yellow-bg: #fef9c3;
   --sticky-yellow-border: #facc15;
   --sticky-green-bg: #dcfce7;
@@ -63,6 +65,8 @@ html.dark {
   --color-done: #10b981;
   --color-primary: #60a5fa;
   --color-error: #f87171;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
   --sticky-yellow-bg: #38341c;
   --sticky-yellow-border: #a16207;
   --sticky-green-bg: #1c3325;
@@ -170,6 +174,11 @@ html, body {
 
 .finance-drawer-panel {
   animation: finance-drawer-slide-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Safe-area aware padding for iOS home indicator */

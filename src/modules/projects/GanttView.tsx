@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { ChevronDown, ChevronRight, GanttChartSquare, Plus, Share2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, GanttChartSquare, Plus, Share2, Wand2 } from 'lucide-react'
 import type { ProjectCard, ProjectColumn, ProjectCardPriority } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import {
@@ -11,6 +11,7 @@ import {
 type Zoom = 'day' | 'week' | 'month'
 const PX_PER_DAY: Record<Zoom, number> = { day: 34, week: 16, month: 5 }
 const ZOOM_KEY = 'projects_gantt_zoom:'
+const DEADLINE_KEY = 'projects_gantt_target_deadline:'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 function todayISO() {
@@ -28,13 +29,35 @@ interface GanttViewProps {
   onCardClick: (c: ProjectCard) => void
   onAddCard: (columnId: string) => void
   onCardReschedule?: (cardId: string, dates: { start_date: string | null; due_date: string | null }) => void
+  onGenerateSchedule?: (targetDeadline: string | null) => Promise<{ scheduled: number; overflowDays: number } | null>
 }
 
 type DragMode = 'move' | 'start' | 'end'
 
-export default function GanttView({ columns, cards, canEdit, isMobile, priorityLabel, boardId, onCardClick, onAddCard, onCardReschedule }: GanttViewProps) {
+export default function GanttView({ columns, cards, canEdit, isMobile, priorityLabel, boardId, onCardClick, onAddCard, onCardReschedule, onGenerateSchedule }: GanttViewProps) {
   const { t, lang } = useLanguage()
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [scheduleResult, setScheduleResult] = useState<{ scheduled: number; overflowDays: number } | null>(null)
+  const [scheduling, setScheduling] = useState(false)
+  const scheduleResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [targetDeadline, setTargetDeadline] = useState<string>(
+    () => localStorage.getItem(DEADLINE_KEY + boardId) ?? '',
+  )
+  const deadlineInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (targetDeadline) localStorage.setItem(DEADLINE_KEY + boardId, targetDeadline)
+    else localStorage.removeItem(DEADLINE_KEY + boardId)
+  }, [targetDeadline, boardId])
+
+  const handleGenerateClick = async () => {
+    if (!onGenerateSchedule || scheduling) return
+    setScheduling(true)
+    const result = await onGenerateSchedule(targetDeadline || null)
+    setScheduling(false)
+    setScheduleResult(result)
+    if (scheduleResultTimerRef.current) clearTimeout(scheduleResultTimerRef.current)
+    scheduleResultTimerRef.current = setTimeout(() => setScheduleResult(null), 3000)
+  }
 
   const ROW_H = isMobile ? 46 : 38
   const HEADER_H = 48
@@ -228,6 +251,36 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
         >
           <Share2 size={13} />{!isMobile && t('projects_gantt_show_deps')}
         </button>
+        {canEdit && onGenerateSchedule && (
+          <>
+            <input
+              ref={deadlineInputRef}
+              type="date"
+              min={todayISO()}
+              value={targetDeadline}
+              onChange={e => setTargetDeadline(e.target.value)}
+              onClick={() => { try { deadlineInputRef.current?.showPicker?.() } catch { /* navegador sem suporte a showPicker */ } }}
+              title={t('projects_gantt_target_deadline')}
+              style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12, width: isMobile ? 112 : 130 }}
+            />
+            <button
+              onClick={handleGenerateClick}
+              disabled={scheduling}
+              title={t('projects_gantt_generate_schedule')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-muted)', cursor: scheduling ? 'default' : 'pointer', fontSize: 12, fontWeight: 600, opacity: scheduling ? 0.6 : 1 }}
+            >
+              <Wand2 size={13} />{!isMobile && t('projects_gantt_generate_schedule')}
+            </button>
+          </>
+        )}
+        {scheduleResult !== null && (
+          <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+            {scheduleResult.scheduled > 0
+              ? t('projects_gantt_schedule_success', { count: scheduleResult.scheduled })
+              : t('projects_gantt_schedule_empty')}
+            {scheduleResult.overflowDays > 0 && ` · ${t('projects_gantt_schedule_overflow', { days: scheduleResult.overflowDays })}`}
+          </span>
+        )}
       </div>
 
       {/* Chart */}

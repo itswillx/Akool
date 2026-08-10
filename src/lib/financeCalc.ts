@@ -7,6 +7,12 @@ import type { FinanceTransaction, FinanceAccount, FinanceRecurring, FinanceRecur
 
 type AmountTx = Pick<FinanceTransaction, 'type' | 'amount'>
 
+// Lean projection used by consumers that need lifetime transaction history
+// (account balances, category counts/in-use checks, monthly evolution charts)
+// without paying for `description`/`photo_url` on every row.
+export type FinanceTxAgg = Pick<FinanceTransaction,
+  'id' | 'user_id' | 'account_id' | 'category_id' | 'type' | 'amount' | 'date' | 'workspace_id'>
+
 export interface Totals { income: number; expense: number; balance: number }
 
 // Sum income / expense (and net balance) for a list of transactions. The list is

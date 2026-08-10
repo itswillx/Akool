@@ -42,6 +42,17 @@ CREATE POLICY finance_statements_owner_all ON public.finance_statements
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
 
+-- finance_transactions.statement_id -> finance_statements(id). Adicionado aqui
+-- (nao no baseline 20260509000000_baseline_remote_schema.sql) porque esta
+-- tabela so existe a partir deste arquivo: um FK inline no baseline quebraria
+-- o replay local (dependencia para frente entre migrations). Ver
+-- 20260509000000_baseline_remote_schema.sql para o contexto completo.
+ALTER TABLE public.finance_transactions
+  DROP CONSTRAINT IF EXISTS finance_transactions_statement_id_fkey;
+ALTER TABLE public.finance_transactions
+  ADD CONSTRAINT finance_transactions_statement_id_fkey
+  FOREIGN KEY (statement_id) REFERENCES public.finance_statements(id) ON DELETE SET NULL;
+
 -- ---------------------------------------------------------------------------
 -- Bucket dos arquivos de extrato. PRIVADO desde a origem (nunca foi public):
 -- extrato bancario e' o dado mais sensivel do app. A leitura sai por signed URL

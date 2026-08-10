@@ -38,6 +38,27 @@ function removeNodeFromTree(list: Page[], id: string): Page[] {
     .map(p => (p.children?.length ? { ...p, children: removeNodeFromTree(p.children, id) } : p))
 }
 
+// Inserts newNode under parentId at any depth. Falls back to inserting as a
+// root when parentId is absent or not found in this tree (mirrors what a
+// full refetch would do when the parent isn't part of the caller's own tree).
+function addNodeToTree(list: Page[], parentId: string | null | undefined, newNode: Page): { tree: Page[]; inserted: boolean } {
+  if (!parentId) return { tree: [...list, newNode], inserted: true }
+  let inserted = false
+  const tree = list.map(p => {
+    if (inserted) return p
+    if (p.id === parentId) {
+      inserted = true
+      return { ...p, children: [...(p.children ?? []), newNode] }
+    }
+    if (p.children?.length) {
+      const res = addNodeToTree(p.children, parentId, newNode)
+      if (res.inserted) { inserted = true; return { ...p, children: res.tree } }
+    }
+    return p
+  })
+  return { tree, inserted }
+}
+
 function buildTree(flat: Page[]): Page[] {
   const map: Record<string, Page> = {}
   const roots: Page[] = []
@@ -60,6 +81,10 @@ export function PagesProvider({ children }: { children: ReactNode }) {
   const [activePage, setActivePageRaw] = useState<Page | null>(null)
   const [activePanel, setActivePanelRaw] = useState<ActivePanel | null>(null)
   const restoredRef = useRef(false)
+  // Only the very first load per session shows the loading state — subsequent
+  // refreshes (create/update/realtime) update the tree silently.
+  const hasLoadedOnceRef = useRef(false)
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const ACTIVE_PAGE_KEY = 'excalinotion_active_page_id'
   const ACTIVE_PANEL_KEY = 'excalinotion_active_panel'
@@ -87,8 +112,8 @@ export function PagesProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refreshPages = useCallback(async () => {
-    if (!user) { setPages([]); setSharedPages([]); setLoading(false); return }
-    setLoading(true)
+    if (!user) { setPages([]); setSharedPages([]); setLoading(false); hasLoadedOnceRef.current = false; return }
+    if (!hasLoadedOnceRef.current) setLoading(true)
 
     const [{ data: ownData, error: ownError }, { data: shareData, error: shareError }] = await Promise.all([
       supabase.from('pages').select('*').eq('user_id', user.id).order('sort_order', { ascending: true }),
@@ -160,9 +185,34 @@ export function PagesProvider({ children }: { children: ReactNode }) {
 
     setSharedPages(sharedTrees)
     setLoading(false)
+    hasLoadedOnceRef.current = true
   }, [user])
 
   useEffect(() => { refreshPages() }, [refreshPages])
+
+  // Keeps the tree in sync when a collaborator creates/renames a page we can
+  // see (RLS on `pages_select` already scopes which rows reach this client).
+  // DELETE is intentionally not subscribed: Postgres Changes DELETE events
+  // bypass row-level RLS filtering and can't be filtered by column, so every
+  // subscriber would receive every deleted page's id across all users. Our
+  // own deletes already update locally in `deletePage`; a collaborator's
+  // delete is picked up on the next natural refresh instead.
+  useEffect(() => {
+    if (!user) return
+    const scheduleRefresh = () => {
+      if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current)
+      realtimeDebounceRef.current = setTimeout(() => { refreshPages() }, 400)
+    }
+    const channel = supabase
+      .channel('pages_realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pages' }, scheduleRefresh)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pages' }, scheduleRefresh)
+      .subscribe()
+    return () => {
+      if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current)
+      supabase.removeChannel(channel)
+    }
+  }, [user, refreshPages])
 
   useEffect(() => {
     if (!loading && !restoredRef.current) {
@@ -233,9 +283,13 @@ export function PagesProvider({ children }: { children: ReactNode }) {
     if (data.type === 'drawing' || data.type === 'both') {
       await supabase.from('drawing_contents').insert({ page_id: data.id, elements: [], app_state: {}, files: {} })
     }
-    await refreshPages()
-    return data as Page
-  }, [user, refreshPages])
+    const newPage: Page = { ...(data as Page), children: [] }
+    setPages(prev => {
+      const { tree, inserted } = addNodeToTree(prev, opts?.parent_id, newPage)
+      return inserted ? tree : [...prev, newPage]
+    })
+    return newPage
+  }, [user])
 
   const updatePage = useCallback(async (id: string, updates: Partial<Page>) => {
     await supabase.from('pages').update(updates).eq('id', id)

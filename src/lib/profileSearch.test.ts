@@ -6,13 +6,16 @@ describe('sanitizeIlikeTerm', () => {
     expect(sanitizeIlikeTerm('john')).toBe('john')
     expect(sanitizeIlikeTerm('  Maria Silva  ')).toBe('Maria Silva')
     expect(sanitizeIlikeTerm('a@b.com')).toBe('a@b.com')
-    expect(sanitizeIlikeTerm('jean-luc_x')).toBe('jean-luc_x')
+    expect(sanitizeIlikeTerm('jean-luc.x')).toBe('jean-luc.x')
   })
 
   it('strips ilike wildcards and the OR-filter meta-characters', () => {
     expect(sanitizeIlikeTerm('%')).toBe('')
+    expect(sanitizeIlikeTerm('_')).toBe('')
     expect(sanitizeIlikeTerm('a,b')).toBe('ab')
     expect(sanitizeIlikeTerm('a*b\\c:d"e')).toBe('abcde')
+    // `_` is a single-character ilike wildcard just like `%` — must not survive.
+    expect(sanitizeIlikeTerm('jean-luc_x')).toBe('jean-lucx')
   })
 
   it('neutralizes an OR-filter injection payload', () => {

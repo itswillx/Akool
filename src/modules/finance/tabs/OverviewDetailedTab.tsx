@@ -9,6 +9,7 @@ import { formatBRL } from '../../../lib/money'
 import {
   accountBalance, budgetStatus, monthTotals, monthlySeries, monthsOfYear,
   pendingRecurringTotal, savingsRate, topCategories, totalsByCategory, transactionsInMonth,
+  type FinanceTxAgg,
 } from '../../../lib/financeCalc'
 import { Donut, DualAreaTrend } from '../../../components/Charts'
 import { useAuth } from '../../../contexts/AuthContext'
@@ -32,6 +33,7 @@ const fmt = formatBRL
 
 interface Props {
   transactions: FinanceTransaction[]
+  transactionsAgg: FinanceTxAgg[]
   categories: FinanceCategory[]
   accounts: FinanceAccount[]
   budgets: FinanceBudget[]
@@ -46,7 +48,7 @@ interface Props {
 }
 
 export default function OverviewDetailedTab({
-  transactions, categories, accounts, budgets, goals, contributions,
+  transactions, transactionsAgg, categories, accounts, budgets, goals, contributions,
   recurring, recurringEntries, month, onNavigate, workspaceName, onOpenWorkspaceView,
 }: Props) {
   const { t, lang } = useLanguage()
@@ -68,8 +70,8 @@ export default function OverviewDetailedTab({
   )
 
   const balances = useMemo(
-    () => accounts.map(acc => ({ acc, balance: accountBalance(acc, transactions) })),
-    [accounts, transactions],
+    () => accounts.map(acc => ({ acc, balance: accountBalance(acc, transactionsAgg) })),
+    [accounts, transactionsAgg],
   )
   const netWorth = balances.reduce((s, b) => s + b.balance, 0)
   const sumOf = (types: FinanceAccount['type'][]) =>
@@ -96,7 +98,7 @@ export default function OverviewDetailedTab({
 
   const year = Number(month.slice(0, 4))
   const months12 = useMemo(() => monthsOfYear(year), [year])
-  const annual = useMemo(() => monthlySeries(transactions, months12), [transactions, months12])
+  const annual = useMemo(() => monthlySeries(transactionsAgg, months12), [transactionsAgg, months12])
   const monthLabels = useMemo(
     () => months12.map(m => new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1)
       .toLocaleDateString(locale, { month: 'short' }).replace('.', '')),

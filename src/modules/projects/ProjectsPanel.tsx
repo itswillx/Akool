@@ -19,6 +19,7 @@ import { sanitizeIlikeTerm } from '../../lib/profileSearch'
 import { resolveSignedUrl } from '../../lib/storageUrl'
 import { SignedImage } from '../../components/SignedImage'
 import { useAuth } from '../../contexts/AuthContext'
+import { useToast } from '../../contexts/ToastContext'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { usePages } from '../../contexts/PagesContext'
 import { useIsMobile } from '../../hooks/useIsMobile'
@@ -34,6 +35,7 @@ import { RichTextEditor } from '../../components/RichTextEditor'
 import { normalizeLinkUrl, linkDisplay } from '../../lib/cardLinks'
 import { Donut, Legend, SegmentedBar, AreaTrend, type ChartDatum } from '../../components/Charts'
 import { overviewSummary, countByColumnId, countByPriority, countByAssignee, dueBuckets, createdPerWeek, PRIORITY_ORDER } from '../../lib/projectStats'
+import { buildAutoSchedule } from '../../lib/autoSchedule'
 import {
   type ProjectCardFilters,
   filterProjectCards,
@@ -475,6 +477,7 @@ function PagePicker({ value, onChange }: { value: string | null; onChange: (id: 
 
 interface CardForm {
   title: string; description: string; priority: ProjectCardPriority; start_date: string; due_date: string;
+  estimated_days: number;
   assignee_user_id: string | null; labels: string[]; linked_page_id: string | null;
   parent_card_id: string | null; depends_on: string[];
   completed: boolean; checklist: ProjectCardChecklistItem[]; attachments: ProjectCardAttachment[]; links: ProjectCardLink[];
@@ -1023,7 +1026,8 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
     }
     return {
       title: card?.title ?? '', description: card?.description ?? '', priority: card?.priority ?? 'medium',
-      start_date: card?.start_date ?? '', due_date: card?.due_date ?? '', assignee_user_id: card?.assignee_user_id ?? null,
+      start_date: card?.start_date ?? '', due_date: card?.due_date ?? '', estimated_days: card?.estimated_days ?? 1,
+      assignee_user_id: card?.assignee_user_id ?? null,
       labels: card?.labels ?? [], linked_page_id: card?.linked_page_id ?? null,
       parent_card_id: card?.parent_card_id ?? null, depends_on: card?.depends_on ?? [], completed: card?.completed ?? false,
       checklist: card?.checklist ?? [], attachments: card?.attachments ?? [], links: card?.links ?? [],
@@ -1200,6 +1204,18 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
         <div style={{ flex: 1 }}>
           <label style={labelStyle}>{t('projects_due_date')}</label>
           <input disabled={!canEdit} type="date" min={form.start_date || undefined} value={form.due_date} onChange={e => patchForm(f => ({ ...f, due_date: e.target.value }))} style={inputStyle} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle}>{t('projects_estimated_days')}</label>
+          <input
+            disabled={!canEdit}
+            type="number"
+            min={1}
+            step={1}
+            value={form.estimated_days}
+            onChange={e => patchForm(f => ({ ...f, estimated_days: Math.max(1, Number(e.target.value) || 1) }), true)}
+            style={inputStyle}
+          />
         </div>
       </div>
       <div>
@@ -1955,6 +1971,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
 }) {
   const { user } = useAuth()
   const { t } = useLanguage()
+  const { showToast } = useToast()
   const { pages, sharedPages, setActivePage } = usePages()
 
   const [boards, setBoards] = useState<ProjectBoard[]>([])
@@ -2225,6 +2242,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
       const colId = cardModal.columnId ?? columns[0]?.id
       if (!colId) {
         setCardSaveStatus('error')
+        showToast('error', t('projects_autosave_error'), { dedupeKey: 'card-autosave-error' })
         return null
       }
       const order = (cardsByColumn[colId]?.length ?? 0)
@@ -2237,6 +2255,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
         priority: formSnapshot.priority,
         start_date: formSnapshot.start_date || null,
         due_date: formSnapshot.due_date || null,
+        estimated_days: formSnapshot.estimated_days,
         assignee_user_id: formSnapshot.assignee_user_id,
         labels: formSnapshot.labels,
         linked_page_id: formSnapshot.linked_page_id,
@@ -2255,6 +2274,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
         .single()
       if (error || !inserted) {
         setCardSaveStatus('error')
+        showToast('error', t('projects_autosave_error'), { dedupeKey: 'card-autosave-error' })
         return null
       }
       cardId = inserted.id
@@ -2278,6 +2298,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
 
     if (!cardId) {
       setCardSaveStatus('error')
+      showToast('error', t('projects_autosave_error'), { dedupeKey: 'card-autosave-error' })
       return null
     }
 
@@ -2288,6 +2309,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
     } catch {
       setCardSaveErrorKind('upload')
       setCardSaveStatus('error')
+      showToast('error', t('projects_attachments_upload_error'), { dedupeKey: 'card-autosave-error' })
       return null
     }
 
@@ -2297,6 +2319,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
       priority: formSnapshot.priority,
       start_date: formSnapshot.start_date || null,
       due_date: formSnapshot.due_date || null,
+      estimated_days: formSnapshot.estimated_days,
       assignee_user_id: formSnapshot.assignee_user_id,
       labels: formSnapshot.labels,
       linked_page_id: formSnapshot.linked_page_id,
@@ -2312,6 +2335,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
     const { error } = await supabase.from('project_cards').update(payload).eq('id', cardId)
     if (error) {
       setCardSaveStatus('error')
+      showToast('error', t('projects_autosave_error'), { dedupeKey: 'card-autosave-error' })
       return null
     }
 
@@ -2330,7 +2354,8 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
     const updatedAt = new Date().toISOString()
     const basePayload = {
       title: f.title.trim(), description: f.description, priority: f.priority,
-      start_date: f.start_date || null, due_date: f.due_date || null, assignee_user_id: f.assignee_user_id, labels: f.labels,
+      start_date: f.start_date || null, due_date: f.due_date || null, estimated_days: f.estimated_days,
+      assignee_user_id: f.assignee_user_id, labels: f.labels,
       linked_page_id: f.linked_page_id, parent_card_id: f.parent_card_id, depends_on: f.depends_on,
       completed: f.completed, checklist: f.checklist, links: f.links,
     }
@@ -2348,6 +2373,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
         .single()
       if (error || !inserted) {
         setCardSaveStatus('error')
+        showToast('error', t('projects_autosave_error'))
         return
       }
       cardId = inserted.id
@@ -2355,6 +2381,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
 
     if (!cardId) {
       setCardSaveStatus('error')
+      showToast('error', t('projects_autosave_error'))
       return
     }
 
@@ -2364,12 +2391,14 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
     } catch {
       setCardSaveErrorKind('upload')
       setCardSaveStatus('error')
+      showToast('error', t('projects_attachments_upload_error'))
       return
     }
 
     const { error } = await supabase.from('project_cards').update({ ...basePayload, attachments, updated_at: updatedAt }).eq('id', cardId)
     if (error) {
       setCardSaveStatus('error')
+      showToast('error', t('projects_autosave_error'))
       return
     }
 
@@ -2415,6 +2444,33 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
       setPersistError(t('projects_persist_error'))
       await loadBoardData(activeBoardId, { silent: true })
     }
+  }
+
+  // NOTE: must schedule from the board's full `cards`/`columns` state, never
+  // `filteredCards` (what GanttView renders) — an active filter would silently
+  // break priority chains or skip cards from the schedule.
+  const handleGenerateSchedule = async (
+    targetDeadline: string | null,
+  ): Promise<{ scheduled: number; overflowDays: number } | null> => {
+    if (!activeBoardId) return null
+    const { patches, overflowDays } = buildAutoSchedule(cards, columns, undefined, targetDeadline ?? undefined)
+    if (patches.length === 0) return { scheduled: 0, overflowDays }
+    const updated_at = new Date().toISOString()
+    const results = await Promise.all(
+      patches.map(p => supabase.from('project_cards')
+        .update({ start_date: p.start_date, due_date: p.due_date, depends_on: p.depends_on, updated_at })
+        .eq('id', p.cardId)),
+    )
+    if (results.some(r => r.error)) {
+      setPersistError(t('projects_persist_error'))
+      await loadBoardData(activeBoardId, { silent: true })
+      return null
+    }
+    setCards(prev => prev.map(c => {
+      const patch = patches.find(p => p.cardId === c.id)
+      return patch ? { ...c, ...patch, updated_at } : c
+    }))
+    return { scheduled: patches.length, overflowDays }
   }
 
   // ── Drag & drop ──
@@ -2725,6 +2781,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
             onCardClick={(c) => setCardModal({ open: true, card: c })}
             onAddCard={(columnId) => setCardModal({ open: true, card: null, columnId })}
             onCardReschedule={canEdit ? handleRescheduleCard : undefined}
+            onGenerateSchedule={canEdit ? handleGenerateSchedule : undefined}
           />
         ) : view === 'list' ? (
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>

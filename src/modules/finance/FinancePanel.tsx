@@ -6,8 +6,10 @@ import { toCents, fromCents, formatBRL } from '../../lib/money'
 import { resolveSignedUrl } from '../../lib/storageUrl'
 import { sanitizeIlikeTerm } from '../../lib/profileSearch'
 import { downloadTransactionsCsv } from '../../lib/financeCsv'
-import { accountBalance, missingAutoBudgets } from '../../lib/financeCalc'
+import { accountBalance, missingAutoBudgets, type FinanceTxAgg } from '../../lib/financeCalc'
+import { lastNMonths } from '../../lib/financeGraph'
 import { useAuth } from '../../contexts/AuthContext'
+import { useToast } from '../../contexts/ToastContext'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { UserAvatar } from '../../components/UserAvatar'
@@ -155,6 +157,26 @@ async function ensureRecurringEntries(
   return toInsert.length
 }
 
+// ─── On-demand full-history fetch ──────────────────────────────────────────────
+// `useFinanceData` only keeps a month window + a lean aggregate in state now.
+// The handful of consumers that genuinely need full-column, lifetime rows
+// (PDF export; the import modal's duplicate detection and merchant-history
+// category suggestions) fetch it themselves, on demand, instead of paying for
+// it on every page load.
+async function fetchFullHistoryTx(userId: string, wsId: string | null) {
+  const [ownRes, wsRes] = await Promise.all([
+    supabase.from('finance_transactions').select('*').eq('user_id', userId)
+      .order('date', { ascending: false }).order('created_at', { ascending: false }),
+    wsId
+      ? supabase.from('finance_transactions').select('*').eq('workspace_id', wsId)
+          .order('date', { ascending: false }).order('created_at', { ascending: false })
+      : Promise.resolve({ data: [] as FinanceTransaction[] }),
+  ])
+  const own = (ownRes.data as FinanceTransaction[]) ?? []
+  const workspaceOthers = ((wsRes.data as FinanceTransaction[]) ?? []).filter(tx => tx.user_id !== userId)
+  return { own, workspaceOthers }
+}
+
 // ─── Partner profile type ─────────────────────────────────────────────────────
 
 interface PartnerProfile {
@@ -165,6 +187,8 @@ interface PartnerProfile {
   avatar_color?: string | null
   avatar_url?: string | null
 }
+
+const AGG_COLUMNS = 'id, user_id, account_id, category_id, type, amount, date, workspace_id'
 
 // ─── Data hook ────────────────────────────────────────────────────────────────
 
@@ -191,6 +215,14 @@ function useFinanceData() {
   const [familyBudgets, setFamilyBudgets] = useState<FinanceBudget[]>([])
   const [familyAccounts, setFamilyAccounts] = useState<FinanceAccount[]>([])
   const [familyCategories, setFamilyCategories] = useState<FinanceCategory[]>([])
+  // Lean, all-time projections (no description/photo_url) backing consumers
+  // that need lifetime history — account balances, category counts/in-use,
+  // monthly evolution charts — while `transactions`/`sharedTransactions`/
+  // `familyTransactions` above hold only the currently loaded month window.
+  const [txAggOwn, setTxAggOwn] = useState<FinanceTxAgg[]>([])
+  const [txAggShared, setTxAggShared] = useState<FinanceTxAgg[]>([])
+  const [txAggWorkspace, setTxAggWorkspace] = useState<FinanceTxAgg[]>([])
+  const [loadedRange, setLoadedRangeState] = useState<{ min: string; max: string } | null>(null)
   const [loading, setLoading] = useState(true)
 
   // Keyed by the fields actually read, not by the `user` object: supabase-js
@@ -201,6 +233,60 @@ function useFinanceData() {
   const userId = user?.id
   const userEmail = user?.email
 
+  // Mirrors `loadedRange` synchronously: `load`/`ensureMonthLoaded` need the
+  // current window at call time, but including the state value in their own
+  // useCallback deps would change their identity (and retrigger effects)
+  // every time the window changes. The ref sidesteps that without going stale.
+  const loadedRangeRef = useRef<{ min: string; max: string } | null>(null)
+  const setLoadedRange = useCallback((r: { min: string; max: string }) => {
+    loadedRangeRef.current = r
+    setLoadedRangeState(r)
+  }, [])
+
+  // One round trip per scope (own/shared/workspace), date-bounded — backs the
+  // month-window consumers (Transactions tab, Overview's current/previous
+  // month, Budgets).
+  const fetchTxWindow = useCallback(async (minYM: string, maxYM: string, wsId: string | null) => {
+    const startDate = `${minYM}-01`
+    const endDate = `${nextMonth(maxYM)}-01`
+    const [ownRes, sharedRes, wsRes] = await Promise.all([
+      supabase.from('finance_transactions').select('*').eq('user_id', userId)
+        .gte('date', startDate).lt('date', endDate)
+        .order('date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('finance_transactions').select('*').eq('shared_with_user_id', userId)
+        .gte('date', startDate).lt('date', endDate)
+        .order('date', { ascending: false }).order('created_at', { ascending: false }),
+      wsId
+        ? supabase.from('finance_transactions').select('*').eq('workspace_id', wsId)
+            .gte('date', startDate).lt('date', endDate)
+            .order('date', { ascending: false }).order('created_at', { ascending: false })
+        : Promise.resolve({ data: [] as FinanceTransaction[] }),
+    ])
+    return {
+      own: (ownRes.data as FinanceTransaction[]) ?? [],
+      shared: (sharedRes.data as FinanceTransaction[]) ?? [],
+      workspace: (wsRes.data as FinanceTransaction[]) ?? [],
+    }
+  }, [userId])
+
+  // Same three scopes, no date bound, minimal columns — backs the all-time
+  // aggregate consumers without paying for `description`/`photo_url` on every
+  // row of a lifetime's worth of transactions.
+  const fetchTxAggregates = useCallback(async (wsId: string | null) => {
+    const [ownRes, sharedRes, wsRes] = await Promise.all([
+      supabase.from('finance_transactions').select(AGG_COLUMNS).eq('user_id', userId),
+      supabase.from('finance_transactions').select(AGG_COLUMNS).eq('shared_with_user_id', userId),
+      wsId
+        ? supabase.from('finance_transactions').select(AGG_COLUMNS).eq('workspace_id', wsId)
+        : Promise.resolve({ data: [] as FinanceTxAgg[] }),
+    ])
+    return {
+      own: (ownRes.data as FinanceTxAgg[]) ?? [],
+      shared: (sharedRes.data as FinanceTxAgg[]) ?? [],
+      workspace: (wsRes.data as FinanceTxAgg[]) ?? [],
+    }
+  }, [userId])
+
   // `silent` refreshes the data without flipping `loading` — flipping it would
   // unmount every tab below (see the userId comment above). Used when another
   // submodule (e.g. the store) writes a transaction and asks for a refresh.
@@ -208,10 +294,24 @@ function useFinanceData() {
     if (!userId) return
     if (!opts?.silent) setLoading(true)
     await supabase.rpc('bootstrap_finance_categories', { p_user_id: userId })
-    const [accs, cats, txs, buds, gls, ctbs, recs, rEnts, ownedShares, incShares, shTxs, shBuds] = await Promise.all([
+
+    // Membership lookup moved ahead of the transaction queries: `wsId` is
+    // needed to scope the windowed/aggregate transaction fetches below.
+    const { data: memberRow } = await supabase
+      .from('finance_workspace_members')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle()
+    const wsId = memberRow ? (memberRow as FinanceWorkspaceMember).workspace_id : null
+
+    // Reuse the already-loaded window on a reload (never shrink it back to
+    // the default ±1 month); only a fresh mount has no window yet.
+    const initialMin = loadedRangeRef.current?.min ?? prevMonth(currentYM())
+    const initialMax = loadedRangeRef.current?.max ?? nextMonth(currentYM())
+
+    const [accs, cats, buds, gls, ctbs, recs, rEnts, ownedShares, incShares, shBuds, txWindow, txAgg] = await Promise.all([
       supabase.from('finance_accounts').select('*').eq('user_id', userId).order('created_at'),
       supabase.from('finance_categories').select('*').eq('user_id', userId).is('workspace_id', null).order('type').order('name'),
-      supabase.from('finance_transactions').select('*').eq('user_id', userId).order('date', { ascending: false }).order('created_at', { ascending: false }),
       supabase.from('finance_budgets').select('*').eq('user_id', userId),
       supabase.from('finance_goals').select('*').order('deadline'),
       supabase.from('finance_goal_contributions').select('*').order('date', { ascending: false }),
@@ -219,33 +319,25 @@ function useFinanceData() {
       supabase.from('finance_recurring_entries').select('*').eq('user_id', userId).order('due_date'),
       supabase.from('finance_goal_shares').select('*').eq('owner_id', userId),
       supabase.from('finance_goal_shares').select('*').eq('shared_with_user_id', userId),
-      supabase.from('finance_transactions').select('*').eq('shared_with_user_id', userId).order('date', { ascending: false }).order('created_at', { ascending: false }),
       supabase.from('finance_budgets').select('*').eq('shared_with_user_id', userId),
+      fetchTxWindow(initialMin, initialMax, wsId),
+      fetchTxAggregates(wsId),
     ])
 
     // Load workspace data
-    const { data: memberRow } = await supabase
-      .from('finance_workspace_members')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle()
-
     let ws: FinanceWorkspace | null = null
     let wsMembers: FinanceWorkspaceMember[] = []
     let wsInvites: FinanceWorkspaceInvite[] = []
-    let wsTxs: FinanceTransaction[] = []
     let wsBuds: FinanceBudget[] = []
     let wsAccs: FinanceAccount[] = []
     let wsCats: FinanceCategory[] = []
 
-    if (memberRow) {
-      const wsId = (memberRow as FinanceWorkspaceMember).workspace_id
+    if (wsId) {
       await supabase.rpc('bootstrap_workspace_categories', { p_workspace_id: wsId })
-      const [wsRes, membersRes, invitesRes, wsTxsRes, wsBudsRes, wsAccsRes, wsCatsRes] = await Promise.all([
+      const [wsRes, membersRes, invitesRes, wsBudsRes, wsAccsRes, wsCatsRes] = await Promise.all([
         supabase.from('finance_workspaces').select('*').eq('id', wsId).single(),
         supabase.from('finance_workspace_members').select('*').eq('workspace_id', wsId),
         supabase.from('finance_workspace_invites').select('*').eq('workspace_id', wsId).order('created_at', { ascending: false }),
-        supabase.from('finance_transactions').select('*').not('workspace_id', 'is', null).eq('workspace_id', wsId).order('date', { ascending: false }).order('created_at', { ascending: false }),
         supabase.from('finance_budgets').select('*').not('workspace_id', 'is', null).eq('workspace_id', wsId),
         supabase.from('finance_accounts').select('*').not('workspace_id', 'is', null).eq('workspace_id', wsId).order('created_at'),
         supabase.from('finance_categories').select('*').not('workspace_id', 'is', null).eq('workspace_id', wsId).order('type').order('name'),
@@ -253,28 +345,34 @@ function useFinanceData() {
       ws = (wsRes.data as FinanceWorkspace) ?? null
       wsMembers = (membersRes.data as FinanceWorkspaceMember[]) ?? []
       wsInvites = (invitesRes.data as FinanceWorkspaceInvite[]) ?? []
-      wsTxs = (wsTxsRes.data as FinanceTransaction[]) ?? []
       wsBuds = (wsBudsRes.data as FinanceBudget[]) ?? []
       wsAccs = (wsAccsRes.data as FinanceAccount[]) ?? []
       wsCats = (wsCatsRes.data as FinanceCategory[]) ?? []
     }
 
-    // Load pending invites for current user (even if not in a workspace yet)
-    const { data: myPendingInvites } = await supabase
-      .from('finance_workspace_invites')
-      .select('*')
-      .eq('status', 'pending')
-      .or(`invited_user_id.eq.${userId},invited_email.eq.${userEmail}`)
+    // Load pending invites for current user (even if not in a workspace yet).
+    // Two parameterized queries merged client-side instead of a single
+    // interpolated `.or()` string — avoids concatenating userId/userEmail
+    // into a PostgREST filter expression entirely.
+    const [byUserRes, byEmailRes] = await Promise.all([
+      supabase.from('finance_workspace_invites').select('*').eq('status', 'pending').eq('invited_user_id', userId),
+      supabase.from('finance_workspace_invites').select('*').eq('status', 'pending').eq('invited_email', userEmail),
+    ])
+    const seenInviteIds = new Set<string>()
+    const myPendingInvites = [...(byUserRes.data ?? []), ...(byEmailRes.data ?? [])]
+      .filter(inv => (seenInviteIds.has(inv.id) ? false : (seenInviteIds.add(inv.id), true)))
 
-    // Collect all partner IDs (include workspace members)
+    // Collect all partner IDs (include workspace members). Uses the all-time
+    // aggregate sets (not the month window) so a partner whose only shared/
+    // workspace transaction falls outside the loaded window still resolves.
     const partnerIdSet = new Set<string>()
     ;(ownedShares.data ?? []).forEach((s: Record<string, string>) => partnerIdSet.add(s.shared_with_user_id))
     ;(incShares.data ?? []).forEach((s: Record<string, string>) => partnerIdSet.add(s.owner_id))
     ;(ctbs.data ?? []).forEach((c: Record<string, string>) => { if (c.user_id !== userId) partnerIdSet.add(c.user_id) })
-    ;(shTxs.data ?? []).forEach((tx: Record<string, string>) => partnerIdSet.add(tx.user_id))
+    txAgg.shared.forEach(tx => partnerIdSet.add(tx.user_id))
     ;(shBuds.data ?? []).forEach((b: Record<string, string>) => partnerIdSet.add(b.user_id))
     wsMembers.forEach(m => { if (m.user_id !== userId) partnerIdSet.add(m.user_id) })
-    wsTxs.forEach(tx => { if (tx.user_id !== userId) partnerIdSet.add(tx.user_id) })
+    txAgg.workspace.forEach(tx => { if (tx.user_id !== userId) partnerIdSet.add(tx.user_id) })
     wsInvites.forEach(inv => { if (inv.invited_by !== userId) partnerIdSet.add(inv.invited_by) })
     partnerIdSet.delete(userId)
 
@@ -286,7 +384,6 @@ function useFinanceData() {
 
     setAccounts((accs.data as FinanceAccount[]) ?? [])
     setCategories((cats.data as FinanceCategory[]) ?? [])
-    setTransactions((txs.data as FinanceTransaction[]) ?? [])
     setBudgets((buds.data as FinanceBudget[]) ?? [])
     setGoals((gls.data as FinanceGoal[]) ?? [])
     setContributions(
@@ -300,15 +397,21 @@ function useFinanceData() {
       )
     )
     setIncomingGoalShares((incShares.data as FinanceGoalShare[]) ?? [])
-    setSharedTransactions((shTxs.data as FinanceTransaction[]) ?? [])
     setSharedBudgets((shBuds.data as FinanceBudget[]) ?? [])
     setPartnerProfiles([...profilesMap.values()])
+
+    setTransactions(txWindow.own)
+    setSharedTransactions(txWindow.shared)
+    setFamilyTransactions(txWindow.workspace)
+    setTxAggOwn(txAgg.own)
+    setTxAggShared(txAgg.shared)
+    setTxAggWorkspace(txAgg.workspace)
+    setLoadedRange({ min: initialMin, max: initialMax })
 
     setWorkspace(ws)
     setWorkspaceMembers(wsMembers.map(m => ({ ...m, profile: m.user_id === userId ? { email: userEmail ?? '', display_name: null } : (profilesMap.get(m.user_id) ?? undefined) })))
     setWorkspaceInvites(wsInvites.map(inv => ({ ...inv, inviter_profile: profilesMap.get(inv.invited_by) ?? undefined })))
     setPendingInvitesForMe((myPendingInvites as FinanceWorkspaceInvite[]) ?? [])
-    setFamilyTransactions(wsTxs)
     setFamilyBudgets(wsBuds)
     setFamilyAccounts(wsAccs)
     setFamilyCategories(wsCats)
@@ -325,11 +428,36 @@ function useFinanceData() {
     }
     setRecurringEntries(entries)
     setLoading(false)
-  }, [userId, userEmail])
+  }, [userId, userEmail, fetchTxWindow, fetchTxAggregates, setLoadedRange])
 
   useEffect(() => { load() }, [load])
 
-  return { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, loading, reload: load }
+  // Extends the loaded window (never shrinks it) to cover `ym`, fetching only
+  // when it isn't already covered. `workspace` (not a raw wsId) is a dep since
+  // that's the only place the current workspace id is tracked between loads.
+  const ensureMonthLoaded = useCallback(async (ym: string) => {
+    const current = loadedRangeRef.current
+    if (current && ym >= current.min && ym <= current.max) return
+    const newMin = current && current.min < ym ? current.min : ym
+    const newMax = current && current.max > ym ? current.max : ym
+    const win = await fetchTxWindow(newMin, newMax, workspace?.id ?? null)
+    setTransactions(win.own)
+    setSharedTransactions(win.shared)
+    setFamilyTransactions(win.workspace)
+    setLoadedRange({ min: newMin, max: newMax })
+  }, [workspace, fetchTxWindow, setLoadedRange])
+
+  // Extends the window to cover every month in the list in one shot (used by
+  // the Network tab's up-to-12-month need) — extending to the min and max is
+  // enough since the range fetched is always contiguous.
+  const ensureMonthsLoaded = useCallback(async (months: string[]) => {
+    if (months.length === 0) return
+    const sorted = [...months].sort()
+    await ensureMonthLoaded(sorted[0])
+    await ensureMonthLoaded(sorted[sorted.length - 1])
+  }, [ensureMonthLoaded])
+
+  return { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, txAggOwn, txAggShared, txAggWorkspace, loadedRange, loading, reload: load, ensureMonthLoaded, ensureMonthsLoaded }
 }
 
 // ─── Transaction Modal ────────────────────────────────────────────────────────
@@ -1179,8 +1307,9 @@ function BudgetModal({
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ transactions, categories, month, recurring, recurringEntries, accounts, budgets, goals, contributions, onMarkPaid, onSkipEntry, onNavigate, workspaceName, onOpenWorkspaceView }: {
+function OverviewTab({ transactions, transactionsAgg, categories, month, recurring, recurringEntries, accounts, budgets, goals, contributions, onMarkPaid, onSkipEntry, onNavigate, workspaceName, onOpenWorkspaceView }: {
   transactions: FinanceTransaction[]
+  transactionsAgg: FinanceTxAgg[]
   categories: FinanceCategory[]
   month: string
   recurring: FinanceRecurring[]
@@ -1228,10 +1357,11 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
   })
   const donutGradient = donutTotal > 0 ? `conic-gradient(${donutStops.join(',')})` : 'var(--color-border)'
 
-  // Last 6 months evolution
+  // Last 6 months evolution — from the all-time aggregate set: the 6-month
+  // window can reach outside the currently loaded month window.
   const months6 = last6Months(month)
   const monthStats = months6.map(m => {
-    const mTxs = transactions.filter(tx => tx.date.startsWith(m))
+    const mTxs = transactionsAgg.filter(tx => tx.date.startsWith(m))
     return {
       month: m,
       label: new Date(parseInt(m.split('-')[0]), parseInt(m.split('-')[1]) - 1, 1)
@@ -1258,9 +1388,10 @@ function OverviewTab({ transactions, categories, month, recurring, recurringEntr
 
   // ─── Sector mini-summaries ──────────────────────────────────────────────────
   // Via the shared helper rather than inline arithmetic: três cópias da fórmula
-  // foi como a sidebar e o dashboard acabaram discordando do banco.
+  // foi como a sidebar e o dashboard acabaram discordando do banco. All-time,
+  // so it reads the aggregate set rather than the month-windowed one.
   const accountsBalance = accounts.reduce(
-    (sum, acc) => sum + accountBalance(acc, transactions), 0)
+    (sum, acc) => sum + accountBalance(acc, transactionsAgg), 0)
 
   const activeGoals = goals.filter(g => g.status === 'active')
   const goalsTarget = activeGoals.reduce((s, g) => s + g.target_amount, 0)
@@ -1511,6 +1642,7 @@ function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, a
   onImport: () => void
 }) {
   const { t } = useLanguage()
+  const { showToast } = useToast()
   const isMobile = useFinanceMobile()
   const [filterType, setFilterType] = useState<'all' | FinanceTxType>('all')
   const [filterCat, setFilterCat] = useState('')
@@ -1552,6 +1684,9 @@ function TransactionsTab({ transactions, partnerTransactions, partnerProfiles, a
       })
       setQaDesc('')
       setQaAmount('')
+    } catch (err) {
+      console.error('quickAddTx failed:', err)
+      showToast('error', t('finance_quickadd_error'))
     } finally {
       setQaSaving(false)
     }
@@ -1899,7 +2034,7 @@ function BudgetsTab({ budgets, sharedBudgets, transactions, partnerTransactions,
 
 function AccountsTab({ accounts, transactions, onAdd, onEdit }: {
   accounts: FinanceAccount[]
-  transactions: FinanceTransaction[]
+  transactions: FinanceTxAgg[]
   onAdd: () => void
   onEdit: (acc: FinanceAccount) => void
 }) {
@@ -1974,7 +2109,7 @@ function CategoryModal({
   category, transactions, workspace, userId, onClose, onSave, onDelete,
 }: {
   category?: FinanceCategory
-  transactions: FinanceTransaction[]
+  transactions: FinanceTxAgg[]
   workspace?: FinanceWorkspace | null
   userId: string
   onClose: () => void
@@ -2082,7 +2217,7 @@ function CategoryModal({
 
 function CategoriesTab({ categories, transactions, onAdd, onEdit }: {
   categories: FinanceCategory[]
-  transactions: FinanceTransaction[]
+  transactions: FinanceTxAgg[]
   onAdd: () => void
   onEdit: (c: FinanceCategory) => void
 }) {
@@ -3552,9 +3687,19 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   const { t } = useLanguage()
   const isMobileHook = useIsMobile()
   const isMobile = isMobileProp ?? isMobileHook
-  const { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, loading, reload } = useFinanceData()
+  const { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, txAggOwn, txAggWorkspace, loading, reload, ensureMonthLoaded, ensureMonthsLoaded } = useFinanceData()
 
   const [month, setMonth] = useState(currentYM())
+
+  // Keeps the loaded transaction window centered on whatever month is being
+  // viewed, fetching the extra month(s) on demand when the user navigates past
+  // the currently loaded range. Gated on `!loading`: on first mount the hook's
+  // own initial load already covers `month` (±1), and firing this before that
+  // resolves would race it with a narrower single-month fetch.
+  useEffect(() => {
+    if (!loading) ensureMonthLoaded(month)
+  }, [month, loading, ensureMonthLoaded])
+
   const [exporting, setExporting] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [wsModalOpen, setWsModalOpen] = useState(false)
@@ -3563,6 +3708,13 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   const [tab, setTab] = useState<TabId>(
     () => resolveTabRequest(localStorage.getItem('finance_active_tab'))?.tab ?? 'overview',
   )
+
+  // The Rede tab has its own 1/3/6/12-month filter anchored at today, independent
+  // of `month` — make sure the window covers the widest of those (12 months)
+  // before/while the tab is open.
+  useEffect(() => {
+    if (tab === 'network' && !loading) ensureMonthsLoaded(lastNMonths(currentYM(), 12))
+  }, [tab, loading, ensureMonthsLoaded])
   // A sub-aba vive AQUI, e não dentro do MyProjectsTab: um atalho do Resumo
   // precisa poder mandar "vá para a Loja" mesmo com a aba já montada — se o
   // estado morasse lá dentro, a navegação viraria um no-op silencioso.
@@ -3646,14 +3798,14 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
 
   // Tabs are always personal now; workspace rows appear where they belong:
   // the user's own shared rows inline (with a badge) and everyone's in the
-  // Coworkspace overview. These merged sets exist only to RESOLVE names of
+  // Coworkspace overview. This merged set exists only to RESOLVE names of
   // workspace categories/accounts referenced by the user's own shared rows
-  // (own tx can point at a workspace category the personal list lacks) and to
-  // let CategoryModal's "in use" check see other members' usage.
+  // (own tx can point at a workspace category the personal list lacks).
   const ownWsCategories = familyCategories.filter(c => c.user_id === user?.id)
   const resolveCategories = [...categories, ...familyCategories]
-  const otherMembersTxs = familyTransactions.filter(tx => tx.user_id !== user?.id)
-  const allVisibleTxs = [...transactions, ...otherMembersTxs]
+  // All-time, for CategoryModal's "in use" check — a category can be in use by
+  // a transaction outside the currently loaded month window.
+  const allVisibleTxsAgg = [...txAggOwn, ...txAggWorkspace.filter(tx => tx.user_id !== user?.id)]
 
   // Coworkspace view of the overview tab: session-only, entered via the chip
   // on the personal overviews. Falls back to personal if the workspace goes
@@ -3664,8 +3816,9 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   }, [overviewScope, workspace])
 
   // Total balance across the user's accounts (shown in the Lateral sidebar footer).
+  // All-time, so it reads the lean aggregate set rather than the month window.
   const accountsBalanceTotal = accounts.reduce(
-    (sum, acc) => sum + accountBalance(acc, transactions), 0)
+    (sum, acc) => sum + accountBalance(acc, txAggOwn), 0)
 
   // Modals
   const [txModal, setTxModal] = useState<{ open: boolean; tx?: FinanceTransaction }>({ open: false })
@@ -3678,8 +3831,20 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   const [payModal, setPayModal] = useState<{ open: boolean; entry?: FinanceRecurringEntry; rec?: FinanceRecurring }>({ open: false })
   const [goalShareModal, setGoalShareModal] = useState<{ open: boolean; goal?: FinanceGoal }>({ open: false })
   const [importModal, setImportModal] = useState(false)
+  // Full-column, all-time history for the import modal's duplicate detection
+  // and merchant-history category suggestions (both need `description` and
+  // history beyond the loaded month window) — fetched on demand when the
+  // modal opens rather than kept in the hook's state.
+  const [importHistoryTxs, setImportHistoryTxs] = useState<FinanceTransaction[]>([])
 
   const monthTxs = transactions.filter(tx => tx.date.startsWith(month))
+
+  const openImportModal = async () => {
+    if (!user) return
+    const { own, workspaceOthers } = await fetchFullHistoryTx(user.id, workspace?.id ?? null)
+    setImportHistoryTxs([...own, ...workspaceOthers])
+    setImportModal(true)
+  }
 
   // CRUD helpers
   const saveTx = async (data: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>) => {
@@ -3688,6 +3853,10 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
       ? await supabase.from('finance_transactions').update(data).eq('id', txModal.tx.id)
       : await supabase.from('finance_transactions').insert({ ...data, user_id: user.id })
     if (error) throw error
+    // A create/edit can land outside the currently loaded month window (most
+    // often an edit moving the date) — extend the window first so it doesn't
+    // look like the write silently vanished.
+    await ensureMonthLoaded(data.date.slice(0, 7))
     await reload()
   }
 
@@ -3700,6 +3869,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     if (!user) return
     const { error } = await supabase.from('finance_transactions').insert({ ...data, user_id: user.id })
     if (error) throw error
+    await ensureMonthLoaded(data.date.slice(0, 7))
     await reload()
   }
 
@@ -3714,6 +3884,8 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     if (rows.length === 0) return
     const { error } = await supabase.from('finance_transactions').insert(rows.map(r => ({ ...r, user_id: user.id })))
     if (error) throw error
+    // Statement rows can span arbitrary historical months.
+    await ensureMonthsLoaded(rows.map(r => r.date.slice(0, 7)))
     await reload()
   }
 
@@ -3850,6 +4022,9 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
         await supabase.from('finance_recurring').update({ active: false }).eq('id', rec.id)
       }
     }
+    // Defensive: entries are normally this month/next, already in range, but
+    // a stale overdue entry could be paid from further back.
+    await ensureMonthLoaded(entry.due_date.slice(0, 7))
     await reload()
   }
 
@@ -3954,11 +4129,15 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
           )}
           <button
             onClick={async () => {
-              if (exporting) return
+              if (exporting || !user) return
               setExporting(true)
               try {
+                // Full lifetime history, fetched fresh here rather than kept in
+                // the hook's state — the export has always covered every
+                // transaction the user has, not just the loaded month window.
+                const { own: exportTxs } = await fetchFullHistoryTx(user.id, null)
                 const { exportFinanceToPdf } = await import('../../hooks/usePdfExport')
-                await exportFinanceToPdf({ transactions, accounts, categories, budgets, goals, contributions, recurring, month, userName: profile?.display_name || profile?.email || '' })
+                await exportFinanceToPdf({ transactions: exportTxs, accounts, categories, budgets, goals, contributions, recurring, month, userName: profile?.display_name || profile?.email || '' })
               } catch (err) {
                 console.error('[FinancePDF] export error:', err)
               } finally {
@@ -4003,6 +4182,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                 workspace={workspace}
                 members={workspaceMembers}
                 transactions={familyTransactions}
+                transactionsAgg={txAggWorkspace}
                 budgets={familyBudgets}
                 accounts={familyAccounts}
                 categories={familyCategories}
@@ -4013,6 +4193,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
             ) : (profile?.finance_dashboard_view ?? 'detailed') === 'simple' ? (
               <OverviewTab
                 transactions={transactions}
+                transactionsAgg={txAggOwn}
                 categories={resolveCategories}
                 month={month}
                 recurring={recurring}
@@ -4030,6 +4211,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
             ) : (
               <OverviewDetailedTab
                 transactions={transactions}
+                transactionsAgg={txAggOwn}
                 categories={resolveCategories}
                 accounts={accounts}
                 budgets={budgets}
@@ -4058,7 +4240,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                 onEdit={tx => setTxModal({ open: true, tx })}
                 onQuickAdd={quickAddTx}
                 onBulkDelete={bulkDeleteTx}
-                onImport={() => setImportModal(true)}
+                onImport={openImportModal}
               />
             )}
             {tab === 'budgets' && (
@@ -4078,7 +4260,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
             {tab === 'accounts' && (
               <AccountsTab
                 accounts={accounts}
-                transactions={transactions}
+                transactions={txAggOwn}
                 onAdd={() => setAccModal({ open: true })}
                 onEdit={acc => setAccModal({ open: true, account: acc })}
               />
@@ -4086,7 +4268,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
             {tab === 'categories' && (
               <CategoriesTab
                 categories={[...categories, ...ownWsCategories]}
-                transactions={transactions}
+                transactions={txAggOwn}
                 onAdd={() => setCatModal({ open: true })}
                 onEdit={c => setCatModal({ open: true, category: c })}
               />
@@ -4184,7 +4366,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
       {catModal.open && (
         <CategoryModal
           category={catModal.category}
-          transactions={allVisibleTxs}
+          transactions={allVisibleTxsAgg}
           workspace={workspace}
           userId={user?.id ?? ''}
           onClose={() => setCatModal({ open: false })}
@@ -4217,8 +4399,9 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
             workspace={workspace}
             // Other members' workspace rows count too: without them, member B
             // re-importing the shared statement that A already imported sees no
-            // duplicate at all.
-            existingTransactions={allVisibleTxs}
+            // duplicate at all. Fetched fresh (full column, all-time) when the
+            // modal opens — see openImportModal.
+            existingTransactions={importHistoryTxs}
             onImport={bulkImport}
             onClose={() => setImportModal(false)}
           />
