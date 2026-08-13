@@ -39,7 +39,7 @@ export default function LinkedNotePanel({ pageId }: LinkedNotePanelProps) {
 
     ensureNote()
     return () => { cancelled = true }
-  }, [open, pageId, user])
+  }, [open, pageId, user?.id])
 
   return (
     <>

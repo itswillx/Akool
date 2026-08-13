@@ -150,15 +150,16 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
   }, [notifOpen])
 
   useEffect(() => {
-    if (!user) return
+    const userId = user?.id
+    if (!userId) return
     supabase
-      .from('todos').select('*').eq('user_id', user.id)
+      .from('todos').select('*').eq('user_id', userId)
       .order('completed', { ascending: true })
       .order('due_date', { ascending: true, nullsFirst: false })
       .then(({ data }) => setTodos((data as Todo[]) ?? []))
   // Dashboard remounts when reopened, so fetching once per user is enough;
   // depending on `pages` caused a full todos refetch on every page edit.
-  }, [user])
+  }, [user?.id])
 
   const flat = useMemo(() => flatPages(pages), [pages])
 

@@ -1,8 +1,17 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, lazy, Suspense } from 'react'
 import { createReactBlockSpec } from '@blocknote/react'
-import { Excalidraw } from '@excalidraw/excalidraw'
-import '@excalidraw/excalidraw/index.css'
 import { Pencil, ChevronDown, ChevronUp } from 'lucide-react'
+import { useLanguage } from '../i18n/LanguageContext'
+
+// O spec do bloco precisa estar no schema do BlockNote de forma síncrona
+// (NoteEditor monta o schema em escopo de módulo), mas o canvas do Excalidraw não:
+// ele vive em `DiagramCanvas` e só é buscado quando um diagrama expandido renderiza.
+// O react-refresh reclama porque este módulo exporta um block spec, não um componente —
+// mas o lazy() precisa ficar em escopo de módulo para não remontar o canvas a cada render.
+// eslint-disable-next-line react-refresh/only-export-components
+const DiagramCanvas = lazy(() => import('./DiagramCanvas'))
+
+const CANVAS_HEIGHT = 340
 
 export const DiagramBlock = createReactBlockSpec(
   {
@@ -22,6 +31,7 @@ export const DiagramBlock = createReactBlockSpec(
   },
   {
     render: ({ block, editor }) => {
+      const { t } = useLanguage()
       const isEditable = editor.isEditable
       const collapsed = block.props.collapsed === 'true'
       const [localCollapsed, setLocalCollapsed] = useState(collapsed)
@@ -77,23 +87,20 @@ export const DiagramBlock = createReactBlockSpec(
 
           {/* Canvas */}
           {!localCollapsed && (
-            <div style={{ height: 340, position: 'relative' }}>
-              <Excalidraw
-                initialData={{
-                  elements,
-                  appState: { ...appStateData, collaborators: new Map() },
-                }}
-                onChange={isEditable ? handleChange : undefined}
-                UIOptions={{
-                  canvasActions: {
-                    saveAsImage: false,
-                    export: false,
-                    loadScene: false,
-                    clearCanvas: false,
-                  },
-                  tools: { image: false },
-                }}
-              />
+            <div style={{ height: CANVAS_HEIGHT, position: 'relative' }}>
+              <Suspense
+                fallback={
+                  <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>
+                    {t('diagram_loading')}
+                  </div>
+                }
+              >
+                <DiagramCanvas
+                  elements={elements}
+                  appState={appStateData}
+                  onChange={isEditable ? handleChange : undefined}
+                />
+              </Suspense>
             </div>
           )}
         </div>

@@ -3,7 +3,7 @@ import {
   Plus, X, Trash2, Pencil, Share2, FolderKanban,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Link2, ExternalLink, Search,
   Calendar, CheckSquare, Image, Download, Upload,
-  GripVertical, Check,
+  GripVertical, Check, Copy,
 } from 'lucide-react'
 import {
   DndContext, DragOverlay, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable,
@@ -16,7 +16,9 @@ import type { ProjectBoard, ProjectColumn, ProjectCard, ProjectCardChecklistItem
 import { supabase } from '../../lib/supabase'
 import { UserAvatar } from '../../components/UserAvatar'
 import { sanitizeIlikeTerm } from '../../lib/profileSearch'
+import { isRateLimited } from '../../lib/rateLimit'
 import { resolveSignedUrl } from '../../lib/storageUrl'
+import { validateUpload, uploadContextBucket } from '../../lib/uploadValidation'
 import { SignedImage } from '../../components/SignedImage'
 import { useAuth } from '../../contexts/AuthContext'
 import { useToast } from '../../contexts/ToastContext'
@@ -33,6 +35,8 @@ const VALID_VIEWS: ViewMode[] = ['kanban', 'compact', 'list', 'overview', 'timel
 import { MarkdownText } from '../../components/MarkdownText'
 import { RichTextEditor } from '../../components/RichTextEditor'
 import { normalizeLinkUrl, linkDisplay } from '../../lib/cardLinks'
+import { formatCardAsMarkdown } from '../../lib/cardMarkdown'
+import { copyToClipboard } from '../../lib/clipboard'
 import { Donut, Legend, SegmentedBar, AreaTrend, type ChartDatum } from '../../components/Charts'
 import { overviewSummary, countByColumnId, countByPriority, countByAssignee, dueBuckets, createdPerWeek, PRIORITY_ORDER } from '../../lib/projectStats'
 import { buildAutoSchedule } from '../../lib/autoSchedule'
@@ -84,8 +88,6 @@ const labelStyle: React.CSSProperties = {
 }
 
 // ─── Modal wrapper ────────────────────────────────────────────────────────────
-
-const CARD_IMAGES_BUCKET = 'project-card-images'
 
 function Modal({
   title, onClose, children, width = 460, maxHeight = '90vh', closeOnBackdrop = true, isMobile = false,
@@ -639,17 +641,24 @@ async function uploadCardImages(
   const uploadedPendingIds: string[] = []
   let failedCount = 0
   for (const p of pending) {
-    const ext = p.file.name.split('.').pop() ?? (p.file.type.split('/')[1] || 'jpg')
-    const path = `${userId}/${boardId}/${cardId}/${Date.now()}-${p.id}.${ext}`
+    // Defesa em profundidade: revalida mesmo que o arquivo já tenha passado
+    // pela checagem em addPendingFile (caso um caminho futuro alimente
+    // pendingFiles sem passar por lá).
+    const result = validateUpload('card-image', p.file)
+    if (!result.ok) {
+      failedCount++
+      continue
+    }
+    const path = `${userId}/${boardId}/${cardId}/${Date.now()}-${p.id}.${result.ext}`
     const { error } = await supabase.storage
-      .from(CARD_IMAGES_BUCKET)
-      .upload(path, p.file, { contentType: p.file.type, upsert: false })
+      .from(uploadContextBucket('card-image'))
+      .upload(path, result.file, { contentType: result.file.type, upsert: false })
     if (error) {
       failedCount++
       continue
     }
     // Bucket privado: persiste o path; a URL assinada e' gerada no render.
-    uploaded.push({ id: crypto.randomUUID(), url: path, name: p.file.name || `image.${ext}` })
+    uploaded.push({ id: crypto.randomUUID(), url: path, name: p.file.name || `image.${result.ext}` })
     uploadedPendingIds.push(p.id)
   }
   return { uploaded, uploadedPendingIds, failedCount }
@@ -683,7 +692,7 @@ function CardImageLightbox({ preview, onClose }: { preview: { url: string; name:
 
   useEffect(() => {
     let active = true
-    if (preview) resolveSignedUrl(CARD_IMAGES_BUCKET, preview.url).then(u => { if (active) setResolvedUrl(u) })
+    if (preview) resolveSignedUrl(uploadContextBucket('card-image'), preview.url).then(u => { if (active) setResolvedUrl(u) })
     else setResolvedUrl('')
     return () => { active = false }
   }, [preview])
@@ -757,7 +766,9 @@ function CardAttachmentsSection({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file && file.type.startsWith('image/')) onAddPending(file)
+    // Validação real acontece em onAddPending (validateUpload) — este check
+    // é só o filtro de picker do input accept="image/*".
+    if (file) onAddPending(file)
     e.target.value = ''
   }
 
@@ -788,7 +799,7 @@ function CardAttachmentsSection({
                 onClick={() => setPreview({ url: a.url, name: a.name })}
                 style={{ width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer', background: 'var(--color-hover)' }}
               >
-                <SignedImage bucket={CARD_IMAGES_BUCKET} stored={a.url} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <SignedImage bucket={uploadContextBucket('card-image')} stored={a.url} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
               </button>
               {canEdit && (
                 <button
@@ -1009,14 +1020,15 @@ function CollapsibleSection({ title, defaultOpen = false, children }: {
   )
 }
 
-function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allCards, canEdit, isMobile, initialDraft, saveStatus, saveErrorKind, onClose, onSave, onDelete, onOpenPage, onAutoSave, onDraftChange }: {
-  card: ProjectCard | null; boardId: string; columnId?: string; members: Member[]; allCards: ProjectCard[]; canEdit: boolean; isMobile?: boolean;
+function CardModal({ card, boardId: _boardId, columnId: _columnId, columnName, members, allCards, canEdit, isMobile, initialDraft, saveStatus, saveErrorKind, onClose, onSave, onDelete, onOpenPage, onAutoSave, onDraftChange }: {
+  card: ProjectCard | null; boardId: string; columnId?: string; columnName?: string; members: Member[]; allCards: ProjectCard[]; canEdit: boolean; isMobile?: boolean;
   initialDraft?: CardDraftStored | null; saveStatus?: 'idle' | 'saving' | 'saved' | 'error'; saveErrorKind?: 'upload' | 'general';
   onClose: () => void; onSave: (f: CardForm, extras: CardSaveExtras) => void; onDelete?: () => void; onOpenPage: (id: string) => void;
   onAutoSave?: (form: CardForm, extras: CardSaveExtras) => Promise<AutoSaveResult | null> | AutoSaveResult | null;
   onDraftChange?: (form: CardForm, removedAttachmentIds: string[]) => void;
 }) {
   const { t } = useLanguage()
+  const { showToast } = useToast()
 
   const resolveInitialForm = (): CardForm => {
     if (initialDraft?.form) {
@@ -1039,6 +1051,8 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState<string[]>(initialDraft?.removedAttachmentIds ?? [])
   const [editingDesc, setEditingDesc] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const autoSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const formRef = useRef(form)
   const removedIdsRef = useRef(removedAttachmentIds)
@@ -1104,9 +1118,13 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
   }, [onDraftChange, scheduleAutoSave])
 
   const addPendingFile = (file: File) => {
-    if (!file.type.startsWith('image/')) return
+    const result = validateUpload('card-image', file)
+    if (!result.ok) {
+      showToast('error', t(result.reason === 'too_large' ? 'upload_error_too_large' : 'upload_error_invalid_type'))
+      return
+    }
     const id = crypto.randomUUID()
-    const pending: PendingFile = { id, file, preview: URL.createObjectURL(file) }
+    const pending: PendingFile = { id, file: result.file, preview: URL.createObjectURL(result.file) }
     setPendingFiles(prev => {
       const next = [...prev, pending]
       pendingFilesRef.current = next
@@ -1148,7 +1166,10 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
     onSave(form, { pendingFiles, removedAttachmentIds })
   }
 
-  useEffect(() => () => { if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current) }, [])
+  useEffect(() => () => {
+    if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current)
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current)
+  }, [])
 
   useEffect(() => {
     const flushDraft = () => {
@@ -1343,6 +1364,7 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
     <CollapsibleSection title={t('projects_section_planning')} defaultOpen>
       {priorityButtons}
       {dueAssigneeFields}
+      {completedField}
     </CollapsibleSection>
   )
   const organizationSection = (
@@ -1350,7 +1372,6 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
       {parentField}
       {dependenciesField}
       {labelsField}
-      {completedField}
     </CollapsibleSection>
   )
   const linksSection = (
@@ -1360,16 +1381,43 @@ function CardModal({ card, boardId: _boardId, columnId: _columnId, members, allC
     </CollapsibleSection>
   )
 
+  // Copia o card inteiro como Markdown para colar em outra ferramenta. Sai do
+  // `form` (não do `card`), então edições ainda não salvas entram na cópia.
+  const handleCopy = async () => {
+    const assignee = members.find(m => m.id === form.assignee_user_id)
+    const md = formatCardAsMarkdown(form, {
+      columnName,
+      assigneeName: assignee ? (assignee.display_name || assignee.email) : null,
+      parentTitle: form.parent_card_id ? cardTitleById(form.parent_card_id) : null,
+      dependencyTitles: form.depends_on.map(cardTitleById),
+    }, t)
+    if (!await copyToClipboard(md)) {
+      showToast('error', t('projects_copy_error'))
+      return
+    }
+    setCopied(true)
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current)
+    copiedTimerRef.current = setTimeout(() => setCopied(false), 2000)
+  }
+
   const footer = (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4,
       ...(isMobile ? { position: 'sticky', bottom: 0, backgroundColor: 'var(--color-bg)', paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 16 } : {}),
     }}>
-      {canEdit && onDelete ? (
-        <button onClick={onDelete} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: '#ef4444', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          <Trash2 size={14} />{t('projects_delete')}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        {canEdit && onDelete && (
+          <button onClick={onDelete} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: '#ef4444', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <Trash2 size={14} />{t('projects_delete')}
+          </button>
+        )}
+        {/* Também para viewer: copiar é leitura. */}
+        <button onClick={() => { void handleCopy() }} title={t('projects_copy_card')}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: copied ? '#22c55e' : 'var(--color-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+          {copied ? t('projects_copied') : t('projects_copy_card')}
         </button>
-      ) : <span />}
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {saveStatusLabel && (
           <span style={{ fontSize: 12, fontWeight: 600, color: saveStatus === 'error' ? '#ef4444' : 'var(--color-text-muted)' }}>
@@ -1572,6 +1620,7 @@ function ColumnModal({ column, onClose, onSave }: { column: ProjectColumn | null
 function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: () => void }) {
   const { user } = useAuth()
   const { t } = useLanguage()
+  const { showToast } = useToast()
   const [shares, setShares] = useState<ProjectShare[]>([])
   const [q, setQ] = useState('')
   const [results, setResults] = useState<Member[]>([])
@@ -1601,7 +1650,12 @@ function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: () => vo
       const term = sanitizeIlikeTerm(val)
       if (term.length < 3) { setResults([]); return }
       const exclude = new Set([user?.id, board.user_id, ...shares.map(s => s.shared_with_user_id)])
-      const { data } = await supabase.rpc('search_users_for_share', { p_term: term })
+      const { data, error } = await supabase.rpc('search_users_for_share', { p_term: term })
+      // SEC-012: sem isto um 429 era indistinguível de "nenhum usuário encontrado".
+      if (isRateLimited(error)) {
+        showToast('warning', t('search_rate_limited'), { dedupeKey: 'user-search-rate-limited' })
+        return
+      }
       if (data) setResults((data as Member[]).filter(m => !exclude.has(m.id)))
     }, 300)
   }
@@ -1923,9 +1977,34 @@ function CompactKanbanView({
 
 // ─── List view ────────────────────────────────────────────────────────────────
 
-function ListView({ columns, cards, totalCount, onCardClick }: { columns: ProjectColumn[]; cards: ProjectCard[]; totalCount: number; onCardClick: (c: ProjectCard) => void }) {
+function ListView({ columns, cards, allCards, totalCount, onCardClick }: { columns: ProjectColumn[]; cards: ProjectCard[]; allCards: ProjectCard[]; totalCount: number; onCardClick: (c: ProjectCard) => void }) {
   const { t } = useLanguage()
+  const { showToast } = useToast()
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current) }, [])
   const colName = (id: string) => columns.find(c => c.id === id)?.name ?? '—'
+  // Resolve contra o quadro inteiro: o pai/dependência pode estar fora do filtro.
+  const cardTitleById = (id: string) => allCards.find(c => c.id === id)?.title || t('projects_new_card')
+
+  const copyCard = async (card: ProjectCard) => {
+    const md = formatCardAsMarkdown(card, {
+      columnName: columns.find(c => c.id === card.column_id)?.name,
+      assigneeName: card.assignee_profile
+        ? (card.assignee_profile.display_name || card.assignee_profile.email)
+        : null,
+      parentTitle: card.parent_card_id ? cardTitleById(card.parent_card_id) : null,
+      dependencyTitles: (card.depends_on ?? []).map(cardTitleById),
+    }, t)
+    if (!await copyToClipboard(md)) {
+      showToast('error', t('projects_copy_error'))
+      return
+    }
+    setCopiedId(card.id)
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current)
+    copiedTimerRef.current = setTimeout(() => setCopiedId(null), 2000)
+  }
+
   const sorted = [...cards].sort(byOrder)
   if (totalCount === 0) return <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('projects_no_cards')}</p>
   if (sorted.length === 0) return <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('projects_empty_filter')}</p>
@@ -1941,6 +2020,7 @@ function ListView({ columns, cards, totalCount, onCardClick }: { columns: Projec
             <th style={th}>{t('projects_table_priority')}</th>
             <th style={th}>{t('projects_table_assignee')}</th>
             <th style={th}>{t('projects_table_due')}</th>
+            <th style={{ ...th, width: 40 }} aria-label={t('projects_copy_card')} />
           </tr></thead>
           <tbody>
             {sorted.map(c => (
@@ -1950,6 +2030,14 @@ function ListView({ columns, cards, totalCount, onCardClick }: { columns: Projec
                 <td style={td}><PriorityBadge priority={c.priority} label={t(`projects_priority_${c.priority}` as 'projects_priority_low')} /></td>
                 <td style={td}>{c.assignee_profile ? (c.assignee_profile.display_name || c.assignee_profile.email) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}</td>
                 <td style={{ ...td, color: c.due_date && !c.completed && c.due_date < todayStr() ? '#ef4444' : 'var(--color-text)' }}>{c.due_date || '—'}</td>
+                <td style={{ ...td, textAlign: 'right' }}>
+                  {/* stopPropagation: a linha inteira abre o modal do card. */}
+                  <button type="button" title={t('projects_copy_card')}
+                    onClick={e => { e.stopPropagation(); void copyCard(c) }}
+                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: copiedId === c.id ? '#22c55e' : 'var(--color-text-muted)', cursor: 'pointer', padding: 0 }}>
+                    {copiedId === c.id ? <Check size={13} /> : <Copy size={13} />}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -2024,11 +2112,12 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
   useEffect(() => { localStorage.setItem(VIEW_KEY, view) }, [view])
 
   const loadBoards = useCallback(async () => {
-    if (!user) return
+    const userId = user?.id
+    if (!userId) return
     setLoading(true)
     const [{ data: own }, { data: shared }] = await Promise.all([
-      supabase.from('project_boards').select('*').eq('user_id', user.id).order('sort_order', { ascending: true }),
-      supabase.from('project_shares').select('role, project_boards(*)').eq('shared_with_user_id', user.id),
+      supabase.from('project_boards').select('*').eq('user_id', userId).order('sort_order', { ascending: true }),
+      supabase.from('project_shares').select('role, project_boards(*)').eq('shared_with_user_id', userId),
     ])
     const ownBoards: ProjectBoard[] = (own as ProjectBoard[] ?? []).map(b => ({ ...b, share_role: 'owner' as const }))
     const sharedBoards: ProjectBoard[] = []
@@ -2046,7 +2135,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
       return all[0]?.id ?? null
     })
     setLoading(false)
-  }, [user])
+  }, [user?.id])
 
   useEffect(() => { loadBoards() }, [loadBoards])
   useEffect(() => { if (activeBoardId) localStorage.setItem(ACTIVE_BOARD_KEY, activeBoardId) }, [activeBoardId])
@@ -2785,7 +2874,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
           />
         ) : view === 'list' ? (
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-            <ListView columns={columns} cards={filteredCards} totalCount={cards.length} onCardClick={(c) => setCardModal({ open: true, card: c })} />
+            <ListView columns={columns} cards={filteredCards} allCards={cards} totalCount={cards.length} onCardClick={(c) => setCardModal({ open: true, card: c })} />
           </div>
         ) : (
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
@@ -2807,6 +2896,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
           card={cardModal.card ?? null}
           boardId={activeBoardId}
           columnId={cardModal.columnId}
+          columnName={columns.find(c => c.id === (cardModal.card?.column_id ?? cardModal.columnId))?.name}
           members={members}
           allCards={cards}
           canEdit={canEdit}

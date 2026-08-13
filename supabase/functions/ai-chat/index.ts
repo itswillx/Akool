@@ -18,6 +18,48 @@ function corsHeadersFor(req: Request): Record<string, string> {
   };
 }
 
+interface RateLimitVerdict {
+  allowed: boolean;
+  hits: number;
+  limit: number;
+  retry_after: number;
+  tripped: boolean;
+}
+
+/**
+ * SEC-012. Consulta o contador de janela fixa em `private.rate_limits` atraves
+ * da RPC `public.check_rate_limit` (EXECUTE so para service_role).
+ *
+ * Fail-open de proposito: se a RPC falhar (banco fora, permissao mudada), o
+ * contador indisponivel NAO pode derrubar a feature. Retorna null e o caller
+ * segue em frente -- perder o teto e menos grave que negar servico a todo mundo.
+ */
+async function checkRateLimit(
+  // deno-lint-ignore no-explicit-any
+  client: any,
+  bucket: string,
+  subject: string,
+  limit: number,
+  windowSeconds: number,
+): Promise<RateLimitVerdict | null> {
+  try {
+    const { data, error } = await client.rpc("check_rate_limit", {
+      p_bucket: bucket,
+      p_subject: subject,
+      p_limit: limit,
+      p_window_seconds: windowSeconds,
+    });
+    if (error) {
+      console.error("[rate-limit] RPC falhou, seguindo fail-open:", error.message);
+      return null;
+    }
+    return data as RateLimitVerdict;
+  } catch (err) {
+    console.error("[rate-limit] excecao, seguindo fail-open:", err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
 const GEMINI_PREFERRED = [
   "gemini-3.5-flash",
   "gemini-2.5-flash",
@@ -83,6 +125,27 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    // SEC-012: teto por usuario antes de gastar qualquer chamada ao provider.
+    // check_rate_limit tem EXECUTE so para service_role e NAO da raise -- ela
+    // devolve jsonb e o 429 e montado aqui (se ela desse raise, o proprio
+    // incremento do contador seria revertido junto). Ver
+    // supabase/migrations/20260812170000_sec_rate_limit_core.sql.
+    const rate = await checkRateLimit(serviceClient, "ai_chat:uid", user.id, 60, 3600);
+    if (rate && !rate.allowed) {
+      return new Response(
+        JSON.stringify({ error: "rate_limited", retry_after: rate.retry_after }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+            "Retry-After": String(rate.retry_after),
+          },
+        },
+      );
+    }
+
     const { data: profile } = await serviceClient
       .from("profile_secrets")
       .select("ai_provider, ai_api_key")

@@ -18,27 +18,29 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [showTour, setShowTour] = useState(false)
 
   useEffect(() => {
-    if (!user) return
+    const userId = user?.id
+    if (!userId) return
     try {
-      const seen = localStorage.getItem(SEEN_PREFIX + user.id)
+      const seen = localStorage.getItem(SEEN_PREFIX + userId)
       if (!seen) setShowTour(true)
     } catch {
       // localStorage unavailable; skip auto-open
     }
-  }, [user])
+  }, [user?.id])
 
   const startTour = useCallback(() => setShowTour(true), [])
 
   const finishTour = useCallback(() => {
     setShowTour(false)
-    if (user) {
+    const userId = user?.id
+    if (userId) {
       try {
-        localStorage.setItem(SEEN_PREFIX + user.id, '1')
+        localStorage.setItem(SEEN_PREFIX + userId, '1')
       } catch {
         // ignore persistence errors
       }
     }
-  }, [user])
+  }, [user?.id])
 
   return (
     <OnboardingContext.Provider value={{ showTour, startTour, finishTour }}>

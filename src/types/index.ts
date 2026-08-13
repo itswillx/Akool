@@ -598,6 +598,22 @@ export interface SiteBackup {
   error_message?: string | null
 }
 
+// Trilha de auditoria (public.audit_log). Escrita só por edge functions com
+// service role; `authenticated` tem apenas SELECT via RLS, e somente admin.
+// `details` muda de formato conforme a ação — por isso Record<string, unknown>.
+export interface AuditLogEntry {
+  id: string
+  created_at: string
+  actor_id: string | null
+  actor_label: string | null
+  action: string
+  target_type: string | null
+  target_id: string | null
+  details: Record<string, unknown>
+  success: boolean
+  error_message: string | null
+}
+
 export interface SiteBackupSettings {
   auto_enabled: boolean
   interval_days: number

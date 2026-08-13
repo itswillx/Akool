@@ -291,12 +291,12 @@
 
 **Subtarefas Kanban:**
 
-- [ ] Rate limit em `validate_invite_code`
-- [ ] Rate limit em `site-backup` create/restore
-- [ ] Rate limit em `ai-chat` / OCR por user_id
-- [ ] Rate limit em search profiles RPC
-- [ ] Monitorar 429 no Supabase logs
-- [ ] Feedback UI quando rate limited
+- [x] Rate limit em `validate_invite_code` (10 falhas / 10 min por IP + backstop global)
+- [ ] Rate limit em `site-backup` create/restore — **fora do escopo da entrega de 2026-08-12**
+- [x] Rate limit em `ai-chat` / OCR por user_id (60/h e 30/h)
+- [x] Rate limit em search profiles RPC (40/min por usuário + debounce no cliente)
+- [ ] Monitorar 429 no Supabase logs — base pronta (`audit_log.action = 'rate_limit_tripped'`, 1 linha por bucket/janela); falta painel
+- [x] Feedback UI quando rate limited (toast global + mensagem inline no signup)
 
 ---
 

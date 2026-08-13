@@ -37,12 +37,13 @@ export default function ItemPicker({ onSelect, onClose }: {
   const allPages = useMemo(() => [...flatten(pages), ...flatten(sharedPages)], [pages, sharedPages])
 
   useEffect(() => {
-    if (!user) return
+    const userId = user?.id
+    if (!userId) return
     let cancelled = false
     const load = async () => {
       const [ownRes, sharedRes] = await Promise.all([
-        supabase.from('project_boards').select('id, name').eq('user_id', user.id),
-        supabase.from('project_shares').select('project_boards(id, name)').eq('shared_with_user_id', user.id),
+        supabase.from('project_boards').select('id, name').eq('user_id', userId),
+        supabase.from('project_shares').select('project_boards(id, name)').eq('shared_with_user_id', userId),
       ])
       const boards = new Map<string, string>()
       ;(ownRes.data ?? []).forEach(b => boards.set(b.id as string, b.name as string))
@@ -64,7 +65,7 @@ export default function ItemPicker({ onSelect, onClose }: {
     }
     load()
     return () => { cancelled = true }
-  }, [user])
+  }, [user?.id])
 
   const term = q.trim().toLowerCase()
   const pageResults = useMemo(

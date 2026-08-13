@@ -4,6 +4,7 @@ import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { supabase } from '../../../lib/supabase'
 import { resolveSignedUrl } from '../../../lib/storageUrl'
+import { validateUpload } from '../../../lib/uploadValidation'
 import type { FinanceAttachment } from '../../../types'
 import { ghostBtnStyle, labelStyle } from './tokens'
 
@@ -96,9 +97,13 @@ export function AttachmentField({ ownerId, value, onChange, bucket }: {
     setError(null)
     const added: FinanceAttachment[] = []
     for (const file of Array.from(files)) {
-      const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin'
-      const path = `${user.id}/${ownerId}/${crypto.randomUUID()}.${ext}`
-      const { error: err } = await supabase.storage.from(bucket).upload(path, file)
+      const result = validateUpload('finance-attachment', file)
+      if (!result.ok) {
+        setError(t(result.reason === 'too_large' ? 'upload_error_too_large' : 'upload_error_invalid_type'))
+        continue
+      }
+      const path = `${user.id}/${ownerId}/${crypto.randomUUID()}.${result.ext}`
+      const { error: err } = await supabase.storage.from(bucket).upload(path, result.file, { contentType: result.file.type, upsert: false })
       if (err) { setError(err.message); continue }
       added.push({
         id: crypto.randomUUID(),
@@ -150,7 +155,7 @@ export function AttachmentField({ ownerId, value, onChange, bucket }: {
       <label style={{ ...ghostBtnStyle, opacity: busy ? 0.6 : 1 }}>
         <Paperclip size={14} />
         {busy ? t('finance_attachment_uploading') : t('finance_attachment_add')}
-        <input type="file" multiple hidden disabled={busy} onChange={e => { handlePick(e.target.files); e.target.value = '' }} />
+        <input type="file" multiple hidden disabled={busy} accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" onChange={e => { handlePick(e.target.files); e.target.value = '' }} />
       </label>
       {error && <div style={{ marginTop: 6, fontSize: 12, color: 'var(--color-error)' }}>{error}</div>}
       {viewing && <Lightbox url={viewing.url} name={viewing.name} onClose={() => setViewing(null)} />}

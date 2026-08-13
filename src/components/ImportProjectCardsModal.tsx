@@ -45,15 +45,16 @@ export default function ImportProjectCardsModal({ open, onClose, onImport }: Pro
 
   // Load boards each time the modal opens, starting fresh at step 1.
   useEffect(() => {
-    if (!open || !user) return
+    const userId = user?.id
+    if (!open || !userId) return
     resetToBoards()
     let cancelled = false
     setLoadingBoards(true)
-    fetchAccessibleBoards(user.id)
+    fetchAccessibleBoards(userId)
       .then(b => { if (!cancelled) setBoards(b) })
       .finally(() => { if (!cancelled) setLoadingBoards(false) })
     return () => { cancelled = true }
-  }, [open, user, resetToBoards])
+  }, [open, user?.id, resetToBoards])
 
   // Esc closes the modal.
   useEffect(() => {

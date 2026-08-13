@@ -57,3 +57,11 @@ enable_confirmations = false
 
 [analytics]
 enabled = false
+
+# site-backup e a UNICA function com verify_jwt = false: o disparo automatico se
+# autentica pelo header `x-cron-secret`, sem JWT nenhum (ver verifyAdmin em
+# functions/site-backup/index.ts). O default do CLI e `true`, entao sem esta
+# secao um `functions deploy site-backup` sem `--no-verify-jwt` liga a verificacao
+# no remoto e mata o backup automatico em silencio.
+[functions.site-backup]
+verify_jwt = false

@@ -32,12 +32,6 @@ VITE_SUPABASE_URL=https://nhfftophadasiezrzlsv.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon-key do Supabase Dashboard → Settings → API>
 ```
 
-Opcional (quando o Google OAuth estiver ativo no frontend):
-
-```env
-VITE_GOOGLE_CLIENT_ID=<client-id>.apps.googleusercontent.com
-```
-
 > `NIXPACKS_NODE_VERSION` e `NIXPACKS_SPA_OUTPUT_DIR` já vêm do `nixpacks.toml`;
 > só defina no painel se quiser sobrescrever.
 
@@ -46,6 +40,23 @@ VITE_GOOGLE_CLIENT_ID=<client-id>.apps.googleusercontent.com
 Substitua `https://SUA-URL-COOLIFY` pela URL final (domínio) do recurso no Coolify.
 
 ### 3.1 Edge Functions → Secrets
+
+Functions ativas no projeto: `admin-ops`, `ai-chat`, `analyze-transaction-photo`,
+`categorize-transactions` e `site-backup`.
+
+> `google-calendar` foi **aposentada em 2026-08-12 (SEC-009)**. A tabela
+> `user_google_tokens` que ela lia/gravava nunca chegou a ser provisionada no
+> remoto, então toda ação da function falhava, e nenhum arquivo em `src/` a
+> chamava. Ficava de pé só uma superfície pública quebrada com
+> `Access-Control-Allow-Origin: *`. Se o Google Calendar voltar à pauta, os
+> tokens OAuth nascem cifrados em repouso — não repita o desenho anterior, que
+> os gravava em texto puro.
+>
+> **Pendente:** o fonte já saiu do repo, mas o deploy ainda está no ar. Para
+> concluir: `npx supabase functions delete google-calendar --project-ref nhfftophadasiezrzlsv`.
+> Enquanto isso não rodar, a function segue listada no dashboard sem fonte
+> correspondente aqui — o mesmo problema que `categorize-transactions` já tem
+> (ver `supabase/migrations/README.md`).
 
 O CORS das functions (`ai-chat`, `analyze-transaction-photo`, `site-backup`) é
 controlado por `ALLOWED_ORIGINS`. **Sem a URL do Coolify aqui, as chamadas de API
@@ -59,9 +70,10 @@ Secrets já usadas pelas functions (configure se ainda não existirem):
 
 ```env
 BACKUP_CRON_SECRET=<string aleatória longa>
-GOOGLE_CLIENT_ID=<client-id>
-GOOGLE_CLIENT_SECRET=<client-secret>
 ```
+
+`GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` podem ser **removidas** dos secrets
+do projeto: nada mais as lê depois da aposentadoria da `google-calendar`.
 
 ### 3.2 Authentication → URL Configuration
 

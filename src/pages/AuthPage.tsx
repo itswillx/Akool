@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase, recoveryLinkError } from '../lib/supabase'
+import { isRateLimited, rateLimitRetryAfter } from '../lib/rateLimit'
 import { getT } from '../i18n/translations'
 import type { Lang, TranslationKey } from '../i18n/translations'
 import { helpContent } from '../i18n/helpContent'
@@ -152,7 +153,29 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
         setLoading(false)
         return
       }
-      const { data: validation } = await supabase.rpc('validate_invite_code', { p_code: code })
+      // SEC-012: a RPC agora pode responder 429 (10 códigos inválidos / 10 min
+      // por IP). Antes o `error` era descartado, então qualquer falha — rede,
+      // 429, 500 — virava "código inválido", e uma rejeição do fetch pulava o
+      // `setLoading(false)` lá embaixo e travava o botão em "Carregando...".
+      let validation: { valid?: boolean } | null = null
+      try {
+        const { data, error: rpcError } = await supabase.rpc('validate_invite_code', { p_code: code })
+        if (rpcError) {
+          if (isRateLimited(rpcError)) {
+            const seconds = rateLimitRetryAfter(rpcError) ?? 60
+            setError(t('auth_invite_rate_limited', { seconds }))
+          } else {
+            setError(t('auth_invite_check_failed'))
+          }
+          setLoading(false)
+          return
+        }
+        validation = data
+      } catch {
+        setError(t('auth_invite_check_failed'))
+        setLoading(false)
+        return
+      }
       if (!validation?.valid) {
         setError(t('auth_invite_invalid'))
         setLoading(false)

@@ -182,6 +182,10 @@ const translations = {
     projects_persist_error: 'Não foi possível mover o card. Tente novamente.',
     projects_cancel: 'Cancelar',
     projects_delete: 'Excluir',
+    projects_copy_card: 'Copiar card',
+    projects_copied: 'Copiado!',
+    projects_copy_error: 'Não foi possível copiar',
+    projects_card_completed: 'Concluído',
     projects_edit: 'Editar',
     projects_share: 'Compartilhar',
     projects_readonly: 'Somente leitura',
@@ -264,6 +268,8 @@ const translations = {
     projects_attachments_paste_hint: 'Cole uma imagem com Ctrl+V',
     projects_attachments_count: '{count} anexos',
     projects_attachments_upload_error: 'Falha ao enviar imagem. Tente novamente.',
+    upload_error_invalid_type: 'Tipo de arquivo não permitido. Envie um arquivo nos formatos aceitos.',
+    upload_error_too_large: 'Arquivo muito grande. Reduza o tamanho e tente novamente.',
     projects_attachments_view: 'Visualizar',
     projects_attachments_download: 'Baixar',
     projects_linked_page: 'Página vinculada',
@@ -301,6 +307,12 @@ const translations = {
     projects_shared_badge: 'Compartilhado',
     import_cards_slash_title: 'Importar cards de projeto',
     import_cards_slash_subtitle: 'Inserir um card do Kanban na anotação',
+
+    // Bloco de diagrama embutido na nota
+    diagram_slash_title: 'Diagrama',
+    diagram_slash_subtitle: 'Desenhar um diagrama dentro da anotação',
+    diagram_loading: 'Carregando o editor de diagramas...',
+
     import_cards_modal_title: 'Importar cards de projeto',
     import_cards_step_projects: 'Selecione um projeto',
     import_cards_step_cards: 'Selecione os cards',
@@ -435,6 +447,29 @@ const translations = {
     sidebar_help: 'Ajuda',
     sidebar_more: 'Mais opções',
     sidebar_backup: 'Backup',
+    sidebar_audit: 'Auditoria',
+
+    // Audit log module
+    audit_title: 'Log de auditoria',
+    audit_subtitle: 'Registro somente leitura das ações administrativas do site.',
+    audit_refresh: 'Atualizar',
+    audit_access_denied: 'Acesso restrito a administradores.',
+    audit_empty: 'Nenhum registro encontrado.',
+    audit_load_more: 'Carregar mais',
+    audit_filter_all: 'Todas',
+    audit_col_when: 'Quando',
+    audit_col_actor: 'Quem',
+    audit_col_action: 'Ação',
+    audit_col_target: 'Alvo',
+    audit_col_status: 'Status',
+    audit_status_success: 'Sucesso',
+    audit_status_failed: 'Falhou',
+    audit_action_set_role: 'Trocar função',
+    audit_action_ban_user: 'Desativar usuário',
+    audit_action_unban_user: 'Reativar usuário',
+    audit_action_delete_user: 'Excluir usuário',
+    audit_action_restore_backup: 'Restaurar backup',
+    audit_action_delete_backup: 'Excluir backup',
 
     // Backup module
     backup_title: 'Backup do Site',
@@ -538,6 +573,9 @@ const translations = {
     share_legend_co_owner: 'controle total',
     share_untitled_user: 'Usuário',
     share_invite_error: 'Não foi possível convidar. Verifique se você é o dono desta página.',
+    // SEC-012: 429 de search_users_for_share (40 buscas / min por usuário).
+    // Compartilhada pelos 4 pontos que buscam usuários (share, finance, projects).
+    search_rate_limited: 'Muitas buscas seguidas. Aguarde alguns segundos.',
 
     // UserSettingsModal
     settings_title: 'Configurações',
@@ -631,6 +669,9 @@ const translations = {
     auth_invite_placeholder: 'Ex: AB12CD34',
     auth_invite_required: 'Informe um código de convite para criar uma conta.',
     auth_invite_invalid: 'Código de convite inválido ou expirado.',
+    // SEC-012: 429 de validate_invite_code (10 falhas / 10 min por IP).
+    auth_invite_rate_limited: 'Muitas tentativas com código inválido. Aguarde {seconds}s e tente de novo.',
+    auth_invite_check_failed: 'Não foi possível verificar o código agora. Tente novamente em instantes.',
     auth_password_weak: 'A senha deve ter pelo menos 8 caracteres, incluindo letras maiúsculas, minúsculas e números.',
 
     // Password recovery — AuthPage / ResetPasswordPage
@@ -665,6 +706,15 @@ const translations = {
     settings_invites_status_expired: 'Expirado',
     settings_invites_expires: 'Expira em {date}',
     settings_invites_used_by: 'Usado por {email}',
+
+    // Erros da edge admin-ops (respondidos em inglês, exibidos traduzidos)
+    admin_err_backend: 'Backend indisponível — verifique a Edge Function admin-ops.',
+    admin_err_no_session: 'Sessão expirada — entre novamente.',
+    admin_err_last_admin: 'Não é possível rebaixar o último administrador.',
+    admin_err_self_action: 'Você não pode executar esta ação na sua própria conta.',
+    admin_err_invalid_role: 'Função inválida.',
+    admin_err_forbidden: 'Acesso restrito a administradores.',
+    admin_err_user_not_found: 'Usuário não encontrado.',
 
     // Invite system — UserManagementPanel
     admin_tab_users: 'Usuários',
@@ -727,6 +777,8 @@ const translations = {
     finance_tx_none_category: 'Sem categoria',
     finance_save: 'Salvar',
     finance_save_error: 'Não foi possível salvar. Verifique suas permissões e tente novamente.',
+    finance_delete_error: 'Não foi possível excluir. Verifique suas permissões e tente novamente.',
+    finance_goal_complete_error: 'Contribuição salva, mas não foi possível marcar a meta como concluída.',
     finance_cancel: 'Cancelar',
     finance_delete: 'Excluir',
     finance_account_name: 'Nome da conta',
@@ -1457,6 +1509,15 @@ const translations = {
     study_card_add_rationale: 'Adicionar "por que agora"',
     study_cancel: 'Cancelar',
     study_error_generic: 'Erro ao salvar. Tente novamente.',
+
+    // Falhas de escrita (REL-002). Usadas como fallback quando mapWriteError nao
+    // reconhece a causa; rede/permissao caem em toast_error_network/_permission.
+    study_error_delete: 'Não foi possível excluir. Tente novamente.',
+    study_error_create: 'Não foi possível criar. Tente novamente.',
+    study_error_reschedule_partial: 'Cronograma salvo só em parte ({done} de {total} cards). Tente novamente.',
+    study_error_import_cards: 'O tópico foi criado, mas os cards não foram importados.',
+    pages_error_save: 'Não foi possível salvar a página. Tente novamente.',
+    pages_error_delete: 'Não foi possível excluir a página. Tente novamente.',
   },
 
   en: {
@@ -1640,6 +1701,10 @@ const translations = {
     projects_persist_error: 'Could not move the card. Please try again.',
     projects_cancel: 'Cancel',
     projects_delete: 'Delete',
+    projects_copy_card: 'Copy card',
+    projects_copied: 'Copied!',
+    projects_copy_error: "Couldn't copy to clipboard",
+    projects_card_completed: 'Completed',
     projects_edit: 'Edit',
     projects_share: 'Share',
     projects_readonly: 'Read only',
@@ -1722,6 +1787,8 @@ const translations = {
     projects_attachments_paste_hint: 'Paste an image with Ctrl+V',
     projects_attachments_count: '{count} attachments',
     projects_attachments_upload_error: 'Failed to upload image. Please try again.',
+    upload_error_invalid_type: 'File type not allowed. Please upload a file in one of the accepted formats.',
+    upload_error_too_large: 'File is too large. Please reduce the file size and try again.',
     projects_attachments_view: 'View',
     projects_attachments_download: 'Download',
     projects_linked_page: 'Linked page',
@@ -1759,6 +1826,12 @@ const translations = {
     projects_shared_badge: 'Shared',
     import_cards_slash_title: 'Import project cards',
     import_cards_slash_subtitle: 'Insert a Kanban card into the note',
+
+    // Diagram block embedded in the note
+    diagram_slash_title: 'Diagram',
+    diagram_slash_subtitle: 'Draw a diagram inside the note',
+    diagram_loading: 'Loading the diagram editor...',
+
     import_cards_modal_title: 'Import project cards',
     import_cards_step_projects: 'Select a project',
     import_cards_step_cards: 'Select cards',
@@ -1893,6 +1966,29 @@ const translations = {
     sidebar_help: 'Help',
     sidebar_more: 'More options',
     sidebar_backup: 'Backup',
+    sidebar_audit: 'Audit',
+
+    // Audit log module
+    audit_title: 'Audit log',
+    audit_subtitle: 'Read-only record of administrative actions on the site.',
+    audit_refresh: 'Refresh',
+    audit_access_denied: 'Access restricted to administrators.',
+    audit_empty: 'No entries found.',
+    audit_load_more: 'Load more',
+    audit_filter_all: 'All',
+    audit_col_when: 'When',
+    audit_col_actor: 'Who',
+    audit_col_action: 'Action',
+    audit_col_target: 'Target',
+    audit_col_status: 'Status',
+    audit_status_success: 'Success',
+    audit_status_failed: 'Failed',
+    audit_action_set_role: 'Change role',
+    audit_action_ban_user: 'Deactivate user',
+    audit_action_unban_user: 'Reactivate user',
+    audit_action_delete_user: 'Delete user',
+    audit_action_restore_backup: 'Restore backup',
+    audit_action_delete_backup: 'Delete backup',
 
     // Backup module
     backup_title: 'Site Backup',
@@ -1997,6 +2093,9 @@ const translations = {
     share_legend_co_owner: 'full control',
     share_untitled_user: 'User',
     share_invite_error: 'Could not invite. Make sure you are the owner of this page.',
+    // SEC-012: 429 from search_users_for_share (40 searches / min per user).
+    // Shared by the 4 user-search call sites (share, finance, projects).
+    search_rate_limited: 'Too many searches in a row. Please wait a few seconds.',
 
     // UserSettingsModal
     settings_title: 'Settings',
@@ -2090,6 +2189,9 @@ const translations = {
     auth_invite_placeholder: 'e.g. AB12CD34',
     auth_invite_required: 'An invitation code is required to create an account.',
     auth_invite_invalid: 'Invalid or expired invitation code.',
+    // SEC-012: 429 from validate_invite_code (10 failures / 10 min per IP).
+    auth_invite_rate_limited: 'Too many attempts with an invalid code. Wait {seconds}s and try again.',
+    auth_invite_check_failed: 'Could not verify the code right now. Please try again shortly.',
     auth_password_weak: 'Password must be at least 8 characters and include uppercase, lowercase, and numbers.',
 
     // Password recovery — AuthPage / ResetPasswordPage
@@ -2126,6 +2228,14 @@ const translations = {
     settings_invites_used_by: 'Used by {email}',
 
     // Invite system — UserManagementPanel
+    admin_err_backend: 'Backend unavailable — check the admin-ops Edge Function.',
+    admin_err_no_session: 'Session expired — please sign in again.',
+    admin_err_last_admin: 'Cannot demote the last administrator.',
+    admin_err_self_action: 'You cannot perform this action on your own account.',
+    admin_err_invalid_role: 'Invalid role.',
+    admin_err_forbidden: 'Access restricted to administrators.',
+    admin_err_user_not_found: 'User not found.',
+
     admin_tab_users: 'Users',
     admin_tab_invites: 'Invites',
     admin_invites_all_codes: 'All codes',
@@ -2186,6 +2296,8 @@ const translations = {
     finance_tx_none_category: 'No category',
     finance_save: 'Save',
     finance_save_error: 'Could not save. Check your permissions and try again.',
+    finance_delete_error: 'Could not delete. Check your permissions and try again.',
+    finance_goal_complete_error: 'Contribution saved, but the goal could not be marked as completed.',
     finance_cancel: 'Cancel',
     finance_delete: 'Delete',
     finance_account_name: 'Account name',
@@ -2917,6 +3029,13 @@ const translations = {
     study_card_add_rationale: 'Add "why now"',
     study_cancel: 'Cancel',
     study_error_generic: 'Error saving. Please try again.',
+
+    study_error_delete: 'Could not delete. Please try again.',
+    study_error_create: 'Could not create. Please try again.',
+    study_error_reschedule_partial: 'Schedule only partly saved ({done} of {total} cards). Please try again.',
+    study_error_import_cards: 'The topic was created, but its cards were not imported.',
+    pages_error_save: 'Could not save the page. Please try again.',
+    pages_error_delete: 'Could not delete the page. Please try again.',
   },
 } as const
 

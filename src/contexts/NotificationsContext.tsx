@@ -21,26 +21,28 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    if (!user) { setNotifications([]); setLoading(false); return }
+    const userId = user?.id
+    if (!userId) { setNotifications([]); setLoading(false); return }
     const { data } = await supabase
       .from('notifications')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(50)
     setNotifications((data as AppNotification[]) ?? [])
     setLoading(false)
-  }, [user])
+  }, [user?.id])
 
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    if (!user) return
+    const userId = user?.id
+    if (!userId) return
     const channel = supabase
       .channel('notifications_realtime')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
         (payload) => {
           const n = payload.new as AppNotification
           setNotifications(prev => [n, ...prev])
@@ -48,7 +50,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [user])
+  }, [user?.id])
 
   const unreadCount = notifications.filter(n => !n.read).length
 
@@ -58,10 +60,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const markAllRead = useCallback(async () => {
-    if (!user) return
-    await supabase.from('notifications').update({ read: true }).eq('user_id', user.id).eq('read', false)
+    const userId = user?.id
+    if (!userId) return
+    await supabase.from('notifications').update({ read: true }).eq('user_id', userId).eq('read', false)
     setNotifications(prev => prev.map(n => ({ ...n, read: true })))
-  }, [user])
+  }, [user?.id])
 
   return (
     <NotificationsContext.Provider value={{ notifications, unreadCount, loading, markAsRead, markAllRead, reload: load }}>

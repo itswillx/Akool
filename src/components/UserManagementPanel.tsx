@@ -3,6 +3,7 @@ import { Users, Shield, User, Trash2, MailCheck, Power, PowerOff, Search, Refres
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
+import type { TranslationKey } from '../i18n/translations'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { UserProfile } from '../contexts/AuthContext'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
@@ -39,17 +40,52 @@ interface AdminInviteCode {
 }
 
 const EDGE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-ops`
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
-async function callAdminOps(session: string, body: Record<string, unknown>) {
-  const res = await fetch(EDGE_FN, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session}`,
-    },
-    body: JSON.stringify(body),
-  })
-  return res.json()
+interface AdminOpsResult {
+  error?: string
+  success?: boolean
+  users?: { id: string; last_sign_in_at?: string }[]
+}
+
+// Always resolves to an object with an optional `error`. The previous version
+// returned res.json() bare: a dead backend or a non-JSON body (502, timeout)
+// rejected the promise, and since no call site catches, actionLoading stayed
+// stuck with no feedback at all.
+async function callAdminOps(session: string, body: Record<string, unknown>): Promise<AdminOpsResult> {
+  let res: Response
+  try {
+    res = await fetch(EDGE_FN, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session}`,
+        apikey: ANON_KEY,
+      },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    return { error: 'admin_err_backend' }
+  }
+  let data: AdminOpsResult = {}
+  try {
+    data = await res.json() as AdminOpsResult
+  } catch {
+    // Corpo vazio ou não-JSON — o status abaixo decide.
+  }
+  if (!res.ok) return { ...data, error: String(data.error ?? `HTTP ${res.status}`) }
+  return data
+}
+
+// A edge responde em inglês; mapeia os erros conhecidos para chaves de i18n e
+// deixa passar o resto verbatim (é o que o painel já fazia).
+const ADMIN_OPS_ERROR_KEYS: Record<string, TranslationKey> = {
+  admin_err_backend: 'admin_err_backend',
+  'Cannot demote the last admin': 'admin_err_last_admin',
+  'Cannot perform this action on yourself': 'admin_err_self_action',
+  'Invalid role': 'admin_err_invalid_role',
+  'Forbidden: admin only': 'admin_err_forbidden',
+  'User not found': 'admin_err_user_not_found',
 }
 
 export default function UserManagementPanel() {
@@ -79,6 +115,11 @@ export default function UserManagementPanel() {
     setTimeout(() => setFeedback(null), 3500)
   }
 
+  const showOpsError = (msg: string) => {
+    const key = ADMIN_OPS_ERROR_KEYS[msg]
+    showFeedback('error', key ? t(key) : msg)
+  }
+
   const fetchUsers = async () => {
     setLoading(true)
     const { data: profiles, error } = await supabase
@@ -92,7 +133,7 @@ export default function UserManagementPanel() {
     if (session?.access_token) {
       const res = await callAdminOps(session.access_token, { action: 'list_users' })
       if (res.users) {
-        res.users.forEach((u: { id: string; last_sign_in_at?: string }) => {
+        res.users.forEach(u => {
           authUsers[u.id] = { last_sign_in_at: u.last_sign_in_at }
         })
       }
@@ -204,14 +245,15 @@ export default function UserManagementPanel() {
     if (adminTab === 'invites') fetchAllInvites()
   }, [adminTab, fetchAllInvites])
 
+  // A troca de role passa pela edge admin-ops: ela é quem valida o admin com
+  // service role, barra o rebaixamento do último admin e grava em audit_log.
+  // O caminho direto está fechado no banco (sec_lock_profile_role).
   const toggleRole = async (u: UserRow) => {
+    if (!session?.access_token) { showFeedback('error', t('admin_err_no_session')); return }
     setActionLoading(u.id + '_role')
     const newRole = u.role === 'admin' ? 'standard' : 'admin'
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: newRole })
-      .eq('id', u.id)
-    if (error) { showFeedback('error', error.message) }
+    const res = await callAdminOps(session.access_token, { action: 'set_role', user_id: u.id, role: newRole })
+    if (res.error) { showOpsError(res.error) }
     else {
       showFeedback('success', t('admin_feedback_role', { email: u.email, role: newRole === 'admin' ? t('admin_role_name_admin') : t('admin_role_name_standard') }))
       setUsers(prev => prev.map(x => x.id === u.id ? { ...x, role: newRole } : x))
@@ -221,11 +263,11 @@ export default function UserManagementPanel() {
   }
 
   const toggleActive = async (u: UserRow) => {
-    if (!session?.access_token) return
+    if (!session?.access_token) { showFeedback('error', t('admin_err_no_session')); return }
     setActionLoading(u.id + '_active')
     const action = u.is_active ? 'ban_user' : 'unban_user'
     const res = await callAdminOps(session.access_token, { action, user_id: u.id })
-    if (res.error) { showFeedback('error', res.error) }
+    if (res.error) { showOpsError(res.error) }
     else {
       showFeedback('success', u.is_active ? t('admin_feedback_deactivated', { email: u.email }) : t('admin_feedback_reactivated', { email: u.email }))
       setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_active: !u.is_active } : x))
@@ -247,13 +289,13 @@ export default function UserManagementPanel() {
   }
 
   const deleteUser = async (u: UserRow) => {
-    if (!session?.access_token) return
+    if (!session?.access_token) { showFeedback('error', t('admin_err_no_session')); return }
     setConfirmDeleteUser({
       message: t('admin_confirm_delete', { email: u.email }),
       onConfirm: async () => {
         setActionLoading(u.id + '_delete')
         const res = await callAdminOps(session.access_token, { action: 'delete_user', user_id: u.id })
-        if (res.error) { showFeedback('error', res.error) }
+        if (res.error) { showOpsError(res.error) }
         else {
           showFeedback('success', t('admin_feedback_deleted', { email: u.email }))
           setUsers(prev => prev.filter(x => x.id !== u.id))

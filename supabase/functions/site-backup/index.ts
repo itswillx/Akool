@@ -528,21 +528,71 @@ async function restoreBackup(
   }
 }
 
-async function deleteBackup(serviceClient: SupabaseClient, backupId: string): Promise<void> {
+async function deleteBackup(
+  serviceClient: SupabaseClient,
+  backupId: string,
+  userId: string | null,
+  isCron: boolean,
+): Promise<void> {
+  const actorLabel = isCron ? "cron" : undefined;
+
+  // Read the metadata BEFORE destroying anything: once the archive and the row
+  // are gone there is nothing left to describe what was lost, and an audit entry
+  // that only carries the id says nothing useful months later.
   const { data: meta } = await serviceClient
     .from("site_backups")
-    .select("storage_path")
+    .select("type, created_at, size_bytes, storage_path")
     .eq("id", backupId)
     .single();
 
-  // Remove the whole copied-storage tree (${backupId}/storage/**) recursively…
-  await removeStoragePrefix(serviceClient, BACKUP_BUCKET, backupId);
-  // …and the compressed archive sitting next to it (${backupId}.json.gz).
-  if (meta?.storage_path) {
-    await serviceClient.storage.from(BACKUP_BUCKET).remove([meta.storage_path]);
-  }
+  // A delete aimed at an id that no longer exists still gets a row — an admin
+  // trying to erase something already gone is exactly what a trail should show.
+  const details: Record<string, unknown> = meta
+    ? {
+      found: true,
+      type: meta.type,
+      created_at: meta.created_at,
+      size_bytes: meta.size_bytes,
+      storage_path: meta.storage_path,
+    }
+    : { found: false };
 
-  await serviceClient.from("site_backups").delete().eq("id", backupId);
+  try {
+    // Remove the whole copied-storage tree (${backupId}/storage/**) recursively…
+    await removeStoragePrefix(serviceClient, BACKUP_BUCKET, backupId);
+    // …and the compressed archive sitting next to it (${backupId}.json.gz).
+    if (meta?.storage_path) {
+      await serviceClient.storage.from(BACKUP_BUCKET).remove([meta.storage_path]);
+    }
+
+    // Checked, unlike before: a swallowed error here would answer "success" to
+    // the UI and write success=true to the trail while the row is still there.
+    const { error } = await serviceClient.from("site_backups").delete().eq("id", backupId);
+    if (error) throw new Error(error.message);
+
+    await logAudit(serviceClient, {
+      actorId: userId,
+      actorLabel,
+      action: "delete_backup",
+      targetType: "site_backup",
+      targetId: backupId,
+      details,
+      success: true,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await logAudit(serviceClient, {
+      actorId: userId,
+      actorLabel,
+      action: "delete_backup",
+      targetType: "site_backup",
+      targetId: backupId,
+      details,
+      success: false,
+      errorMessage: msg,
+    });
+    throw err;
+  }
 }
 
 async function runAutoIfDue(serviceClient: SupabaseClient): Promise<unknown> {
@@ -621,7 +671,7 @@ Deno.serve(async (req: Request) => {
       }
       case "delete_backup": {
         if (!body.backup_id) throw new Error("backup_id required");
-        await deleteBackup(serviceClient, body.backup_id);
+        await deleteBackup(serviceClient, body.backup_id, userId, isCron);
         return jsonResponse(req, { success: true });
       }
       case "get_settings": {

@@ -27,6 +27,13 @@ Mini-app de acompanhamento de estudos montado dentro da visão Documentos
 - Dados: `useStudyTopics.ts` — estado otimista + `supabase.from()` direto nas
   tabelas `study_topics` / `study_cards` / `study_logs` (RLS por `user_id`;
   migração `supabase/migrations/20260720120000_study_module.sql`).
+  Toda mutação passa por `runOptimistic`/`runGuarded` (`lib/optimistic.ts`):
+  em falha o rollback reverte **por id e por campo** — nunca substituindo a
+  coleção, senão uma edição concorrente do autosave seria apagada junto — e
+  emite toast. O estado é lastreado em `useRef` para que o snapshot enxergue a
+  linha como ela está no momento do write, e não o valor do último render.
+- `studyMutations.ts` — lógica pura do "Recalcular cronograma" (plano por id,
+  detecção de falha parcial e rollback só dos ids que não gravaram).
 
 ## Dependências externas ao módulo
 

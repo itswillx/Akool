@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { toCents, fromCents, formatBRL } from '../../lib/money'
 import { resolveSignedUrl } from '../../lib/storageUrl'
 import { sanitizeIlikeTerm } from '../../lib/profileSearch'
+import { isRateLimited } from '../../lib/rateLimit'
 import { downloadTransactionsCsv } from '../../lib/financeCsv'
 import { accountBalance, missingAutoBudgets, type FinanceTxAgg } from '../../lib/financeCalc'
 import { lastNMonths } from '../../lib/financeGraph'
@@ -287,6 +288,93 @@ function useFinanceData() {
     }
   }, [userId])
 
+  // Mirrors the server's `.order('date', desc).order('created_at', desc)` —
+  // the Transactions tab groups adjacent same-date rows by array position
+  // (no client-side sort at render time), so a patched-in-place row that
+  // isn't resorted breaks that grouping.
+  const sortTxDesc = (arr: FinanceTransaction[]) =>
+    [...arr].sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at))
+
+  const upsertById = <T extends { id: string }>(arr: T[], row: T) =>
+    arr.some(x => x.id === row.id) ? arr.map(x => (x.id === row.id ? row : x)) : [row, ...arr]
+
+  // Applies a transaction write's own response (`.select().single()`) directly
+  // to state instead of refetching everything. Own bucket always gets it;
+  // family bucket only if `workspace_id` is set — on an edit that changes
+  // scope, the family bucket is stripped-then-conditionally-readded by id, so
+  // no separate "previous row" is needed to know what to undo.
+  const applyTxUpsert = useCallback((tx: FinanceTransaction) => {
+    const agg: FinanceTxAgg = {
+      id: tx.id, user_id: tx.user_id, account_id: tx.account_id, category_id: tx.category_id,
+      type: tx.type, amount: tx.amount, date: tx.date, workspace_id: tx.workspace_id ?? null,
+    }
+    const inWindow = !loadedRangeRef.current
+      || (tx.date.slice(0, 7) >= loadedRangeRef.current.min && tx.date.slice(0, 7) <= loadedRangeRef.current.max)
+
+    setTxAggOwn(prev => upsertById(prev, agg))
+    if (inWindow) setTransactions(prev => sortTxDesc(upsertById(prev, tx)))
+
+    setTxAggWorkspace(prev => {
+      const stripped = prev.filter(x => x.id !== tx.id)
+      return tx.workspace_id ? upsertById(stripped, agg) : stripped
+    })
+    if (inWindow) {
+      setFamilyTransactions(prev => {
+        const stripped = prev.filter(x => x.id !== tx.id)
+        return sortTxDesc(tx.workspace_id ? upsertById(stripped, tx) : stripped)
+      })
+    }
+  }, [])
+
+  // Removing by id is a harmless no-op on whichever bucket(s) didn't have the
+  // row, so no "which bucket was it in" bookkeeping is needed on delete.
+  const applyTxRemove = useCallback((id: string) => {
+    setTransactions(prev => prev.filter(t => t.id !== id))
+    setTxAggOwn(prev => prev.filter(t => t.id !== id))
+    setFamilyTransactions(prev => prev.filter(t => t.id !== id))
+    setTxAggWorkspace(prev => prev.filter(t => t.id !== id))
+  }, [])
+
+  // Single-id variant of the profile-batch-lookup inline in `load()` below —
+  // used by `saveGoalShare` when the newly-shared partner isn't already in
+  // `partnerProfiles`.
+  const resolvePartnerProfile = useCallback(async (partnerId: string) => {
+    const { data } = await supabase.from('profiles').select('id, email, display_name, avatar_emoji, avatar_color, avatar_url').eq('id', partnerId).maybeSingle()
+    return (data as PartnerProfile) ?? null
+  }, [])
+
+  // Targeted transactions-only refresh (own/shared/workspace window + the
+  // all-time aggregates), reusing the same two fetchers `load()` uses. Used
+  // by the `finance_transactions_changed` listener (an external write from
+  // the store submodule whose content isn't known here) and as a fallback
+  // reconciliation path when `doMarkPaid` fails partway through.
+  const refetchTransactions = useCallback(async () => {
+    if (!userId) return
+    const wsId = workspace?.id ?? null
+    const minYM = loadedRangeRef.current?.min ?? prevMonth(currentYM())
+    const maxYM = loadedRangeRef.current?.max ?? nextMonth(currentYM())
+    const [win, agg] = await Promise.all([fetchTxWindow(minYM, maxYM, wsId), fetchTxAggregates(wsId)])
+    setTransactions(win.own)
+    setSharedTransactions(win.shared)
+    setFamilyTransactions(win.workspace)
+    setTxAggOwn(agg.own)
+    setTxAggShared(agg.shared)
+    setTxAggWorkspace(agg.workspace)
+  }, [userId, workspace, fetchTxWindow, fetchTxAggregates])
+
+  // Targeted recurring + recurring-entries refresh — fallback reconciliation
+  // path when `doMarkPaid`'s multi-write sequence fails partway through and
+  // it's unclear which of the writes actually landed server-side.
+  const refetchRecurringAndEntries = useCallback(async () => {
+    if (!userId) return
+    const [recs, rEnts] = await Promise.all([
+      supabase.from('finance_recurring').select('*').eq('user_id', userId).order('created_at'),
+      supabase.from('finance_recurring_entries').select('*').eq('user_id', userId).order('due_date'),
+    ])
+    setRecurring((recs.data as FinanceRecurring[]) ?? [])
+    setRecurringEntries((rEnts.data as FinanceRecurringEntry[]) ?? [])
+  }, [userId])
+
   // `silent` refreshes the data without flipping `loading` — flipping it would
   // unmount every tab below (see the userId comment above). Used when another
   // submodule (e.g. the store) writes a transaction and asks for a refresh.
@@ -457,7 +545,14 @@ function useFinanceData() {
     await ensureMonthLoaded(sorted[sorted.length - 1])
   }, [ensureMonthLoaded])
 
-  return { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, txAggOwn, txAggShared, txAggWorkspace, loadedRange, loading, reload: load, ensureMonthLoaded, ensureMonthsLoaded }
+  return {
+    accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, txAggOwn, txAggShared, txAggWorkspace, loadedRange, loading, reload: load, ensureMonthLoaded, ensureMonthsLoaded,
+    // Targeted patch/refetch surface for PERF-002: mutation handlers apply a
+    // write's own response directly via these setters instead of calling
+    // `reload` (which re-derives all ~20 arrays above from ~15+ queries).
+    setAccounts, setCategories, setTransactions, setBudgets, setGoals, setContributions, setGoalShares, setSharedTransactions, setSharedBudgets, setPartnerProfiles, setRecurring, setRecurringEntries, setFamilyBudgets, setFamilyAccounts, setFamilyCategories, setTxAggOwn, setTxAggShared, setTxAggWorkspace,
+    applyTxUpsert, applyTxRemove, resolvePartnerProfile, refetchTransactions, refetchRecurringAndEntries,
+  }
 }
 
 // ─── Transaction Modal ────────────────────────────────────────────────────────
@@ -471,21 +566,35 @@ function UserPicker({ label, value, onChange, knownPartners }: {
   knownPartners: PartnerProfile[]
 }) {
   const { t } = useLanguage()
+  const { showToast } = useToast()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<PartnerProfile[]>([])
   const [searching, setSearching] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const selected = knownPartners.find(p => p.id === value) ?? (value ? { id: value, email: value, display_name: null } : null)
 
   const displayName = (p: PartnerProfile) => p.display_name || p.email
 
-  const doSearch = useCallback(async (q: string) => {
+  // SEC-012: antes isto disparava uma RPC POR TECLA. Com o limite de 40
+  // buscas/min por usuário, digitar um e-mail longo estourava o próprio limite.
+  // 300 ms é o mesmo debounce já usado em SharePageModal e ProjectsPanel.
+  const doSearch = useCallback((q: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     const s = sanitizeIlikeTerm(q)
-    if (s.length < 3) { setResults([]); return }
+    if (s.length < 3) { setResults([]); setSearching(false); return }
     setSearching(true)
-    const { data } = await supabase.rpc('search_users_for_share', { p_term: s })
-    setResults((data as PartnerProfile[]) ?? [])
-    setSearching(false)
-  }, [])
+    debounceRef.current = setTimeout(async () => {
+      const { data, error } = await supabase.rpc('search_users_for_share', { p_term: s })
+      setSearching(false)
+      if (isRateLimited(error)) {
+        showToast('warning', t('search_rate_limited'), { dedupeKey: 'user-search-rate-limited' })
+        return
+      }
+      setResults((data as PartnerProfile[]) ?? [])
+    }, 300)
+  }, [showToast, t])
+
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
 
   return (
     <div>
@@ -550,19 +659,31 @@ function InviteAutocomplete({ value, onChange, onSubmit, sending, excludeIds }: 
 }) {
   const { t } = useLanguage()
   const { user } = useAuth()
+  const { showToast } = useToast()
   const [results, setResults] = useState<PartnerProfile[]>([])
   const [searching, setSearching] = useState(false)
   const [open, setOpen] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const doSearch = useCallback(async (q: string) => {
+  // SEC-012: mesmo motivo do UserPicker acima — era uma RPC por tecla.
+  const doSearch = useCallback((q: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     const term = sanitizeIlikeTerm(q)
     if (term.length < 3) { setResults([]); setSearching(false); return }
     setSearching(true)
-    const { data } = await supabase.rpc('search_users_for_share', { p_term: term })
-    const filtered = ((data as PartnerProfile[]) ?? []).filter(p => p.id !== user?.id && !excludeIds.includes(p.id))
-    setResults(filtered.slice(0, 6))
-    setSearching(false)
-  }, [excludeIds, user?.id])
+    debounceRef.current = setTimeout(async () => {
+      const { data, error } = await supabase.rpc('search_users_for_share', { p_term: term })
+      setSearching(false)
+      if (isRateLimited(error)) {
+        showToast('warning', t('search_rate_limited'), { dedupeKey: 'user-search-rate-limited' })
+        return
+      }
+      const filtered = ((data as PartnerProfile[]) ?? []).filter(p => p.id !== user?.id && !excludeIds.includes(p.id))
+      setResults(filtered.slice(0, 6))
+    }, 300)
+  }, [excludeIds, user?.id, showToast, t])
+
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
 
   const handleChange = (v: string) => {
     onChange(v)
@@ -763,6 +884,19 @@ function TransactionModal({
     }
   }
 
+  const handleDelete = async () => {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await onDelete?.()
+      onClose()
+    } catch {
+      setSaveError(t('finance_delete_error'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const accent = form.type === 'income' ? FIN_POS : FIN_NEG
 
   const photoSection = (
@@ -957,8 +1091,8 @@ function TransactionModal({
           </button>
           {tx && onDelete && (
             confirming ? (
-              <button onClick={async () => { await onDelete?.(); onClose() }}
-                style={{ padding: '13px 16px', borderRadius: 12, border: 'none', backgroundColor: '#ef4444', color: '#fff', cursor: 'pointer', fontSize: 15, fontWeight: 600 }}>
+              <button onClick={handleDelete} disabled={saving}
+                style={{ padding: '13px 16px', borderRadius: 12, border: 'none', backgroundColor: '#ef4444', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 15, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
                 {t('finance_confirm_delete')}
               </button>
             ) : (
@@ -982,8 +1116,8 @@ function TransactionModal({
         <>
           {tx && onDelete && (
             confirming ? (
-              <button onClick={async () => { await onDelete?.(); onClose() }}
-                style={{ border: 'none', background: FIN_NEG, color: '#fff', fontSize: 13, fontWeight: 600, padding: '9px 14px', borderRadius: 8, cursor: 'pointer' }}>
+              <button onClick={handleDelete} disabled={saving}
+                style={{ border: 'none', background: FIN_NEG, color: '#fff', fontSize: 13, fontWeight: 600, padding: '9px 14px', borderRadius: 8, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
                 {t('finance_confirm_delete')}
               </button>
             ) : (
@@ -1107,22 +1241,42 @@ function AccountModal({
   }
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSave = async () => {
     if (!form.name.trim()) return
     setSaving(true)
-    await onSave({
-      name: form.name.trim(),
-      type: form.type,
-      initial_balance: toCents(form.initial_balance),
-      color: form.color,
-      icon: form.icon || ACCOUNT_TYPE_ICONS[form.type] || '🏦',
-      // Cleared on purpose when the account is no longer a credit card.
-      credit_limit: form.type === 'credit' && form.credit_limit.trim() ? toCents(form.credit_limit) : null,
-      workspace_id: form.workspace_id,
-    })
-    setSaving(false)
-    onClose()
+    setError(null)
+    try {
+      await onSave({
+        name: form.name.trim(),
+        type: form.type,
+        initial_balance: toCents(form.initial_balance),
+        color: form.color,
+        icon: form.icon || ACCOUNT_TYPE_ICONS[form.type] || '🏦',
+        // Cleared on purpose when the account is no longer a credit card.
+        credit_limit: form.type === 'credit' && form.credit_limit.trim() ? toCents(form.credit_limit) : null,
+        workspace_id: form.workspace_id,
+      })
+      onClose()
+    } catch {
+      setError(t('finance_save_error'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await onDelete?.()
+      onClose()
+    } catch {
+      setError(t('finance_delete_error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const typeLabels: Record<string, string> = {
@@ -1179,6 +1333,11 @@ function AccountModal({
           </div>
         </div>
       </div>
+      {error && (
+        <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 13, fontWeight: 600 }}>
+          {error}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
         {account && onDelete && !confirming && (
           <button onClick={() => setConfirming(true)}
@@ -1187,8 +1346,8 @@ function AccountModal({
           </button>
         )}
         {confirming && (
-          <button onClick={async () => { await onDelete?.(); onClose() }}
-            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', backgroundColor: '#ef4444', color: '#fff', cursor: 'pointer', fontSize: 14 }}>
+          <button onClick={handleDelete} disabled={saving}
+            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', backgroundColor: '#ef4444', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 14, opacity: saving ? 0.7 : 1 }}>
             {t('finance_confirm_delete')}
           </button>
         )}
@@ -1229,6 +1388,7 @@ function BudgetModal({
   const [limit, setLimit] = useState(budget ? String(fromCents(budget.amount_limit)) : '')
   const [sharedWith, setSharedWith] = useState(budget?.shared_with_user_id ?? '')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const categories = scopeWs ? workspaceCategories : personalCategories
   const existing = scopeWs ? workspaceExisting : personalExisting
@@ -1243,15 +1403,21 @@ function BudgetModal({
     const amt = toCents(limit)
     if (!effectiveCatId || !amt || amt <= 0) return
     setSaving(true)
-    await onSave({
-      category_id: effectiveCatId,
-      month,
-      amount_limit: amt,
-      shared_with_user_id: scopeWs ? null : (sharedWith || null),
-      workspace_id: scopeWs,
-    })
-    setSaving(false)
-    onClose()
+    setError(null)
+    try {
+      await onSave({
+        category_id: effectiveCatId,
+        month,
+        amount_limit: amt,
+        shared_with_user_id: scopeWs ? null : (sharedWith || null),
+        workspace_id: scopeWs,
+      })
+      onClose()
+    } catch {
+      setError(t('finance_save_error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -1291,6 +1457,11 @@ function BudgetModal({
           </>
         )}
       </div>
+      {error && (
+        <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 13, fontWeight: 600 }}>
+          {error}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
         <button onClick={onClose}
           style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'transparent', color: 'var(--color-text)', cursor: 'pointer', fontSize: 14 }}>
@@ -1909,7 +2080,7 @@ function BudgetsTab({ budgets, sharedBudgets, transactions, partnerTransactions,
   month: string
   onAdd: () => void
   onEdit: (budget: FinanceBudget) => void
-  onDeleteBudget: (id: string) => Promise<void>
+  onDeleteBudget: (budget: FinanceBudget) => Promise<void>
 }) {
   const { t } = useLanguage()
   const catMap = new Map(categories.map(c => [c.id, c]))
@@ -1966,7 +2137,7 @@ function BudgetsTab({ budgets, sharedBudgets, transactions, partnerTransactions,
                       style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', padding: 4, borderRadius: 4 }}>
                       <Pencil size={13} />
                     </button>
-                    <button onClick={() => onDeleteBudget(budget.id)}
+                    <button onClick={() => onDeleteBudget(budget)}
                       style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', padding: 4, borderRadius: 4 }}>
                       <Trash2 size={13} />
                     </button>
@@ -2127,15 +2298,35 @@ function CategoryModal({
   })
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const inUse = category ? transactions.some(tx => tx.category_id === category.id) : false
 
   const handleSave = async () => {
     if (!form.name.trim()) return
     setSaving(true)
-    await onSave({ name: form.name.trim(), type: form.type, icon: form.icon || '📦', color: form.color, is_default: form.is_default, workspace_id: form.workspace_id })
-    setSaving(false)
-    onClose()
+    setError(null)
+    try {
+      await onSave({ name: form.name.trim(), type: form.type, icon: form.icon || '📦', color: form.color, is_default: form.is_default, workspace_id: form.workspace_id })
+      onClose()
+    } catch {
+      setError(t('finance_save_error'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await onDelete?.()
+      onClose()
+    } catch {
+      setError(t('finance_delete_error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -2195,8 +2386,8 @@ function CategoryModal({
           )
         )}
         {confirming && (
-          <button onClick={async () => { await onDelete?.(); onClose() }}
-            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', backgroundColor: '#ef4444', color: '#fff', cursor: 'pointer', fontSize: 14 }}>
+          <button onClick={handleDelete} disabled={saving}
+            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', backgroundColor: '#ef4444', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 14, opacity: saving ? 0.7 : 1 }}>
             {t('finance_confirm_delete')}
           </button>
         )}
@@ -2209,6 +2400,11 @@ function CategoryModal({
           {t('finance_save')}
         </button>
       </div>
+      {error && (
+        <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 13, fontWeight: 600 }}>
+          {error}
+        </div>
+      )}
     </Modal>
   )
 }
@@ -2316,22 +2512,29 @@ function GoalModal({ goal, accounts, onClose, onSave }: {
     status: goal?.status ?? 'active' as FinanceGoal['status'],
   })
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSave = async () => {
     const amt = toCents(form.target_amount)
     if (!form.name.trim() || !amt || !form.deadline) return
     setSaving(true)
-    await onSave({
-      name: form.name.trim(),
-      icon: form.icon,
-      color: form.color,
-      target_amount: amt,
-      deadline: form.deadline,
-      account_id: form.account_id || null,
-      status: form.status,
-    })
-    setSaving(false)
-    onClose()
+    setError(null)
+    try {
+      await onSave({
+        name: form.name.trim(),
+        icon: form.icon,
+        color: form.color,
+        target_amount: amt,
+        deadline: form.deadline,
+        account_id: form.account_id || null,
+        status: form.status,
+      })
+      onClose()
+    } catch {
+      setError(t('finance_save_error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -2381,6 +2584,11 @@ function GoalModal({ goal, accounts, onClose, onSave }: {
           {t('finance_save')}
         </button>
       </div>
+      {error && (
+        <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 13, fontWeight: 600 }}>
+          {error}
+        </div>
+      )}
     </Modal>
   )
 }
@@ -2398,14 +2606,21 @@ function ContributionModal({ goal, onClose, onSave }: {
   const [note, setNote] = useState('')
   const [date, setDate] = useState(today)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSave = async () => {
     const amt = toCents(amount)
     if (!amt || amt <= 0) return
     setSaving(true)
-    await onSave({ goal_id: goal.id, amount: amt, note: note.trim(), date })
-    setSaving(false)
-    onClose()
+    setError(null)
+    try {
+      await onSave({ goal_id: goal.id, amount: amt, note: note.trim(), date })
+      onClose()
+    } catch {
+      setError(t('finance_save_error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -2441,6 +2656,11 @@ function ContributionModal({ goal, onClose, onSave }: {
           {t('finance_save')}
         </button>
       </div>
+      {error && (
+        <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 13, fontWeight: 600 }}>
+          {error}
+        </div>
+      )}
     </Modal>
   )
 }
@@ -2458,13 +2678,20 @@ function GoalShareModal({ goal, shares, onClose, onAddShare, onRemoveShare, part
   const { t } = useLanguage()
   const [selectedUserId, setSelectedUserId] = useState('')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleAdd = async () => {
     if (!selectedUserId) return
     setSaving(true)
-    await onAddShare(goal.id, selectedUserId)
-    setSelectedUserId('')
-    setSaving(false)
+    setError(null)
+    try {
+      await onAddShare(goal.id, selectedUserId)
+      setSelectedUserId('')
+    } catch {
+      setError(t('finance_save_error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -2511,6 +2738,11 @@ function GoalShareModal({ goal, shares, onClose, onAddShare, onRemoveShare, part
               style={{ marginTop: 10, width: '100%', padding: '8px 0', borderRadius: 8, border: 'none', backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
               {saving ? '...' : t('finance_goal_add_collaborator')}
             </button>
+          )}
+          {error && (
+            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 13, fontWeight: 600 }}>
+              {error}
+            </div>
           )}
         </div>
       </div>
@@ -2881,6 +3113,7 @@ function RecurringModal({ item, categories, accounts, onClose, onSave, onDelete 
   })
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const cats = categories.filter(c => c.type === form.type)
 
@@ -2888,19 +3121,38 @@ function RecurringModal({ item, categories, accounts, onClose, onSave, onDelete 
     if (!form.description.trim()) return
     if (!form.is_variable && toCents(form.amount) <= 0) return
     setSaving(true)
-    await onSave({
-      type: form.type,
-      description: form.description.trim(),
-      is_variable: form.is_variable,
-      amount: form.is_variable ? null : toCents(form.amount),
-      category_id: form.category_id || null,
-      account_id: form.account_id || null,
-      day_of_month: form.day_of_month,
-      active: form.active,
-      total_installments: form.total_installments && !isNaN(Number(form.total_installments)) && Number(form.total_installments) > 0 ? Number(form.total_installments) : null,
-    })
-    setSaving(false)
-    onClose()
+    setError(null)
+    try {
+      await onSave({
+        type: form.type,
+        description: form.description.trim(),
+        is_variable: form.is_variable,
+        amount: form.is_variable ? null : toCents(form.amount),
+        category_id: form.category_id || null,
+        account_id: form.account_id || null,
+        day_of_month: form.day_of_month,
+        active: form.active,
+        total_installments: form.total_installments && !isNaN(Number(form.total_installments)) && Number(form.total_installments) > 0 ? Number(form.total_installments) : null,
+      })
+      onClose()
+    } catch {
+      setError(t('finance_save_error'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await onDelete!()
+      onClose()
+    } catch {
+      setError(t('finance_delete_error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const toggleStyle = (on: boolean, color: string): React.CSSProperties => ({
@@ -3013,8 +3265,8 @@ function RecurringModal({ item, categories, accounts, onClose, onSave, onDelete 
           </button>
         )}
         {confirming && (
-          <button onClick={async () => { await onDelete!(); onClose() }}
-            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', backgroundColor: '#ef4444', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, marginRight: 'auto' }}>
+          <button onClick={handleDelete} disabled={saving}
+            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', backgroundColor: '#ef4444', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, marginRight: 'auto', opacity: saving ? 0.7 : 1 }}>
             {t('finance_confirm_delete')}
           </button>
         )}
@@ -3027,6 +3279,11 @@ function RecurringModal({ item, categories, accounts, onClose, onSave, onDelete 
           {t('finance_save')}
         </button>
       </div>
+      {error && (
+        <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, backgroundColor: '#ef44441a', color: '#ef4444', fontSize: 13, fontWeight: 600 }}>
+          {error}
+        </div>
+      )}
     </Modal>
   )
 }
@@ -3047,9 +3304,15 @@ function PayAmountModal({ entry, recurring, onClose, onSave }: {
     const v = toCents(amount)
     if (!v || v <= 0) return
     setSaving(true)
-    await onSave(v)
-    setSaving(false)
-    onClose()
+    try {
+      await onSave(v)
+      onClose()
+    } catch {
+      // doMarkPaid already toasts the error; just keep the modal open so the
+      // user can retry instead of silently "succeeding" and closing.
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -3685,9 +3948,28 @@ function WorkspaceModal({
 export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: boolean } = {}) {
   const { user, profile } = useAuth()
   const { t } = useLanguage()
+  const { showToast } = useToast()
   const isMobileHook = useIsMobile()
   const isMobile = isMobileProp ?? isMobileHook
-  const { accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, txAggOwn, txAggWorkspace, loading, reload, ensureMonthLoaded, ensureMonthsLoaded } = useFinanceData()
+  const {
+    accounts, categories, transactions, budgets, goals, contributions, goalShares, incomingGoalShares, sharedTransactions, sharedBudgets, partnerProfiles, recurring, recurringEntries, workspace, workspaceMembers, workspaceInvites, pendingInvitesForMe, familyTransactions, familyBudgets, familyAccounts, familyCategories, txAggOwn, txAggWorkspace, loading, reload, ensureMonthLoaded, ensureMonthsLoaded,
+    setAccounts, setCategories, setBudgets, setGoals, setContributions, setGoalShares, setPartnerProfiles, setRecurring, setRecurringEntries, setFamilyBudgets, setFamilyAccounts, setFamilyCategories,
+    applyTxUpsert, applyTxRemove, resolvePartnerProfile, refetchTransactions, refetchRecurringAndEntries,
+  } = useFinanceData()
+
+  // Runs a mutation's write+local-patch; on failure, logs, toasts, and (for
+  // modal-driven saves) rethrows so the modal's own catch keeps the form open
+  // instead of closing on a failed write. Fire-and-forget list-row actions
+  // pass no `rethrow` and just swallow the error after toasting.
+  const withToast = async (write: () => Promise<void>, message: string, opts?: { rethrow?: boolean }) => {
+    try {
+      await write()
+    } catch (err) {
+      console.error('[Finance]', message, err)
+      showToast('error', message)
+      if (opts?.rethrow) throw err
+    }
+  }
 
   const [month, setMonth] = useState(currentYM())
 
@@ -3771,10 +4053,10 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   // Transactions tab reflects the change without an F5. Silent: a full reload
   // would flip `loading` and unmount the tab the user is standing on.
   useEffect(() => {
-    const handler = () => { reload({ silent: true }) }
+    const handler = () => { refetchTransactions() }
     window.addEventListener('finance_transactions_changed', handler)
     return () => window.removeEventListener('finance_transactions_changed', handler)
-  }, [reload])
+  }, [refetchTransactions])
 
   // Auto-create a budget for the viewed month from each active, fixed-amount
   // expense recurring that doesn't have one yet, so it counts toward expense
@@ -3783,18 +4065,24 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   // amount changes, and never touches a budget that already exists (manual or
   // auto-created before) for that category/month/scope.
   useEffect(() => {
-    if (!user) return
+    const userId = user?.id
+    if (!userId) return
     const candidates = missingAutoBudgets(recurring, [...budgets, ...familyBudgets], month)
     if (candidates.length === 0) return
     let cancelled = false
     ;(async () => {
-      const { error } = await supabase.from('finance_budgets').insert(
-        candidates.map(c => ({ ...c, user_id: user.id, shared_with_user_id: null }))
-      )
-      if (!error && !cancelled) await reload({ silent: true })
+      const { data, error } = await supabase.from('finance_budgets').insert(
+        candidates.map(c => ({ ...c, user_id: userId, shared_with_user_id: null }))
+      ).select()
+      if (!error && !cancelled) {
+        // Payload is fully known from the insert response — no reload needed.
+        const rows = (data as FinanceBudget[]) ?? []
+        setBudgets(prev => [...prev, ...rows.filter(b => !b.workspace_id)])
+        setFamilyBudgets(prev => [...prev, ...rows.filter(b => b.workspace_id)])
+      }
     })()
     return () => { cancelled = true }
-  }, [user, recurring, budgets, familyBudgets, month, reload])
+  }, [user?.id, recurring, budgets, familyBudgets, month])
 
   // Tabs are always personal now; workspace rows appear where they belong:
   // the user's own shared rows inline (with a badge) and everyone's in the
@@ -3846,31 +4134,41 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     setImportModal(true)
   }
 
-  // CRUD helpers
+  // Small local upsert-by-id used by the handlers below that don't already
+  // have one from useFinanceData (applyTxUpsert/applyTxRemove cover
+  // transactions; this covers the flat, single-bucket entities).
+  const upsertById = <T extends { id: string }>(arr: T[], row: T) =>
+    arr.some(x => x.id === row.id) ? arr.map(x => (x.id === row.id ? row : x)) : [...arr, row]
+
+  // CRUD helpers — each applies the write's own response (or a plain local
+  // patch) directly to state instead of calling `reload()` (~15+ queries).
+  // See PERF-002: only `bulkImport` below still does a full reload, since a
+  // statement import can touch many months/rows at once.
   const saveTx = async (data: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>) => {
     if (!user) return
-    const { error } = txModal.tx
-      ? await supabase.from('finance_transactions').update(data).eq('id', txModal.tx.id)
-      : await supabase.from('finance_transactions').insert({ ...data, user_id: user.id })
+    const { data: row, error } = txModal.tx
+      ? await supabase.from('finance_transactions').update(data).eq('id', txModal.tx.id).select().single()
+      : await supabase.from('finance_transactions').insert({ ...data, user_id: user.id }).select().single()
     if (error) throw error
     // A create/edit can land outside the currently loaded month window (most
     // often an edit moving the date) — extend the window first so it doesn't
     // look like the write silently vanished.
     await ensureMonthLoaded(data.date.slice(0, 7))
-    await reload()
+    applyTxUpsert(row as FinanceTransaction)
   }
 
   const deleteTx = async (id: string) => {
-    await supabase.from('finance_transactions').delete().eq('id', id)
-    await reload()
+    const { error } = await supabase.from('finance_transactions').delete().eq('id', id)
+    if (error) throw error
+    applyTxRemove(id)
   }
 
   const quickAddTx = async (data: Omit<FinanceTransaction, 'id' | 'user_id' | 'created_at'>) => {
     if (!user) return
-    const { error } = await supabase.from('finance_transactions').insert({ ...data, user_id: user.id })
+    const { data: row, error } = await supabase.from('finance_transactions').insert({ ...data, user_id: user.id }).select().single()
     if (error) throw error
     await ensureMonthLoaded(data.date.slice(0, 7))
-    await reload()
+    applyTxUpsert(row as FinanceTransaction)
   }
 
   // Single entry point for the statement import. Já roteava parte das linhas
@@ -3886,159 +4184,283 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     if (error) throw error
     // Statement rows can span arbitrary historical months.
     await ensureMonthsLoaded(rows.map(r => r.date.slice(0, 7)))
+    // Bulk import genuinely touches many rows across many months — a full
+    // reload stays cheaper and simpler than patching each row individually.
     await reload()
   }
 
   const bulkDeleteTx = async (ids: string[]) => {
     if (ids.length === 0) return
-    await supabase.from('finance_transactions').delete().in('id', ids)
-    await reload()
+    await withToast(async () => {
+      const { error } = await supabase.from('finance_transactions').delete().in('id', ids)
+      if (error) throw error
+      ids.forEach(applyTxRemove)
+    }, t('finance_delete_error'))
   }
 
+  // Accounts/budgets are dual-bucket: `accounts`/`budgets` hold everything the
+  // user owns (any workspace_id), `familyAccounts`/`familyBudgets` hold
+  // everything visible in the current workspace (any owner) — a
+  // workspace-scoped row owned by the user appears in both.
   const saveAccount = async (data: Omit<FinanceAccount, 'id' | 'user_id' | 'created_at'>) => {
     if (!user) return
-    if (accModal.account) {
-      await supabase.from('finance_accounts').update(data).eq('id', accModal.account.id)
-    } else {
+    const { data: row, error } = accModal.account
+      ? await supabase.from('finance_accounts').update(data).eq('id', accModal.account.id).select().single()
       // Scope (workspace_id) comes from the modal's ScopePicker inside `data`.
-      await supabase.from('finance_accounts').insert({ ...data, user_id: user.id })
-    }
-    await reload()
+      : await supabase.from('finance_accounts').insert({ ...data, user_id: user.id }).select().single()
+    if (error) throw error
+    const acc = row as FinanceAccount
+    setAccounts(prev => upsertById(prev, acc))
+    setFamilyAccounts(prev => {
+      const stripped = prev.filter(a => a.id !== acc.id)
+      return acc.workspace_id ? upsertById(stripped, acc) : stripped
+    })
   }
 
   const deleteAccount = async (id: string) => {
-    await supabase.from('finance_accounts').delete().eq('id', id)
-    await reload()
+    const { error } = await supabase.from('finance_accounts').delete().eq('id', id)
+    if (error) throw error
+    // Balances are derived from txAggOwn, not stored — no transactions
+    // refetch needed. Filtering both buckets unconditionally is a no-op on
+    // whichever one didn't have the row.
+    setAccounts(prev => prev.filter(a => a.id !== id))
+    setFamilyAccounts(prev => prev.filter(a => a.id !== id))
   }
 
   const saveBudget = async (data: { category_id: string; month: string; amount_limit: number; shared_with_user_id: string | null; workspace_id: string | null }) => {
     if (!user) return
     // Scope (workspace_id) comes from the modal's ScopePicker inside `data`.
-    const { error } = budgetModal.budget
-      ? await supabase.from('finance_budgets').update(data).eq('id', budgetModal.budget.id)
-      : await supabase.from('finance_budgets').insert({ ...data, user_id: user.id })
+    const { data: row, error } = budgetModal.budget
+      ? await supabase.from('finance_budgets').update(data).eq('id', budgetModal.budget.id).select().single()
+      : await supabase.from('finance_budgets').insert({ ...data, user_id: user.id }).select().single()
     if (error) throw error
-    await reload()
+    const budget = row as FinanceBudget
+    setBudgets(prev => upsertById(prev, budget))
+    setFamilyBudgets(prev => {
+      const stripped = prev.filter(b => b.id !== budget.id)
+      return budget.workspace_id ? upsertById(stripped, budget) : stripped
+    })
   }
 
   const saveGoalShare = async (goalId: string, sharedWithUserId: string) => {
     if (!user) return
-    await supabase.from('finance_goal_shares').upsert({ goal_id: goalId, owner_id: user.id, shared_with_user_id: sharedWithUserId }, { onConflict: 'goal_id,shared_with_user_id' })
-    await reload()
+    const { data: row, error } = await supabase.from('finance_goal_shares')
+      .upsert({ goal_id: goalId, owner_id: user.id, shared_with_user_id: sharedWithUserId }, { onConflict: 'goal_id,shared_with_user_id' })
+      .select().single()
+    if (error) throw error
+    const share = row as FinanceGoalShare
+    let profile = partnerProfiles.find(p => p.id === sharedWithUserId)
+    if (!profile) {
+      const resolved = await resolvePartnerProfile(sharedWithUserId)
+      if (resolved) { profile = resolved; setPartnerProfiles(prev => [...prev, resolved]) }
+    }
+    const withProfile: FinanceGoalShare = { ...share, profile }
+    setGoalShares(prev => upsertById(prev, withProfile))
   }
 
   const deleteGoalShare = async (shareId: string) => {
-    await supabase.from('finance_goal_shares').delete().eq('id', shareId)
-    await reload()
+    await withToast(async () => {
+      const { error } = await supabase.from('finance_goal_shares').delete().eq('id', shareId)
+      if (error) throw error
+      setGoalShares(prev => prev.filter(s => s.id !== shareId))
+    }, t('finance_delete_error'))
   }
 
-  const deleteBudget = async (id: string) => {
-    await supabase.from('finance_budgets').delete().eq('id', id)
-    await reload()
+  const deleteBudget = async (budget: FinanceBudget) => {
+    await withToast(async () => {
+      const { error } = await supabase.from('finance_budgets').delete().eq('id', budget.id)
+      if (error) throw error
+      setBudgets(prev => prev.filter(b => b.id !== budget.id))
+      setFamilyBudgets(prev => prev.filter(b => b.id !== budget.id))
+    }, t('finance_delete_error'))
   }
 
+  // Goals aren't dual-bucket like accounts/budgets — `goals` is a single flat
+  // array (RLS already scopes it to own + shared + workspace-visible rows).
   const saveGoal = async (data: Omit<FinanceGoal, 'id' | 'user_id' | 'created_at'>) => {
     if (!user) return
-    if (goalModal.goal) {
-      await supabase.from('finance_goals').update(data).eq('id', goalModal.goal.id)
-    } else {
-      await supabase.from('finance_goals').insert({ ...data, user_id: user.id })
-    }
-    await reload()
+    const { data: row, error } = goalModal.goal
+      ? await supabase.from('finance_goals').update(data).eq('id', goalModal.goal.id).select().single()
+      : await supabase.from('finance_goals').insert({ ...data, user_id: user.id }).select().single()
+    if (error) throw error
+    setGoals(prev => upsertById(prev, row as FinanceGoal))
   }
 
   const deleteGoal = async (id: string) => {
-    await supabase.from('finance_goals').delete().eq('id', id)
-    await reload()
+    await withToast(async () => {
+      const { error } = await supabase.from('finance_goals').delete().eq('id', id)
+      if (error) throw error
+      setGoals(prev => prev.filter(g => g.id !== id))
+      // finance_goal_contributions.goal_id and finance_goal_shares.goal_id are
+      // both ON DELETE CASCADE — mirror that locally.
+      setContributions(prev => prev.filter(c => c.goal_id !== id))
+      setGoalShares(prev => prev.filter(s => s.goal_id !== id))
+    }, t('finance_delete_error'))
   }
 
   const updateGoalStatus = async (id: string, status: FinanceGoal['status']) => {
-    await supabase.from('finance_goals').update({ status }).eq('id', id)
-    await reload()
+    await withToast(async () => {
+      const { error } = await supabase.from('finance_goals').update({ status }).eq('id', id)
+      if (error) throw error
+      setGoals(prev => prev.map(g => (g.id === id ? { ...g, status } : g)))
+    }, t('finance_save_error'))
   }
 
   const saveContribution = async (data: { goal_id: string; amount: number; note: string; date: string }) => {
     if (!user) return
-    await supabase.from('finance_goal_contributions').insert({ ...data, user_id: user.id })
-    // Auto-complete goal if accumulated >= target
+    const { data: row, error } = await supabase.from('finance_goal_contributions').insert({ ...data, user_id: user.id }).select().single()
+    if (error) throw error
+    const contribution = row as FinanceGoalContribution
+    setContributions(prev => [contribution, ...prev])
+    // Auto-complete goal if accumulated >= target. This second write is
+    // best-effort: if it fails, the contribution is still saved (matches
+    // prior behavior) — just toast a distinct warning instead of throwing,
+    // since the modal shouldn't treat the whole save as failed.
     const goal = goals.find(g => g.id === data.goal_id)
     if (goal && goal.status === 'active') {
       const total = contributions.filter(c => c.goal_id === data.goal_id).reduce((s, c) => s + c.amount, 0) + data.amount
       if (total >= goal.target_amount) {
-        await supabase.from('finance_goals').update({ status: 'completed' }).eq('id', data.goal_id)
+        const { data: goalRow, error: goalErr } = await supabase.from('finance_goals').update({ status: 'completed' }).eq('id', data.goal_id).select().single()
+        if (goalErr) {
+          console.error('[Finance] goal auto-complete failed:', goalErr)
+          showToast('error', t('finance_goal_complete_error'))
+        } else {
+          setGoals(prev => upsertById(prev, goalRow as FinanceGoal))
+        }
       }
     }
-    await reload()
   }
 
   const deleteContribution = async (id: string) => {
-    await supabase.from('finance_goal_contributions').delete().eq('id', id)
-    await reload()
+    await withToast(async () => {
+      const { error } = await supabase.from('finance_goal_contributions').delete().eq('id', id)
+      if (error) throw error
+      // Preserve prior behavior: doesn't un-complete an auto-completed goal.
+      setContributions(prev => prev.filter(c => c.id !== id))
+    }, t('finance_delete_error'))
   }
 
+  // Categories ARE single-bucket (unlike accounts/budgets): `categories` is
+  // filtered `.is('workspace_id', null)` server-side, `familyCategories` is
+  // the workspace-only complement — so a scope change on edit must move the
+  // row between buckets, not just upsert into both.
   const saveCategory = async (data: Omit<FinanceCategory, 'id' | 'user_id' | 'created_at'>) => {
     if (!user) return
-    if (catModal.category) {
-      await supabase.from('finance_categories').update(data).eq('id', catModal.category.id)
-    } else {
+    const { data: row, error } = catModal.category
+      ? await supabase.from('finance_categories').update(data).eq('id', catModal.category.id).select().single()
       // Scope (workspace_id) comes from the modal's ScopePicker inside `data`.
-      await supabase.from('finance_categories').insert({ ...data, user_id: user.id })
+      : await supabase.from('finance_categories').insert({ ...data, user_id: user.id }).select().single()
+    if (error) throw error
+    const cat = row as FinanceCategory
+    if (cat.workspace_id) {
+      setFamilyCategories(prev => upsertById(prev, cat))
+      setCategories(prev => prev.filter(c => c.id !== cat.id))
+    } else {
+      setCategories(prev => upsertById(prev, cat))
+      setFamilyCategories(prev => prev.filter(c => c.id !== cat.id))
     }
-    await reload()
   }
 
   const deleteCategory = async (id: string) => {
-    await supabase.from('finance_categories').delete().eq('id', id)
-    await reload()
+    await withToast(async () => {
+      const { error } = await supabase.from('finance_categories').delete().eq('id', id)
+      if (error) throw error
+      setCategories(prev => prev.filter(c => c.id !== id))
+      setFamilyCategories(prev => prev.filter(c => c.id !== id))
+      // finance_budgets.category_id is ON DELETE CASCADE — mirror it locally
+      // so no ghost budget survives referencing a category that's gone.
+      setBudgets(prev => prev.filter(b => b.category_id !== id))
+      setFamilyBudgets(prev => prev.filter(b => b.category_id !== id))
+      // transactions[].category_id is ON DELETE SET NULL server-side and is
+      // intentionally left stale here: accMap/catMap lookups (built from the
+      // current categories array) simply miss the dangling id and render it
+      // as "no category", same as null — a harmless, self-correcting gap.
+    }, t('finance_delete_error'))
   }
 
   const saveRecurring = async (data: Omit<FinanceRecurring, 'id' | 'user_id' | 'created_at'>) => {
     if (!user) return
-    if (recurringModal.item) {
-      await supabase.from('finance_recurring').update(data).eq('id', recurringModal.item.id)
-    } else {
-      await supabase.from('finance_recurring').insert({ ...data, user_id: user.id })
-    }
-    await reload()
+    const { data: row, error } = recurringModal.item
+      ? await supabase.from('finance_recurring').update(data).eq('id', recurringModal.item.id).select().single()
+      : await supabase.from('finance_recurring').insert({ ...data, user_id: user.id }).select().single()
+    if (error) throw error
+    setRecurring(prev => upsertById(prev, row as FinanceRecurring))
   }
 
   const deleteRecurring = async (id: string) => {
-    await supabase.from('finance_recurring').delete().eq('id', id)
-    await reload()
+    const { error } = await supabase.from('finance_recurring').delete().eq('id', id)
+    if (error) throw error
+    setRecurring(prev => prev.filter(r => r.id !== id))
+    // finance_recurring_entries.recurring_id is ON DELETE CASCADE — mirror it
+    // locally instead of refetching.
+    setRecurringEntries(prev => prev.filter(e => e.recurring_id !== id))
   }
 
+  // Three sequential writes (tx insert → entry update → conditional recurring
+  // deactivate). Not worth a 3-way manual rollback: a mid-sequence failure
+  // leaves genuinely ambiguous server state, so on any failure this falls
+  // back to a targeted refetch of just the touched entities to reconcile,
+  // rather than reload()'s full ~15+ query sweep.
   const doMarkPaid = async (entry: FinanceRecurringEntry, rec: FinanceRecurring, amount: number) => {
     if (!user) return
-    const { data: tx } = await supabase
-      .from('finance_transactions')
-      .insert({ user_id: user.id, type: rec.type, amount, description: rec.description, date: entry.due_date, account_id: rec.account_id, category_id: rec.category_id })
-      .select('id').single()
-    await supabase.from('finance_recurring_entries')
-      .update({ status: 'paid', amount, transaction_id: tx?.id ?? null })
-      .eq('id', entry.id)
-    if (rec.total_installments != null) {
-      const paidBefore = recurringEntries.filter(e => e.recurring_id === rec.id && e.status === 'paid').length
-      if (paidBefore + 1 >= rec.total_installments) {
-        await supabase.from('finance_recurring').update({ active: false }).eq('id', rec.id)
+    try {
+      const { data: txRow, error: txErr } = await supabase
+        .from('finance_transactions')
+        .insert({ user_id: user.id, type: rec.type, amount, description: rec.description, date: entry.due_date, account_id: rec.account_id, category_id: rec.category_id })
+        .select().single()
+      if (txErr) throw txErr
+      const tx = txRow as FinanceTransaction
+
+      const { data: entryRow, error: entryErr } = await supabase.from('finance_recurring_entries')
+        .update({ status: 'paid', amount, transaction_id: tx.id })
+        .eq('id', entry.id)
+        .select().single()
+      if (entryErr) throw entryErr
+
+      let updatedRec: FinanceRecurring | null = null
+      if (rec.total_installments != null) {
+        const paidBefore = recurringEntries.filter(e => e.recurring_id === rec.id && e.status === 'paid').length
+        if (paidBefore + 1 >= rec.total_installments) {
+          const { data: recRow, error: recErr } = await supabase.from('finance_recurring').update({ active: false }).eq('id', rec.id).select().single()
+          if (recErr) throw recErr
+          updatedRec = recRow as FinanceRecurring
+        }
       }
+
+      // Defensive: entries are normally this month/next, already in range,
+      // but a stale overdue entry could be paid from further back.
+      await ensureMonthLoaded(entry.due_date.slice(0, 7))
+      applyTxUpsert(tx)
+      setRecurringEntries(prev => upsertById(prev, entryRow as FinanceRecurringEntry))
+      if (updatedRec) setRecurring(prev => upsertById(prev, updatedRec as FinanceRecurring))
+    } catch (err) {
+      console.error('[Finance] doMarkPaid failed:', err)
+      showToast('error', t('finance_save_error'))
+      // The sequence may have partially landed server-side — reconcile with
+      // a couple of targeted queries instead of guessing which write(s) hit.
+      await refetchTransactions()
+      await refetchRecurringAndEntries()
+      throw err
     }
-    // Defensive: entries are normally this month/next, already in range, but
-    // a stale overdue entry could be paid from further back.
-    await ensureMonthLoaded(entry.due_date.slice(0, 7))
-    await reload()
   }
 
   const handleMarkPaid = (entry: FinanceRecurringEntry, rec: FinanceRecurring) => {
     if (rec.is_variable) {
       setPayModal({ open: true, entry, rec })
     } else {
-      doMarkPaid(entry, rec, rec.amount ?? 0)
+      // Fixed-amount path: fired directly from a list row, nothing awaits or
+      // catches it — doMarkPaid already toasts internally before rethrowing,
+      // this just silences the resulting unhandled-rejection warning.
+      doMarkPaid(entry, rec, rec.amount ?? 0).catch(() => {})
     }
   }
 
   const skipEntry = async (entryId: string) => {
-    await supabase.from('finance_recurring_entries').update({ status: 'skipped' }).eq('id', entryId)
-    await reload()
+    await withToast(async () => {
+      const { error } = await supabase.from('finance_recurring_entries').update({ status: 'skipped' }).eq('id', entryId)
+      if (error) throw error
+      setRecurringEntries(prev => prev.map(e => (e.id === entryId ? { ...e, status: 'skipped' } : e)))
+    }, t('finance_save_error'))
   }
 
   // Uma meta atravessa vários meses, então o seletor de mês só confundiria —

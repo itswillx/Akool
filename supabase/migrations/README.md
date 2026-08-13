@@ -36,6 +36,37 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
   derivado e do custo médio em `src/lib/financeStoreCalc.ts` — mexer no default
   reescreveria o saldo histórico de estoque.
 
+- `20260812140000_sec_admin_revoke_sessions.sql` — aplicada em 2026-08-12 em **duas
+  passagens** no ledger remoto (`sec_admin_revoke_sessions` criou a função;
+  `sec_admin_revoke_sessions_grants` corrigiu os grants em seguida). O arquivo aqui é
+  o estado final e é idempotente. Detalhe importante: o `alter default privileges` de
+  `20260708110000_sec_rpc_grants.sql` **não** pegou nesta função — ela nasceu com
+  EXECUTE para PUBLIC e foi preciso revogar explicitamente. Toda RPC nova criada via
+  MCP precisa do `revoke ... from anon, public` escrito à mão.
+
+- `20260812170000_sec_rate_limit_core.sql` — aplicada em 2026-08-12 via MCP
+  (`sec_rate_limit_core`). Cria o schema `private` (não exposto na Data API) com
+  `private.rate_limits` e reescreve `validate_invite_code` e
+  `search_users_for_share` para consultarem o contador. Três coisas a saber
+  antes de mexer:
+  1. **O `raise` que produz o 429 desfaz o próprio INSERT do contador** — o
+     PostgREST roda cada RPC numa transação e não há autonomous transaction
+     (sem `pg_cron`/`pg_net`/`dblink` neste projeto). O desenho depende do
+     contador de janela fixa ser *auto-saturante*; o cabeçalho do arquivo
+     explica em detalhe. Não "conserte" isso sem ler.
+  2. **`public.check_rate_limit` (usada pelas edge functions) não dá raise de
+     propósito** — devolve `jsonb` e o 429 é montado em TypeScript.
+  3. **Sem `pg_cron`, a limpeza é oportunística** dentro de
+     `rate_limit_touch` (duas varreduras deliberadamente *disjuntas*, senão dão
+     deadlock entre si).
+  Verificado por HTTP real em 2026-08-12: o 429 chega com corpo
+  `{code:'rate_limited', hint:'retry_after_seconds=N'}`. O header `Retry-After`
+  é enviado mas **o browser não o expõe ao JS** (não está em
+  `Access-Control-Expose-Headers`), por isso os segundos vão também no `hint` —
+  é o que `src/lib/rateLimit.ts` lê. A resolução de IP funciona no ambiente do
+  Supabase (`cf-connecting-ip`, com fallback para o **último** hop do
+  `x-forwarded-for`; o primeiro hop é escrito pelo cliente e seria spoofável).
+
 ## Pendências conhecidas de versionamento
 
 - ~~**Baseline ausente.**~~ Resolvido em 2026-08-10 (SEC-001):
@@ -51,13 +82,30 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
   `page_shares`/`project_shares` foi auditada e está bloqueada pelo RLS (ver
   comentário na policy `project_shares_update`/`page_shares_update` no baseline
   e `docs/matriz-rls.md`).
-- **Edge functions defasadas.** `supabase/functions/` tem 4 funções, mas o projeto
-  remoto roda **6** — `admin-ops` e `categorize-transactions` não têm fonte aqui. Além
-  disso, ao menos `ai-chat` está **atrás** da versão publicada (a v9 no remoto lê
-  `profile_secrets.ai_fallback_*`, colunas que não aparecem em nenhum arquivo do repo).
-  Antes de editar/redeployar qualquer função, ressincronize com
-  `npx supabase functions download <slug>` — senão um deploy a partir daqui **regride
-  produção**.
+- **Edge functions defasadas.** Antes de editar/redeployar qualquer função,
+  ressincronize com `npx supabase functions download <slug>` (ou o MCP
+  `get_edge_function`) — senão um deploy a partir daqui **regride produção**.
+  - ~~`ai-chat` está atrás da publicada (a v9 lê `profile_secrets.ai_fallback_*`).~~
+    **Falso alarme, corrigido em 2026-08-12 (SEC-012).** O fonte da v9 publicada
+    foi baixado e comparado byte a byte com o do repo: **nem a v9 nem o arquivo
+    local leem `ai_fallback_*`** — as duas selecionam apenas
+    `ai_provider, ai_api_key`. A única diferença era uma linha, o default de
+    `ALLOWED_ORIGINS`, onde o **local era superconjunto** (incluía
+    `https://www.slinkysalsichinha.com.br`). O aviso original estava errado e
+    bloqueava deploys sem motivo.
+  - `admin-ops` **já tem fonte aqui e está em dia**: em 2026-08-12 o
+    `supabase/functions/admin-ops/index.ts` local foi conferido byte a byte contra a
+    v4 publicada (idênticos) antes de subir a v5 com a revogação de sessões. A v6
+    (SEC-007, mesmo dia) adicionou a action `set_role` e a gravação em `audit_log`;
+    o arquivo daqui é o fonte da v6. Deploy a partir do repo é seguro para essa
+    função. `categorize-transactions` continua sem fonte no repo.
+  - `ai-chat` e `analyze-transaction-photo` **estão em dia desde 2026-08-12**: o
+    arquivo daqui é o fonte da **v10** de cada uma (SEC-012 acrescentou o teto de
+    60/hora e 30/hora por usuário via `check_rate_limit`). Deploy a partir do repo
+    é seguro para as duas. Continuam **sem consumidor no frontend** — zero
+    referências em `src/` —, o que é o próprio card ARCH-008 (integrar ou remover);
+    o rate limit foi aplicado porque elas seguem callable por qualquer usuário
+    autenticado com o JWT dele.
 
 ## Para criar uma migração nova
 

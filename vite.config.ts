@@ -23,7 +23,12 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return
-          if (id.includes('@excalidraw')) return 'excalidraw'
+          // Sem regra para @excalidraw de propósito: forçá-lo num manual chunk fazia o
+          // rolldown fundir ali dentro dependências compartilhadas (tslib, usado também
+          // por @supabase/*), e com isso o bundle de 4.7 MB virava import ESTÁTICO do
+          // chunk do supabase — ou seja, baixado no boot do app. Deixando o code splitting
+          // automático agir, o Excalidraw fica só nos chunks assíncronos que o importam
+          // (DiagramCanvas, DrawingCanvas, usePdfExport).
           if (id.includes('@blocknote') || id.includes('@mantine') || id.includes('prosemirror')) return 'editor'
           if (id.includes('@xyflow')) return 'xyflow'
           if (id.includes('jspdf')) return 'pdf'

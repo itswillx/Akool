@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
-import { X, User, Lock, Check, Sun, Moon, Gift, Copy, CheckCheck, Users, Database, LogOut, Camera, Crop, Trash2, ChevronDown, ChevronUp, LayoutDashboard, LayoutList } from 'lucide-react'
+import { X, User, Lock, Check, Sun, Moon, Gift, Copy, CheckCheck, Users, Database, ScrollText, LogOut, Camera, Crop, Trash2, ChevronDown, ChevronUp, LayoutDashboard, LayoutList } from 'lucide-react'
 import { PasswordInput, PasswordStrengthMeter } from './PasswordFields'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -21,13 +21,14 @@ const AVATAR_EMOJIS = [
 
 const UserManagementPanel = lazy(() => import('./UserManagementPanel'))
 const BackupPanel = lazy(() => import('../modules/backup'))
+const AuditLogPanel = lazy(() => import('../modules/audit'))
 
 interface Props {
   open: boolean
   onClose: () => void
 }
 
-type Tab = 'profile' | 'password' | 'invites' | 'users' | 'backup'
+type Tab = 'profile' | 'password' | 'invites' | 'users' | 'backup' | 'audit'
 
 interface InviteCode {
   id: string
@@ -246,9 +247,9 @@ export default function UserSettingsModal({ open, onClose }: Props) {
 
   if (!open) return null
 
-  // The Users/Backup admin panels need a much wider, taller shell than the
-  // account tabs, which stay compact.
-  const wideTab = tab === 'users' || tab === 'backup'
+  // The Users/Backup/Audit admin panels need a much wider, taller shell than
+  // the account tabs, which stay compact.
+  const wideTab = tab === 'users' || tab === 'backup' || tab === 'audit'
 
   return (
     <>
@@ -276,6 +277,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
           <TabBtn active={tab === 'invites'} onClick={() => setTab('invites')} icon={<Gift size={13} />} label={t('settings_tab_invites')} />
           {isAdmin && <TabBtn active={tab === 'users'} onClick={() => setTab('users')} icon={<Users size={13} />} label={t('sidebar_users')} />}
           {isAdmin && <TabBtn active={tab === 'backup'} onClick={() => setTab('backup')} icon={<Database size={13} />} label={t('sidebar_backup')} />}
+          {isAdmin && <TabBtn active={tab === 'audit'} onClick={() => setTab('audit')} icon={<ScrollText size={13} />} label={t('sidebar_audit')} />}
         </div>
 
         {/* Divider */}
@@ -289,6 +291,9 @@ export default function UserSettingsModal({ open, onClose }: Props) {
           )}
           {tab === 'backup' && (
             <Suspense fallback={<PanelFallback />}><BackupPanel /></Suspense>
+          )}
+          {tab === 'audit' && (
+            <Suspense fallback={<PanelFallback />}><AuditLogPanel /></Suspense>
           )}
           {/* Profile tab */}
           {tab === 'profile' && (

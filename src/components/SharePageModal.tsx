@@ -4,7 +4,9 @@ import { X, UserPlus, ChevronDown, Trash2, Search, Crown, Eye, Pencil } from 'lu
 import type { PageShare, PageShareRole } from '../types'
 import { supabase } from '../lib/supabase'
 import { sanitizeIlikeTerm } from '../lib/profileSearch'
+import { isRateLimited } from '../lib/rateLimit'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { UserAvatar } from './UserAvatar'
 
@@ -124,6 +126,7 @@ function RoleDropdown({
 export default function SharePageModal({ open, onClose, pageId, pageTitle }: SharePageModalProps) {
   const { user } = useAuth()
   const { t } = useLanguage()
+  const { showToast } = useToast()
   const ROLE_LABELS = useRoleLabels()
   const [shares, setShares] = useState<PageShare[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -169,7 +172,12 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
       const term = sanitizeIlikeTerm(q)
       if (term.length < 3) { setSearchResults([]); return }
       const existingIds = new Set([user?.id, ...shares.map(s => s.shared_with_user_id)])
-      const { data } = await supabase.rpc('search_users_for_share', { p_term: term })
+      const { data, error } = await supabase.rpc('search_users_for_share', { p_term: term })
+      // SEC-012: sem isto um 429 era indistinguível de "nenhum usuário encontrado".
+      if (isRateLimited(error)) {
+        showToast('warning', t('search_rate_limited'), { dedupeKey: 'user-search-rate-limited' })
+        return
+      }
       if (data) {
         setSearchResults((data as UserProfile[]).filter(p => !existingIds.has(p.id)))
       }

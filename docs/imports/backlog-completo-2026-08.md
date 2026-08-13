@@ -1200,11 +1200,11 @@
 
 **Subtarefas Kanban:**
 
-- [ ] Padrão comum: snapshot → mutação → rollback + toast em erro
-- [ ] Aplicar nas 6 mutações do useStudyTopics
-- [ ] `rescheduleCards`: aguardar resultados e reportar parciais
-- [ ] Aplicar em deletePage/updatePage do PagesContext
-- [ ] Teste com client fake cobrindo o rollback (casar com QA-001)
+- [x] Padrão comum: snapshot → mutação → rollback + toast em erro — `src/lib/optimistic.ts`
+- [x] Aplicar nas 6 mutações do useStudyTopics (+ toast nas criações server-first, que também falhavam em silêncio)
+- [x] `rescheduleCards`: aguardar resultados e reportar parciais — `allSettled` + rollback só dos ids que falharam (`studyMutations.ts`)
+- [x] Aplicar em deletePage/updatePage do PagesContext — as duas já eram server-first, então viraram guard (não aplicar em falha), não rollback
+- [x] Teste cobrindo o rollback — `optimistic.test.ts` + `studyMutations.test.ts`, via callbacks injetados em vez de client fake (sem RTL, sem mudar a assinatura do hook); o client fake de verdade fica com o QA-001
 
 ---
 

@@ -30,7 +30,7 @@ function AppInner() {
   useEffect(() => {
     // recoveryMode: a user arriving from the recovery email link hasn't
     // "logged in today" yet — signing them out here would kill the reset flow.
-    if (!loading && user && profile && !justSignedIn && !recoveryMode) {
+    if (!loading && user?.id && profile && !justSignedIn && !recoveryMode) {
       const today = new Date().toISOString().split('T')[0]
       const secondsSinceMount = (Date.now() - mountTimeRef.current) / 1000
       if (profile.last_login_date !== today && secondsSinceMount > 5) {
@@ -38,7 +38,7 @@ function AppInner() {
         signOut()
       }
     }
-  }, [loading, user, profile, justSignedIn, recoveryMode])
+  }, [loading, user?.id, profile, justSignedIn, recoveryMode])
 
   const storedLang = (localStorage.getItem('excalinotion_auth_lang') ?? 'pt-BR') as Lang
   const tFallback = getT(storedLang)
@@ -64,9 +64,12 @@ function AppInner() {
   const closeSidebar = () => setSidebarOpen(false)
 
   return (
+    // LanguageProvider fica ACIMA do PagesProvider: o contexto de paginas usa
+    // t() nos toasts de falha de escrita, e por dentro so enxergaria o default
+    // pt-BR fixo, ignorando profile.language.
+    <LanguageProvider>
     <PagesProvider>
       <NotificationsProvider>
-      <LanguageProvider>
       <ThemeProvider>
       <OnboardingProvider>
       <WorkspaceModeProvider>
@@ -128,9 +131,9 @@ function AppInner() {
       </WorkspaceModeProvider>
       </OnboardingProvider>
       </ThemeProvider>
-      </LanguageProvider>
       </NotificationsProvider>
     </PagesProvider>
+    </LanguageProvider>
   )
 }
 

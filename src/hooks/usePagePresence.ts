@@ -21,24 +21,26 @@ export function usePagePresence(pageId: string | undefined) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const upsertPresence = useCallback(async () => {
-    if (!user || !pageId) return
+    const userId = user?.id
+    if (!userId || !pageId) return
     await supabase
       .from('page_presence')
       .upsert(
-        { page_id: pageId, user_id: user.id, last_seen_at: new Date().toISOString() },
+        { page_id: pageId, user_id: userId, last_seen_at: new Date().toISOString() },
         { onConflict: 'page_id,user_id' }
       )
-  }, [user, pageId])
+  }, [user?.id, pageId])
 
   const fetchPresence = useCallback(async () => {
-    if (!user || !pageId) return
+    const userId = user?.id
+    if (!userId || !pageId) return
     const cutoff = new Date(Date.now() - PRESENCE_TTL_MS).toISOString()
     const { data } = await supabase
       .from('page_presence')
       .select('user_id, last_seen_at, profiles!page_presence_user_id_profiles_fkey(email, display_name, avatar_emoji, avatar_color, avatar_url)')
       .eq('page_id', pageId)
       .gte('last_seen_at', cutoff)
-      .neq('user_id', user.id)
+      .neq('user_id', userId)
 
     if (data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,7 +57,7 @@ export function usePagePresence(pageId: string | undefined) {
         }
       }))
     }
-  }, [user, pageId])
+  }, [user?.id, pageId])
 
   const tick = useCallback(async () => {
     await upsertPresence()
@@ -63,7 +65,8 @@ export function usePagePresence(pageId: string | undefined) {
   }, [upsertPresence, fetchPresence])
 
   useEffect(() => {
-    if (!user || !pageId) return
+    const userId = user?.id
+    if (!userId || !pageId) return
 
     tick()
     intervalRef.current = setInterval(tick, HEARTBEAT_INTERVAL)
@@ -74,9 +77,9 @@ export function usePagePresence(pageId: string | undefined) {
         .from('page_presence')
         .delete()
         .eq('page_id', pageId)
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
     }
-  }, [user, pageId, tick])
+  }, [user?.id, pageId, tick])
 
   return activeUsers
 }

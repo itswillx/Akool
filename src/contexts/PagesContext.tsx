@@ -3,7 +3,10 @@ import type { ReactNode } from 'react'
 import type { Page, PageType, PageShareRole } from '../types'
 import { supabase } from '../lib/supabase'
 import { normalizeActivePanel, type ActivePanel } from '../lib/docsNavigation'
+import { mapWriteError, requireRows, runGuarded } from '../lib/optimistic'
 import { useAuth } from './AuthContext'
+import { useToast } from './ToastContext'
+import { useLanguage } from '../i18n/LanguageContext'
 
 // 'projects' saiu da união de painéis: Projetos é uma seção do DocumentsPanel.
 // A migração da chave legada roda no boot (main.tsx → lib/docsNavigation).
@@ -75,6 +78,8 @@ function buildTree(flat: Page[]): Page[] {
 
 export function PagesProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
+  const { showToast } = useToast()
+  const { t } = useLanguage()
   const [pages, setPages] = useState<Page[]>([])
   const [sharedPages, setSharedPages] = useState<Page[]>([])
   const [loading, setLoading] = useState(true)
@@ -112,15 +117,16 @@ export function PagesProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refreshPages = useCallback(async () => {
-    if (!user) { setPages([]); setSharedPages([]); setLoading(false); hasLoadedOnceRef.current = false; return }
+    const userId = user?.id
+    if (!userId) { setPages([]); setSharedPages([]); setLoading(false); hasLoadedOnceRef.current = false; return }
     if (!hasLoadedOnceRef.current) setLoading(true)
 
     const [{ data: ownData, error: ownError }, { data: shareData, error: shareError }] = await Promise.all([
-      supabase.from('pages').select('*').eq('user_id', user.id).order('sort_order', { ascending: true }),
+      supabase.from('pages').select('*').eq('user_id', userId).order('sort_order', { ascending: true }),
       supabase
         .from('page_shares')
         .select('role, pages(*)')
-        .eq('shared_with_user_id', user.id),
+        .eq('shared_with_user_id', userId),
     ])
 
     if (ownError) console.error('refreshPages own error:', ownError)
@@ -186,7 +192,7 @@ export function PagesProvider({ children }: { children: ReactNode }) {
     setSharedPages(sharedTrees)
     setLoading(false)
     hasLoadedOnceRef.current = true
-  }, [user])
+  }, [user?.id])
 
   useEffect(() => { refreshPages() }, [refreshPages])
 
@@ -198,7 +204,7 @@ export function PagesProvider({ children }: { children: ReactNode }) {
   // own deletes already update locally in `deletePage`; a collaborator's
   // delete is picked up on the next natural refresh instead.
   useEffect(() => {
-    if (!user) return
+    if (!user?.id) return
     const scheduleRefresh = () => {
       if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current)
       realtimeDebounceRef.current = setTimeout(() => { refreshPages() }, 400)
@@ -212,7 +218,7 @@ export function PagesProvider({ children }: { children: ReactNode }) {
       if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current)
       supabase.removeChannel(channel)
     }
-  }, [user, refreshPages])
+  }, [user?.id, refreshPages])
 
   useEffect(() => {
     if (!loading && !restoredRef.current) {
@@ -258,16 +264,17 @@ export function PagesProvider({ children }: { children: ReactNode }) {
   }, [pages, sharedPages])
 
   const userShareRole = useCallback((pageId: string): PageShareRole | 'owner' | null => {
-    if (!user) return null
+    if (!user?.id) return null
     return roleMap.get(pageId) ?? null
-  }, [user, roleMap])
+  }, [user?.id, roleMap])
 
   const createPage = useCallback(async (opts?: { parent_id?: string; type?: PageType }) => {
-    if (!user) return null
+    const userId = user?.id
+    if (!userId) return null
     const { data, error } = await supabase
       .from('pages')
       .insert({
-        user_id: user.id,
+        user_id: userId,
         title: opts?.type === 'todo' ? 'To-do list' : 'Untitled',
         icon: opts?.type === 'drawing' ? '🎨' : opts?.type === 'todo' ? '✅' : '📄',
         type: opts?.type ?? 'note',
@@ -276,12 +283,20 @@ export function PagesProvider({ children }: { children: ReactNode }) {
       })
       .select()
       .single()
-    if (error || !data) { console.error('createPage error:', error); return null }
+    if (error || !data) {
+      console.error('createPage error:', error)
+      showToast('error', mapWriteError(error ?? { message: 'no row returned' }, t, 'pages_error_save'), { dedupeKey: 'pages:save' })
+      return null
+    }
+    // Sem estes guards a pagina nasce sem linha de conteudo: existe na arvore e
+    // abre vazia, sem nada indicando que a gravacao caiu pela metade.
+    const contentToast = { label: 'createPage content', onError: (e: Parameters<typeof mapWriteError>[0]) =>
+      showToast('error', mapWriteError(e, t, 'pages_error_save'), { dedupeKey: 'pages:save' }) }
     if (data.type === 'note' || data.type === 'both') {
-      await supabase.from('note_contents').insert({ page_id: data.id, content: [] })
+      await runGuarded(() => supabase.from('note_contents').insert({ page_id: data.id, content: [] }), contentToast)
     }
     if (data.type === 'drawing' || data.type === 'both') {
-      await supabase.from('drawing_contents').insert({ page_id: data.id, elements: [], app_state: {}, files: {} })
+      await runGuarded(() => supabase.from('drawing_contents').insert({ page_id: data.id, elements: [], app_state: {}, files: {} }), contentToast)
     }
     const newPage: Page = { ...(data as Page), children: [] }
     setPages(prev => {
@@ -289,10 +304,22 @@ export function PagesProvider({ children }: { children: ReactNode }) {
       return inserted ? tree : [...prev, newPage]
     })
     return newPage
-  }, [user])
+  }, [user?.id, showToast, t])
 
   const updatePage = useCallback(async (id: string, updates: Partial<Page>) => {
-    await supabase.from('pages').update(updates).eq('id', id)
+    // `children`/`share_role`/`is_shared` sao campos de cliente (buildTree e
+    // refreshPages), nao colunas — nunca devem ir no update.
+    const { children: _children, share_role: _shareRole, is_shared: _isShared, ...columns } = updates
+    const res = await runGuarded(
+      // .select('id') porque um UPDATE barrado por RLS resolve com error: null e
+      // zero linhas; aplicar isso na arvore e exatamente a divergencia do REL-002.
+      async () => requireRows(await supabase.from('pages').update(columns).eq('id', id).select('id')),
+      {
+        label: 'updatePage',
+        onError: error => showToast('error', mapWriteError(error, t, 'pages_error_save'), { dedupeKey: 'pages:save' }),
+      },
+    )
+    if (!res.ok) return
     // Structural changes (reparenting) require a full rebuild; everything else
     // (rename, favorite, icon, type, sort) can be applied optimistically in place.
     if ('parent_id' in updates) {
@@ -302,14 +329,25 @@ export function PagesProvider({ children }: { children: ReactNode }) {
       setSharedPages(prev => updateNodeInTree(prev, id, updates))
     }
     if (activePage?.id === id) setActivePageRaw(prev => prev ? { ...prev, ...updates } : null)
-  }, [activePage, refreshPages])
+  }, [activePage, refreshPages, showToast, t])
 
   const deletePage = useCallback(async (id: string) => {
-    await supabase.from('pages').delete().eq('id', id)
+    // Sem .select() aqui: 0 linhas num delete e ambiguo (RLS barrou vs. alguem
+    // ja apagou), e tratar como falha faria a pagina "voltar" num caso legitimo.
+    const res = await runGuarded(
+      () => supabase.from('pages').delete().eq('id', id),
+      {
+        label: 'deletePage',
+        onError: error => showToast('error', mapWriteError(error, t, 'pages_error_delete'), { dedupeKey: 'pages:delete' }),
+      },
+    )
+    if (!res.ok) return
     if (activePage?.id === id) setActivePageRaw(null)
+    // O realtime NAO assina DELETE (ver comentario acima), entao esta remocao
+    // local e a unica correcao possivel — nada a conserta depois.
     setPages(prev => removeNodeFromTree(prev, id))
     setSharedPages(prev => removeNodeFromTree(prev, id))
-  }, [activePage])
+  }, [activePage, showToast, t])
 
   const value = useMemo<PagesContextType>(() => ({
     pages, sharedPages, loading, activePage, setActivePage, activePanel, setActivePanel,

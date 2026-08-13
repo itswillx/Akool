@@ -5,9 +5,10 @@ import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuI
 import type { DefaultReactSuggestionItem } from '@blocknote/react'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
-import { FolderKanban } from 'lucide-react'
+import { FolderKanban, PencilRuler } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { resolveSignedUrl } from '../lib/storageUrl'
+import { validateUpload, uploadContextBucket } from '../lib/uploadValidation'
 import { DiagramBlock } from './DiagramBlock'
 import { ProjectCardBlock } from './blocks/ProjectCardBlock'
 import ImportProjectCardsModal from './ImportProjectCardsModal'
@@ -17,6 +18,7 @@ import { usePages } from '../contexts/PagesContext'
 import { useCollaborativeContent } from '../hooks/useCollaborativeContent'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { useToast } from '../contexts/ToastContext'
 
 interface NoteEditorProps {
   pageId: string
@@ -134,22 +136,29 @@ function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appThem
   appTheme: 'light' | 'dark'
 }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { t } = useLanguage()
+  const { showToast } = useToast()
 
   const uploadFile = useCallback(async (file: File): Promise<string> => {
+    const result = validateUpload('note-image', file)
+    if (!result.ok) {
+      const message = t(result.reason === 'too_large' ? 'upload_error_too_large' : 'upload_error_invalid_type')
+      showToast('error', message)
+      throw new Error(message)
+    }
     const { data: { user: currentUser } } = await supabase.auth.getUser()
-    const ext = file.name.split('.').pop() ?? 'bin'
     const uid = currentUser?.id ?? 'anon'
-    const path = `${uid}/${pageId}/${Date.now()}.${ext}`
+    const path = `${uid}/${pageId}/${Date.now()}.${result.ext}`
     const { error } = await supabase.storage
-      .from('note-images')
-      .upload(path, file, { contentType: file.type, upsert: false })
+      .from(uploadContextBucket('note-image'))
+      .upload(path, result.file, { contentType: result.file.type, upsert: false })
     if (error) throw new Error(error.message)
     // Bucket privado: persiste o path; a URL assinada e' gerada no render.
     return path
-  }, [pageId])
+  }, [pageId, t, showToast])
 
   const resolveFileUrl = useCallback(
-    (url: string) => resolveSignedUrl('note-images', url),
+    (url: string) => resolveSignedUrl(uploadContextBucket('note-image'), url),
     [],
   )
 
@@ -161,7 +170,6 @@ function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appThem
     ...(initialContent.length > 0 ? { initialContent: initialContent as any } : {}),
   })
 
-  const { t } = useLanguage()
   const [importOpen, setImportOpen] = useState(false)
   // Block where the cursor sat when "/" → Projetos was picked; new card blocks
   // are inserted right after it.
@@ -184,8 +192,24 @@ function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appThem
     saveTimer.current = setTimeout(() => save(), 1000)
   }, [save, readOnly, onDirty])
 
-  // Slash menu: default items plus a "Projetos" entry that opens the card picker.
+  // Slash menu: default items plus a "Projetos" entry that opens the card picker
+  // and a "Diagrama" entry that inserts the (lazily loaded) Excalidraw block.
   const getSlashItems = useCallback(async (query: string): Promise<DefaultReactSuggestionItem[]> => {
+    const diagramItem: DefaultReactSuggestionItem = {
+      title: t('diagram_slash_title'),
+      subtext: t('diagram_slash_subtitle'),
+      aliases: ['diagrama', 'diagram', 'desenho', 'draw', 'excalidraw'],
+      group: t('page_type_drawing'),
+      icon: <PencilRuler size={18} />,
+      onItemClick: () => {
+        if (readOnly) return
+        // Dispara o download do canvas em paralelo com a inserção do bloco, para
+        // encurtar o tempo de Suspense. O bloco funciona igual sem isto.
+        void import('./DiagramCanvas')
+        editor.insertBlocks([{ type: 'diagram' }], editor.getTextCursorPosition().block.id, 'after')
+        handleChange()
+      },
+    }
     const projetosItem: DefaultReactSuggestionItem = {
       title: t('import_cards_slash_title'),
       subtext: t('import_cards_slash_subtitle'),
@@ -198,8 +222,8 @@ function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appThem
         setImportOpen(true)
       },
     }
-    return filterSuggestionItems([...getDefaultReactSlashMenuItems(editor), projetosItem], query)
-  }, [editor, t, readOnly])
+    return filterSuggestionItems([...getDefaultReactSlashMenuItems(editor), diagramItem, projetosItem], query)
+  }, [editor, t, readOnly, handleChange])
 
   const handleImport = useCallback((cards: ProjectCard[], board: ProjectBoard, columns: ProjectColumn[]) => {
     const columnName = (id: string) => columns.find(c => c.id === id)?.name ?? null

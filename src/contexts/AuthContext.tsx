@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { User, Session } from '@supabase/supabase-js'
+import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { supabase, createEphemeralAuthClient, recoveryLinkDetected } from '../lib/supabase'
 
 export interface UserProfile {
@@ -50,6 +50,28 @@ const RECOVERY_FLAG = 'akool_recovery_pending'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+// True when `nextUser` is a redundant re-emission for the account already
+// reflected in `currentUserId` — i.e. the identity churn described above,
+// which the `user` state should NOT adopt. USER_UPDATED is always false here
+// since that event means the account's own data (email/metadata) changed.
+export function isSameAccountEvent(
+  currentUserId: string | null,
+  nextUser: User | null,
+  event: AuthChangeEvent,
+): boolean {
+  return !!nextUser && currentUserId === nextUser.id && event !== 'USER_UPDATED'
+}
+
+export function mergeAuthUser(prev: User | null, nextUser: User | null, sameAccount: boolean): User | null {
+  return sameAccount && prev ? prev : nextUser
+}
+
+// Contrato: a referência de `user` só muda em troca de conta (login/logout) ou em
+// `USER_UPDATED` (e-mail/metadata mudou de verdade) — nunca em SIGNED_IN/TOKEN_REFRESHED
+// redundantes para a mesma conta. Consumidores NUNCA devem depender de `[user]` (o
+// objeto) em efeitos/memos/callbacks — sempre de `user?.id` (e `user?.email` também,
+// se precisar; ver o padrão em FinancePanel.tsx:228-234). Ver `isSameAccountEvent`
+// abaixo, e o callback de `onAuthStateChange` para o porquê.
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
@@ -68,6 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .single()
     if (data) {
       const profile: UserProfile = data as UserProfile
+      // Catches a ban that happened after this session was already open —
+      // signIn's own is_active check only covers the login moment itself.
+      if (!profile.is_active) {
+        await supabase.auth.signOut()
+        setProfile(null)
+        return
+      }
       setProfile(profile)
       if (profile.language) {
         localStorage.setItem('excalinotion_auth_lang', profile.language)
@@ -111,8 +140,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // their local state. So keep the previous instance when nothing changed.
       // USER_UPDATED is the one event that must adopt the new object (email or
       // metadata really did change).
-      const sameAccount = !!nextUser && currentUserIdRef.current === nextUser.id && event !== 'USER_UPDATED'
-      setUser(prev => (sameAccount && prev ? prev : nextUser))
+      const sameAccount = isSameAccountEvent(currentUserIdRef.current, nextUser, event)
+      setUser(prev => mergeAuthUser(prev, nextUser, sameAccount))
 
       if (nextUser) {
         // Refetching on every focus would churn `profile` for no reason. The
@@ -145,6 +174,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     if (data.user) {
+      // Client-writable by design: it's the daily-login UX nag in App.tsx,
+      // not a permission boundary. The privilege-escalation trigger on
+      // profiles already locks down role/is_active/invite_slots_remaining.
       const today = new Date().toISOString().split('T')[0]
       await supabase.from('profiles').update({ last_login_date: today }).eq('id', data.user.id)
       await loadProfile(data.user.id)
@@ -179,7 +211,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (reAuthErr) return { error: 'wrong_password' }
     // The user just proved their password — count it as today's login BEFORE
     // updateUser, whose USER_UPDATED → loadProfile would otherwise hand the
-    // daily-login guard a stale last_login_date.
+    // daily-login guard a stale last_login_date. Client-writable by design,
+    // see the note on the same update in signIn above.
     const today = new Date().toISOString().split('T')[0]
     await supabase.from('profiles').update({ last_login_date: today }).eq('id', user.id)
     // current_password is required by the project's "Require current password
@@ -216,6 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     // Count the recovery as today's login so the daily-login guard doesn't
     // immediately sign the user back out after choosing the new password.
+    // Client-writable by design, see the note on the same update in signIn above.
     setJustSignedIn(true)
     if (user) {
       const today = new Date().toISOString().split('T')[0]
