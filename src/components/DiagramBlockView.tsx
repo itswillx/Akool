@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react'
+import { useState, useRef, useCallback, useLayoutEffect, lazy, Suspense } from 'react'
 import type { ReactCustomBlockRenderProps } from '@blocknote/react'
 import { diagramBlockConfig } from './diagramBlockConfig'
 // Só tipos: somem no build e não puxam o chunk do Excalidraw.
@@ -60,7 +60,13 @@ export default function DiagramBlockView({ block, editor }: ReactCustomBlockRend
       // UX-013: ao desmontar (colapsar, trocar de página, apagar o bloco), o
       // timer não pode disparar depois: grava na hora o que estiver pendente,
       // se o bloco ainda existir; se foi removido, descarta.
-      useEffect(() => () => {
+      // Limpeza de layout, e não passiva: na troca de página, o React roda as
+      // limpezas de layout de toda a árvore antes das passivas. Em passiva, o
+      // BlockNoteView já tinha desmontado o editor (o updateBlock não dispara
+      // o onChange) e o NoteEditor já tinha feito o flush de saída: a edição
+      // se perdia. Em layout, o editor está vivo, o updateBlock chega ao
+      // onChange do NoteEditor, e o flush passivo dele grava o diagrama.
+      useLayoutEffect(() => () => {
         if (saveTimer.current) clearTimeout(saveTimer.current)
         saveTimer.current = null
         flushPendingDiagramSave({
