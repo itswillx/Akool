@@ -110,8 +110,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mfaPending, setMfaPending] = useState(false)
 
   const loadProfile = useCallback(async (userId: string) => {
+    // SEC-013: role, is_active, last_login_date e invite_slots_remaining não são
+    // legíveis para outros perfis; o próprio perfil vem pela RPC get_my_profile.
     const { data } = await supabase
-      .from('profiles')
+      .rpc('get_my_profile')
       .select('id, email, display_name, role, is_active, language, theme, invite_slots_remaining, last_login_date, avatar_emoji, avatar_color, avatar_url, finance_dashboard_view')
       .eq('id', userId)
       .single()
@@ -196,7 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) return { error }
     if (data.user) {
       const { data: prof } = await supabase
-        .from('profiles')
+        .rpc('get_my_profile')
         .select('is_active')
         .eq('id', data.user.id)
         .single()

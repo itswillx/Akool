@@ -18,7 +18,7 @@ const PAGE_SIZE = 50
 
 const GRID_COLUMNS = '20px 150px 1fr 150px 1fr 90px'
 
-const ACTION_FILTERS = ['all', 'set_role', 'ban_user', 'unban_user', 'delete_user', 'restore_backup', 'delete_backup'] as const
+const ACTION_FILTERS = ['all', 'set_role', 'ban_user', 'unban_user', 'delete_user', 'add_invite_slots', 'revoke_invite_code', 'profile_privilege_change', 'restore_backup', 'delete_backup'] as const
 type ActionFilter = typeof ACTION_FILTERS[number]
 
 // Rótulo por ação conhecida; ações novas (ou vindas de outra edge function)
@@ -28,6 +28,10 @@ const ACTION_LABEL_KEYS: Record<string, TranslationKey> = {
   ban_user: 'audit_action_ban_user',
   unban_user: 'audit_action_unban_user',
   delete_user: 'audit_action_delete_user',
+  // SEC-018: gravadas pelas RPCs de convite e pelo gatilho de privilégios do perfil.
+  add_invite_slots: 'audit_action_add_invite_slots',
+  revoke_invite_code: 'audit_action_revoke_invite_code',
+  profile_privilege_change: 'audit_action_profile_privilege_change',
   restore_backup: 'audit_action_restore_backup',
   delete_backup: 'audit_action_delete_backup',
 }

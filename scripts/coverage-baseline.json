@@ -14,10 +14,6 @@
   "src/pages": 62.91,
   "supabase/functions/_shared": 98.21,
   "supabase/functions/admin-ops": 12.87,
-  "supabase/functions/ai-chat": 0,
-  "supabase/functions/analyze-transaction-photo": 0,
   "supabase/functions/cards-api": 0,
-  "supabase/functions/categorize-transactions": 0,
-  "supabase/functions/site-backup": 5.24,
-  "supabase/functions/study-lookup": 9.87
+  "supabase/functions/site-backup": 5.24
 }

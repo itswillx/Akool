@@ -193,7 +193,5 @@
   "src/modules/study/StudyTopicList.tsx::jsx-a11y/click-events-have-key-events": 1,
   "src/modules/study/StudyTopicList.tsx::jsx-a11y/no-static-element-interactions": 1,
   "src/pages/AuthPage.tsx::no-useless-assignment": 1,
-  "src/pages/MfaChallengePage.tsx::jsx-a11y/no-autofocus": 1,
-  "supabase/functions/ai-chat/index.ts::@typescript-eslint/no-explicit-any": 3,
-  "supabase/functions/analyze-transaction-photo/index.ts::@typescript-eslint/no-explicit-any": 1
+  "src/pages/MfaChallengePage.tsx::jsx-a11y/no-autofocus": 1
 }

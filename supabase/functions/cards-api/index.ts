@@ -27,7 +27,7 @@ interface RateLimitVerdict {
   tripped: boolean;
 }
 
-// Mesmo helper de ai-chat: fail-open se o contador estiver indisponível.
+// Mesmo helper das antigas edges de IA: fail-open se o contador estiver indisponível.
 async function checkRateLimit(
   client: SupabaseClient,
   bucket: string,

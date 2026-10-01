@@ -80,8 +80,9 @@ export const EXCLUDED_TABLES = [
   // AI development queue (cards-api). Work-in-progress state tied to a live
   // session; restoring an old queue would re-run finished work.
   "project_card_queue",
-  // Shared cache of public-API lookups for the study-lookup edge function
-  // (migration 20260830200710). Regenerable, service_role only, expires.
+  // Shared cache of public-API lookups of the former study-lookup edge function
+  // (migration 20260830200710; the function left on 2026-10-01, SEC-015, and the
+  // table goes with DEV-010). Regenerable, service_role only, expires.
   "study_lookup_cache",
 ] as const;
 

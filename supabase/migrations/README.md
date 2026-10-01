@@ -114,6 +114,9 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
     função. Desde 26/09/2026 (SEC-007), `categorize-transactions` (v5) e
     `study-lookup` (v1) também têm fonte aqui, versionada a partir do código
     publicado, e as functions do navegador usam o CORS de `_shared/cors.ts`.
+  - **01/10/2026 (SEC-015):** `ai-chat`, `analyze-transaction-photo`,
+    `categorize-transactions` e `study-lookup` saíram do repositório (sem
+    consumidor no app) e são apagadas no painel. As notas abaixo são histórico.
   - `ai-chat` e `analyze-transaction-photo` **estão em dia desde 2026-08-12**: o
     arquivo daqui é o fonte da **v10** de cada uma (SEC-012 acrescentou o teto de
     60/hora e 30/hora por usuário via `check_rate_limit`). Deploy a partir do repo
