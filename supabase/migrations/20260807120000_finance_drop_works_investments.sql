@@ -12,7 +12,8 @@
 --
 -- Investimentos é dropado direto: as duas tabelas estão vazias.
 --
--- Backup em `supabase/backups/20260807_obras_investimentos.json`. O bucket
+-- Backup (dados reais) guardado FORA do repositório desde 26/09/2026 (SEC-008),
+-- com o dono do projeto: `20260807_obras_investimentos.json`. O bucket
 -- `project-expense-files` NÃO é apagado aqui — o único anexo é a foto de uma
 -- nota fiscal e não há outra cópia dela.
 

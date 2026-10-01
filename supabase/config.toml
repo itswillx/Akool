@@ -1,12 +1,13 @@
-# Configuracao da stack local do Supabase (card ARCH-007).
+# Configuracao da stack local do Supabase (DEV-006; passo a passo no README,
+# secao "Supabase local").
 #
 # Serve para subir um Postgres/Auth/Storage locais com `supabase start` e
 # TESTAR uma migracao antes de aplica-la no remoto. NAO muda nada no projeto
 # hospedado — o remoto continua sendo alterado somente via MCP apply_migration.
 #
-# ATENCAO: `supabase db reset` (local) roda TODAS as migracoes de
-# ./migrations na ordem. Enquanto o baseline nao existir (ver migrations/README.md),
-# o banco local sai incompleto — as ~55 migracoes antigas nao estao versionadas.
+# `supabase db reset` (local) roda TODAS as migracoes de ./migrations na ordem,
+# a partir da baseline (20260509000000_baseline_remote_schema.sql, desde
+# 10/08), e depois o ./seed.sql com usuarios e dados de exemplo.
 
 project_id = "nhfftophadasiezrzlsv"
 
@@ -39,6 +40,11 @@ port = 54324
 enabled = true
 file_size_limit = "50MiB"
 
+[db.seed]
+# DEV-006: so no reset LOCAL. O staging (npm run staging:reset) nunca le o seed.
+enabled = true
+sql_paths = ["./seed.sql"]
+
 [auth]
 enabled = true
 # Porta do dev server do Vite (ver vite.config.ts).
@@ -49,6 +55,20 @@ enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
 enable_signup = true
 
+# SEC-004: mesma política de senha do app (src/lib/passwordPolicy.ts). No
+# projeto remoto isto é configurado no painel (Authentication → Policies), junto
+# com a "Leaked password protection".
+minimum_password_length = 10
+password_requirements = "lower_upper_letters_digits"
+
+# SEC-004: verificação em duas etapas por app autenticador (TOTP).
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
 [auth.email]
 enable_signup = true
 double_confirm_changes = true
@@ -58,10 +78,16 @@ enable_confirmations = false
 [analytics]
 enabled = false
 
-# site-backup e a UNICA function com verify_jwt = false: o disparo automatico se
+# site-backup (e cards-api, abaixo) roda com verify_jwt = false: o disparo automatico se
 # autentica pelo header `x-cron-secret`, sem JWT nenhum (ver verifyAdmin em
 # functions/site-backup/index.ts). O default do CLI e `true`, entao sem esta
 # secao um `functions deploy site-backup` sem `--no-verify-jwt` liga a verificacao
 # no remoto e mata o backup automatico em silencio.
 [functions.site-backup]
+verify_jwt = false
+
+# cards-api se autentica por token pessoal (`Bearer akool_pat_…`, hash em
+# public.api_tokens), não por JWT do Supabase. Com verify_jwt = true o gateway
+# recusaria o token antes de chegar na function.
+[functions.cards-api]
 verify_jwt = false

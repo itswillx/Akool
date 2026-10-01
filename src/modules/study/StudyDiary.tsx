@@ -38,7 +38,7 @@ export default function StudyDiary({ logs, onAdd, onRequestDeleteLog }: StudyDia
           onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit() } }}
           placeholder={t('study_diary_placeholder')}
           rows={2}
-          style={{ resize: 'none', border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', lineHeight: 1.45 }}
+          style={{ resize: 'none', border: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', lineHeight: 1.45 }}
         />
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button

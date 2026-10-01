@@ -9,6 +9,8 @@
 // paragraphs and soft line breaks. Per the request we don't escape stray
 // Markdown characters in plain text — fidelity only covers the toolbar's set.
 
+import { hasUrlScheme, safeHref } from './safeHref'
+
 // ─── Markdown → HTML ──────────────────────────────────────────────────────────
 
 function escapeHtml(s: string): string {
@@ -41,10 +43,15 @@ function inlineToHtml(text: string): string {
     switch (best.type) {
       case 'code': out += `<code>${escapeHtml(m[1])}</code>`; break
       case 'link': {
-        const href = m[2].trim()
-        out += /^javascript:/i.test(href)
-          ? inlineToHtml(m[1])
-          : `<a href="${escapeAttr(href)}">${inlineToHtml(m[1])}</a>`
+        // SEC-010: allowlist, not a blocklist — this HTML goes to innerHTML,
+        // outside React's own javascript: filter. Relative paths (imported
+        // cards' [a.ts](src/a.ts)) stay in the Markdown through an inert anchor
+        // with no href; any other scheme keeps only the label.
+        const raw = m[2].trim()
+        const href = safeHref(raw)
+        if (href) out += `<a href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${inlineToHtml(m[1])}</a>`
+        else if (!hasUrlScheme(raw)) out += `<a data-md-href="${escapeAttr(raw)}">${inlineToHtml(m[1])}</a>`
+        else out += inlineToHtml(m[1])
         break
       }
       case 'bold': out += `<strong>${inlineToHtml(m[1])}</strong>`; break
@@ -144,7 +151,8 @@ function serializeNode(node: Node): string {
       return inner ? `\`${inner}\`` : ''
     }
     case 'A': {
-      const href = el.getAttribute('href') ?? ''
+      // data-md-href: the inert anchor markdownToHtml emits for relative paths.
+      const href = el.getAttribute('href') ?? el.getAttribute('data-md-href') ?? ''
       const inner = serializeChildren(el)
       return href ? `[${inner}](${href})` : inner
     }

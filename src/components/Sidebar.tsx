@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   ChevronDown, ChevronRight, Search,
@@ -14,8 +14,10 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { useDocsSelection } from '../hooks/useDocsSelection'
 import { setDocsSelection } from '../lib/docsNavigation'
 import { useLanguage } from '../i18n/LanguageContext'
-import ExportPdfModal from './ExportPdfModal'
-import { PageItem, CreateNewDropdown, flattenPages } from './PageTree'
+import { PageItem, PageTreeRoot, CreateNewDropdown, flattenPages } from './PageTree'
+
+// PERF-009: o modal de exportar PDF só baixa quando abre.
+const ExportPdfModal = lazy(() => import('./ExportPdfModal'))
 
 function SidebarBtn({ onClick, title, children }: { onClick: () => void; title?: string; children: ReactNode }) {
   const [hov, setHov] = useState(false)
@@ -95,8 +97,10 @@ function SidebarFooterMenu({
 
   return (
     <div style={sidebarStyles.footer}>
-      <div
-        style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 6, cursor: 'pointer', backgroundColor: hov ? 'var(--color-hover)' : 'transparent', transition: 'background-color 0.1s' }}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '5px 8px', border: 'none', borderRadius: 6, cursor: 'pointer', font: 'inherit', textAlign: 'left', backgroundColor: hov ? 'var(--color-hover)' : 'transparent', transition: 'background-color 0.1s' }}
         onMouseEnter={() => setHov(true)}
         onMouseLeave={() => setHov(false)}
         onClick={toggle}
@@ -106,7 +110,7 @@ function SidebarFooterMenu({
         </span>
         <MoreHorizontal size={13} style={{ color: 'var(--color-text-muted)', marginRight: 6 }} />
         <span style={{ fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 500 }}>{t('sidebar_more')}</span>
-      </div>
+      </button>
       {expanded && (
         <div style={{ paddingTop: 2 }}>
           <SidebarAction onClick={() => setShowExport(true)}>
@@ -149,19 +153,27 @@ function CollapsibleSection({ label, storageKey, defaultExpanded = true, childre
 
   return (
     <div>
+      {/* O cabeçalho que recolhe é um botão; a ação da direita fica fora dele
+          (botão dentro de botão não é permitido). */}
       <div
-        style={{ display: 'flex', alignItems: 'center', padding: '4px 8px 2px', cursor: 'pointer' }}
+        style={{ display: 'flex', alignItems: 'center', padding: '4px 8px 2px' }}
         onMouseEnter={() => setHov(true)}
         onMouseLeave={() => setHov(false)}
-        onClick={toggle}
       >
-        <span style={{ color: hov ? 'var(--color-text)' : 'var(--color-text-muted)', transition: 'color 0.1s', display: 'flex', alignItems: 'center', marginRight: 4 }}>
-          {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-        </span>
-        <span style={{ fontSize: 11, fontWeight: 600, color: hov ? 'var(--color-text)' : 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', flex: 1, transition: 'color 0.1s' }}>
-          {label}
-        </span>
-        {rightAction && <span onClick={e => e.stopPropagation()}>{rightAction}</span>}
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={toggle}
+          style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: 0, border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
+        >
+          <span style={{ color: hov ? 'var(--color-text)' : 'var(--color-text-muted)', transition: 'color 0.1s', display: 'flex', alignItems: 'center', marginRight: 4 }}>
+            {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: hov ? 'var(--color-text)' : 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', flex: 1, transition: 'color 0.1s' }}>
+            {label}
+          </span>
+        </button>
+        {rightAction}
       </div>
       {expanded && <div>{children}</div>}
     </div>
@@ -175,7 +187,7 @@ const sidebarStyles = {
   workspaceName: { fontSize: 14, fontWeight: 600, color: 'var(--color-text)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
   workspaceEmail: { fontSize: 12, color: 'var(--color-text-muted)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
   searchBox: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 6 },
-  searchInput: { flex: 1, border: 'none', outline: 'none', fontSize: 13, backgroundColor: 'transparent', color: 'var(--color-text)' },
+  searchInput: { flex: 1, border: 'none', fontSize: 13, backgroundColor: 'transparent', color: 'var(--color-text)' },
   searchDropdown: { margin: '0 8px 8px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.18)', overflow: 'hidden', zIndex: 10 },
   searchResult: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 12px', border: 'none', cursor: 'pointer', backgroundColor: 'transparent', fontSize: 14, color: 'var(--color-text)', textAlign: 'left' as const },
   pagesScroll: { flex: 1, overflowY: 'auto' as const, paddingTop: 4 },
@@ -227,7 +239,7 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
           <p style={S.workspaceEmail}>{profile?.display_name || user?.email}</p>
         </div>
         {onNavigate && (
-          <SidebarBtn onClick={onNavigate} title="Close"><X size={14} /></SidebarBtn>
+          <SidebarBtn onClick={onNavigate} title={t('common_close')}><X size={14} /></SidebarBtn>
         )}
       </div>
 
@@ -236,9 +248,12 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
       <div style={{ padding: '8px 8px 4px', display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
         <CreateNewDropdown onNewPage={handleNewPage} />
         {showSearch ? (
-          <div style={S.searchBox}>
-            <Search size={13} color="#9b9a97" style={{ flexShrink: 0 }} />
+          <div className="field-box" style={S.searchBox}>
+            <Search size={13} color="var(--color-icon)" style={{ flexShrink: 0 }} />
             <input
+              // UX-007: só o placeholder não dá nome ao campo para o leitor de tela.
+              type="search"
+              aria-label={t('sidebar_search_label')}
               autoFocus={!isMobile}
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -246,7 +261,7 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
               placeholder={t('sidebar_search_placeholder')}
               style={S.searchInput}
             />
-            {search && <button onClick={() => { setSearch(''); setShowSearch(false) }} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9b9a97', padding: 0, display: 'flex' }}><X size={12} /></button>}
+            {search && <button type="button" aria-label={t('sidebar_search_clear')} onClick={() => { setSearch(''); setShowSearch(false) }} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-icon)', padding: 0, display: 'flex' }}><X size={12} /></button>}
           </div>
         ) : (
           <SidebarAction onClick={() => setShowSearch(true)}>
@@ -309,9 +324,11 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
             defaultExpanded={true}
           >
             <div style={{ padding: '0 8px 4px' }}>
-              {sharedPages.map(p => (
-                <PageItem key={p.id} page={p} depth={0} onNavigate={onNavigate} readOnly={p.share_role === 'viewer'} />
-              ))}
+              <PageTreeRoot label={t('sidebar_shared_with_me')} pages={sharedPages}>
+                {sharedPages.map(p => (
+                  <PageItem key={p.id} page={p} depth={0} onNavigate={onNavigate} readOnly={p.share_role === 'viewer'} />
+                ))}
+              </PageTreeRoot>
             </div>
           </CollapsibleSection>
         )}
@@ -320,7 +337,9 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
         {favorites.length > 0 && (
           <CollapsibleSection label={t('sidebar_favorites')} storageKey="favs" defaultExpanded={true}>
             <div style={{ padding: '0 8px 4px' }}>
-              {favorites.map(p => <PageItem key={p.id} page={p} depth={0} onNavigate={onNavigate} />)}
+              <PageTreeRoot label={t('sidebar_favorites')} pages={favorites}>
+                {favorites.map(p => <PageItem key={p.id} page={p} depth={0} onNavigate={onNavigate} />)}
+              </PageTreeRoot>
             </div>
           </CollapsibleSection>
         )}
@@ -345,7 +364,11 @@ export default function Sidebar({ onNavigate }: SidebarProps = {}) {
         setMode={setMode}
       />
 
-      <ExportPdfModal open={showExport} onClose={() => setShowExport(false)} />
+      {showExport && (
+        <Suspense fallback={null}>
+          <ExportPdfModal open onClose={() => setShowExport(false)} />
+        </Suspense>
+      )}
     </aside>
   )
 }

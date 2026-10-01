@@ -1,0 +1,17 @@
+#!/bin/sh
+# SEC-001: bloqueia commit com segredo. Ativado no `npm install` pelo
+# scripts/install-git-hooks.mjs (core.hooksPath = .githooks).
+#   1. gitleaks nos arquivos staged (regras em .gitleaks.toml; --redact nunca
+#      imprime o valor);
+#   2. trava dos testes TestSprite, quando algum deles está no commit.
+# Sem gitleaks instalado, avisa e segue: o CI roda a mesma varredura.
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --redact --verbose --no-banner || exit 1
+else
+  echo "pre-commit: gitleaks não instalado (brew install gitleaks); o CI vai verificar." >&2
+fi
+
+if git diff --cached --name-only | grep -q '^testsprite_tests/'; then
+  npx vitest run scripts/testsprite-credentials.test.ts || exit 1
+fi

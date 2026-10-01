@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useLanguage } from '../../i18n/LanguageContext'
+import { cardKeyDown } from '../../lib/dndAccessibility'
 
 // Card do board: casca arrastável + botões ‹ › + o conteúdo que o chamador
 // desenha. O board não sabe nada sobre o que está dentro.
@@ -54,6 +55,9 @@ export function BoardCardShell({
       {...attributes}
       {...(draggable ? listeners : {})}
       onClick={onClick}
+      // attributes já fazem do card um role=button focável: Enter abre,
+      // Espaço (KeyboardSensor) pega para mover.
+      onKeyDown={cardKeyDown(draggable ? listeners?.onKeyDown : undefined, onClick, isDragging)}
     >
       {children}
       {hasMoves && (

@@ -3,6 +3,7 @@ import { X, FileDown, CheckSquare, Square } from 'lucide-react'
 import type { Page } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useLanguage } from '../i18n/LanguageContext'
+import { useDialog } from '../hooks/useDialog'
 
 interface ExportPdfModalProps {
   open: boolean
@@ -26,6 +27,7 @@ function PageCheckItem({
   onToggle: (id: string) => void
   disabled: boolean
 }) {
+  const { t } = useLanguage()
   const [hovered, setHovered] = useState(false)
   const isSelected = selected.has(page.id)
   const hasChildren = (page.children?.length ?? 0) > 0
@@ -33,7 +35,16 @@ function PageCheckItem({
   return (
     <div>
       <div
+        role="checkbox"
+        aria-checked={isSelected}
+        aria-disabled={disabled}
+        tabIndex={disabled ? -1 : 0}
         onClick={() => !disabled && onToggle(page.id)}
+        onKeyDown={e => {
+          if (e.key !== ' ' || e.target !== e.currentTarget) return
+          e.preventDefault()
+          if (!disabled) onToggle(page.id)
+        }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
@@ -52,7 +63,7 @@ function PageCheckItem({
         {isSelected
           ? <CheckSquare size={14} color="var(--color-btn-primary)" style={{ flexShrink: 0 }} />
           : <Square size={14} color="var(--color-text-muted)" style={{ flexShrink: 0 }} />}
-        <span style={{ fontSize: 15, flexShrink: 0 }}>{page.icon || '📄'}</span>
+        <span aria-hidden="true" style={{ fontSize: 15, flexShrink: 0 }}>{page.icon || '📄'}</span>
         <span style={{
           fontSize: 13,
           color: 'var(--color-text)',
@@ -61,7 +72,7 @@ function PageCheckItem({
           whiteSpace: 'nowrap',
           flex: 1,
         }}>
-          {page.title || 'Untitled'}
+          {page.title || t('page_header_untitled')}
         </span>
       </div>
       {hasChildren && page.children!.map(child => (
@@ -83,6 +94,8 @@ export default function ExportPdfModal({ open, onClose }: ExportPdfModalProps) {
   const { t } = useLanguage()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [generating, setGenerating] = useState(false)
+  // Igual ao clique no fundo: não fecha no meio da geração do PDF.
+  const { titleId, dialogProps } = useDialog({ open, onClose, closeOnEsc: !generating })
 
   const allFlat = useMemo(
     () => [...flattenPages(pages), ...flattenPages(sharedPages)],
@@ -111,21 +124,21 @@ export default function ExportPdfModal({ open, onClose }: ExportPdfModalProps) {
     try {
       const date = new Date().toISOString().slice(0, 10)
       const { exportPagesToPdf } = await import('../hooks/usePdfExport')
-      await exportPagesToPdf(toExport, `workspace-${date}.pdf`)
+      await exportPagesToPdf(toExport, `workspace-${date}.pdf`, t)
     } catch (err) {
       console.error('[ExportPdf] error:', err)
     } finally {
       setGenerating(false)
       onClose()
     }
-  }, [allFlat, selected, onClose])
+  }, [allFlat, selected, onClose, t])
 
   if (!open) return null
 
   const hasPages = allFlat.length > 0
 
   return (
-    <div
+    <div role="presentation"
       style={{
         position: 'fixed',
         inset: 0,
@@ -138,7 +151,7 @@ export default function ExportPdfModal({ open, onClose }: ExportPdfModalProps) {
       }}
       onClick={e => { if (e.target === e.currentTarget && !generating) onClose() }}
     >
-      <div style={{
+      <div {...dialogProps} style={{
         backgroundColor: 'var(--color-surface)',
         borderRadius: 16,
         boxShadow: '0 8px 40px rgba(0,0,0,0.28)',
@@ -161,11 +174,13 @@ export default function ExportPdfModal({ open, onClose }: ExportPdfModalProps) {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <FileDown size={18} color="var(--color-text)" />
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>
+            <h2 id={titleId} style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>
               {t('export_pdf_title')}
             </h2>
           </div>
           <button
+            type="button"
+            aria-label={t('dialog_close')}
             onClick={onClose}
             disabled={generating}
             style={{

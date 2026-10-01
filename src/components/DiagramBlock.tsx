@@ -1,7 +1,12 @@
 import { useState, useRef, useCallback, lazy, Suspense } from 'react'
 import { createReactBlockSpec } from '@blocknote/react'
+// Só tipos: somem no build e não puxam o chunk do Excalidraw.
+import type { AppState } from '@excalidraw/excalidraw/types'
+import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import { Pencil, ChevronDown, ChevronUp } from 'lucide-react'
 import { useLanguage } from '../i18n/LanguageContext'
+import { parseDiagramProps } from '../lib/diagramProps'
+import { reportError } from '../lib/observability'
 
 // O spec do bloco precisa estar no schema do BlockNote de forma síncrona
 // (NoteEditor monta o schema em escopo de módulo), mas o canvas do Excalidraw não:
@@ -12,6 +17,14 @@ import { useLanguage } from '../i18n/LanguageContext'
 const DiagramCanvas = lazy(() => import('./DiagramCanvas'))
 
 const CANVAS_HEIGHT = 340
+
+// Um aviso por bloco na sessão: o render do bloco roda a cada mudança do editor.
+const reportedUnreadable = new Set<string>()
+function reportUnreadableDiagram(blockId: string) {
+  if (reportedUnreadable.has(blockId)) return
+  reportedUnreadable.add(blockId)
+  reportError(new Error('diagram block: unreadable elements'), { blockId })
+}
 
 export const DiagramBlock = createReactBlockSpec(
   {
@@ -37,8 +50,7 @@ export const DiagramBlock = createReactBlockSpec(
       const [localCollapsed, setLocalCollapsed] = useState(collapsed)
       const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handleChange = useCallback((elements: readonly any[], appState: any) => {
+      const handleChange = useCallback((elements: readonly ExcalidrawElement[], appState: AppState) => {
         if (saveTimer.current) clearTimeout(saveTimer.current)
         saveTimer.current = setTimeout(() => {
           editor.updateBlock(block, {
@@ -65,28 +77,34 @@ export const DiagramBlock = createReactBlockSpec(
         })
       }
 
-      let elements = []
-      let appStateData = {}
-      try { elements = JSON.parse(block.props.elements || '[]') } catch {}
-      try { appStateData = JSON.parse(block.props.appState || '{}') } catch {}
+      // REL-004: `elements` ilegível não monta o canvas. O Excalidraw chama
+      // onChange ao montar, e o bloco gravaria um diagrama vazio por cima do
+      // dado salvo; assim ele fica intacto para recuperar.
+      const diagram = parseDiagramProps(block.props.elements, block.props.appState)
+      if (!diagram.ok) reportUnreadableDiagram(block.id)
 
       return (
-        <div className="my-3 rounded-xl border border-[#e9e9e7] overflow-hidden bg-white" contentEditable={false}>
+        <div className="my-3 rounded-xl border border-[color:var(--color-border)] overflow-hidden bg-[color:var(--color-bg)]" contentEditable={false}>
           {/* Toolbar */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-[#f7f6f3] border-b border-[#e9e9e7]">
-            <Pencil size={13} className="text-[#9b9a97]" />
-            <span className="text-xs font-medium text-[#9b9a97]">Diagram</span>
+          <div className="flex items-center gap-2 px-3 py-2 bg-[color:var(--color-bg-secondary)] border-b border-[color:var(--color-border)]">
+            <Pencil size={13} className="text-[color:var(--color-icon)]" />
+            <span className="text-xs font-medium text-[color:var(--color-text-muted)]">{t('diagram_label')}</span>
             <div className="flex-1" />
             <button
               onClick={toggleCollapsed}
-              className="flex items-center gap-1 text-xs text-[#9b9a97] hover:text-[#37352f] transition-colors"
+              className="flex items-center gap-1 text-xs text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)] transition-colors"
             >
-              {localCollapsed ? <><ChevronDown size={12} /> Expand</> : <><ChevronUp size={12} /> Collapse</>}
+              {localCollapsed ? <><ChevronDown size={12} /> {t('diagram_expand')}</> : <><ChevronUp size={12} /> {t('diagram_collapse')}</>}
             </button>
           </div>
 
           {/* Canvas */}
-          {!localCollapsed && (
+          {!localCollapsed && !diagram.ok && (
+            <div role="alert" style={{ padding: '14px 16px', fontSize: 13, color: 'var(--color-text-muted)' }}>
+              {t('diagram_unreadable')}
+            </div>
+          )}
+          {!localCollapsed && diagram.ok && (
             <div style={{ height: CANVAS_HEIGHT, position: 'relative' }}>
               <Suspense
                 fallback={
@@ -96,8 +114,9 @@ export const DiagramBlock = createReactBlockSpec(
                 }
               >
                 <DiagramCanvas
-                  elements={elements}
-                  appState={appStateData}
+                  // JSON gravado por este bloco, no formato do próprio Excalidraw.
+                  elements={diagram.elements as ExcalidrawElement[]}
+                  appState={diagram.appState}
                   onChange={isEditable ? handleChange : undefined}
                 />
               </Suspense>

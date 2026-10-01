@@ -5,6 +5,7 @@ import { useLanguage } from '../../i18n/LanguageContext'
 import { sortTopics, topicProgress } from '../../lib/studyProgress'
 import { Avatar, ProgressBar, StatusPill, TargetChip } from './StudyBits'
 import { STATUS_LABEL_KEY, STATUS_ORDER, useHover } from './studyUi'
+import { activateProps } from '../../lib/a11y'
 
 // "Tópicos" view: search bar, status filter chips, a dashed create card and
 // the topic rows (avatar + title + subtitle + progress), following the
@@ -34,6 +35,7 @@ function TopicRow({ topic, cards, onOpen, isMobile }: {
 
   return (
     <div
+      {...activateProps(onOpen)}
       onClick={onOpen}
       {...hoverProps}
       style={{
@@ -127,7 +129,7 @@ export default function StudyTopicList({ topics, cardsByTopic, loading, onOpen, 
           style={{
             width: '100%', boxSizing: 'border-box', padding: '10px 12px 10px 36px', borderRadius: 10,
             border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)',
-            color: 'var(--color-text)', fontSize: 13.5, outline: 'none', fontFamily: 'inherit',
+            color: 'var(--color-text)', fontSize: 13.5, fontFamily: 'inherit',
           }}
         />
       </div>

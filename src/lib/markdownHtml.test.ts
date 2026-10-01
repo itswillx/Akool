@@ -19,9 +19,15 @@ describe('markdownToHtml', () => {
     expect(markdownToHtml('roda `npm test`')).toContain('<code>npm test</code>')
     expect(markdownToHtml('um *destaque*')).toContain('<em>destaque</em>')
   })
-  it('keeps links as anchors (preserving relative paths too)', () => {
-    expect(markdownToHtml('[x](https://a.com)')).toContain('<a href="https://a.com">x</a>')
-    expect(markdownToHtml('[f](src/x.ts)')).toContain('<a href="src/x.ts">f</a>')
+  it('turns safe links into external anchors', () => {
+    expect(markdownToHtml('[x](https://a.com)')).toContain('<a href="https://a.com" target="_blank" rel="noopener noreferrer">x</a>')
+    expect(markdownToHtml('[m](mailto:a@b.com)')).toContain('href="mailto:a@b.com"')
+  })
+  it('keeps relative paths as inert anchors (no href, still in the markdown)', () => {
+    const a = intoDom(markdownToHtml('[f](src/x.ts)')).querySelector('a')!
+    expect(a.hasAttribute('href')).toBe(false)
+    expect(a.getAttribute('data-md-href')).toBe('src/x.ts')
+    expect(a.textContent).toBe('f')
   })
   it('escapes HTML-significant chars in text', () => {
     expect(markdownToHtml('a < b & c')).toContain('a &lt; b &amp; c')
@@ -30,6 +36,38 @@ describe('markdownToHtml', () => {
     const out = markdownToHtml('[x](javascript:alert(1))')
     expect(out).not.toContain('<a ')
     expect(out).toContain('x')
+  })
+})
+
+// SEC-010: the editor feeds this HTML to innerHTML, outside React's own
+// javascript: filter, so no payload may come out as a navigable href.
+describe('markdownToHtml link allowlist (SEC-010)', () => {
+  const payloads = [
+    '[x](javascript:alert(1))',
+    '[x](JaVaScRiPt:alert(1))',
+    '[x](\u0001javascript:alert(1))', // the URL parser strips leading controls
+    '[x](java\tscript:alert(1))', // …and tabs/newlines anywhere
+    '[x](data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==)',
+    '[x](vbscript:msgbox(1))',
+    '[x](&#106;avascript:alert(1))', // HTML entity: must not be decoded into a scheme
+    '[x](javascript&#58;alert(1))',
+    '[x](https://a.com"onmouseover="alert(1))', // quote can't break out of href
+  ]
+
+  it.each(payloads)('%s yields no unsafe href and no handler attribute', md => {
+    const root = intoDom(markdownToHtml(md))
+    for (const a of Array.from(root.querySelectorAll('a[href]'))) {
+      expect(a.getAttribute('href')).toMatch(/^(https?:\/\/|mailto:)/i)
+    }
+    for (const el of Array.from(root.querySelectorAll('*'))) {
+      expect(el.getAttributeNames().filter(n => n.startsWith('on'))).toEqual([])
+    }
+  })
+
+  it('keeps file:line references as inert anchors, not as a scheme', () => {
+    const a = intoDom(markdownToHtml('[p](ProjectsPanel.tsx:972)')).querySelector('a')!
+    expect(a.hasAttribute('href')).toBe(false)
+    expect(a.getAttribute('data-md-href')).toBe('ProjectsPanel.tsx:972')
   })
 })
 
@@ -42,6 +80,14 @@ describe('round-trip (markdown → html → markdown)', () => {
   })
   it('preserves relative file links (no data loss on edit)', () => {
     expect(roundTrip('**Arquivos:** [a.ts](src/a.ts)')).toBe('**Arquivos:** [a.ts](src/a.ts)')
+    expect(roundTrip('[p](ProjectsPanel.tsx:972)')).toBe('[p](ProjectsPanel.tsx:972)')
+  })
+  it('preserves mailto links', () => {
+    expect(roundTrip('[fale](mailto:a@b.com)')).toBe('[fale](mailto:a@b.com)')
+  })
+  it('keeps only the label of links with a blocked scheme', () => {
+    expect(roundTrip('ver [x](javascript:void) aqui')).toBe('ver x aqui')
+    expect(roundTrip('ver [x](data:text/html,oi) aqui')).toBe('ver x aqui')
   })
   it('preserves headings', () => {
     expect(roundTrip('## Seção')).toBe('## Seção')

@@ -2,7 +2,12 @@ import { memo, useEffect, useState, useMemo } from 'react'
 import { Plus, Trash2, Calendar, Flag, CheckCircle2, Circle, Filter } from 'lucide-react'
 import type { Todo, TodoPriority } from '../types'
 import { supabase } from '../lib/supabase'
+import {
+  fieldsUnchanged, mapWriteError, pickFields, reinsertAt, requireRows, revertFields, runGuarded, runOptimistic,
+  type WriteError,
+} from '../lib/optimistic'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 import { usePages } from '../contexts/PagesContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -24,6 +29,7 @@ export default function TodoList({ pageId, embedded = false }: TodoListProps) {
   const { user } = useAuth()
   const { userShareRole } = usePages()
   const { t } = useLanguage()
+  const { showToast } = useToast()
   const [todos, setTodos] = useState<Todo[]>([])
   const [loading, setLoading] = useState(true)
   const [newText, setNewText] = useState('')
@@ -41,7 +47,7 @@ export default function TodoList({ pageId, embedded = false }: TodoListProps) {
       .order('completed', { ascending: true })
       .order('sort_order', { ascending: true })
     if (error) console.error('todos refresh error:', error)
-    setTodos((data as Todo[]) ?? [])
+    setTodos(data ?? [])
     setLoading(false)
   }
 
@@ -61,36 +67,69 @@ export default function TodoList({ pageId, embedded = false }: TodoListProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageId, isCollaborative])
 
+  // REL-004: marcar, editar e excluir são otimistas, com rollback só da linha
+  // e dos campos tocados (um refresh do realtime entre o apply e a falha não
+  // é desfeito). .select('id') + requireRows: o RLS recusa com 0 linhas.
+  const reverted = (error: WriteError) => showToast('error', mapWriteError(error, t, 'toast_error_reverted'))
+
   const addTodo = async () => {
     const text = newText.trim()
     if (!text || !user || readOnly) return
     setNewText('')
-    const { data, error } = await supabase
-      .from('todos')
-      .insert({ page_id: pageId, user_id: user.id, text, sort_order: Date.now() })
-      .select()
-      .single()
-    if (error) { console.error(error); return }
-    if (data) setTodos(prev => [...prev, data as Todo])
+    const res = await runGuarded(
+      () => supabase
+        .from('todos')
+        .insert({ page_id: pageId, user_id: user.id, text, sort_order: Date.now() })
+        .select()
+        .single(),
+      { label: 'todo add', onError: error => showToast('error', mapWriteError(error, t, 'toast_error_save')) },
+    )
+    // Na falha, o texto volta para o campo (se ninguém digitou outro).
+    if (!res.ok) { setNewText(prev => prev || text); return }
+    const row = res.data
+    if (row) setTodos(prev => [...prev, row])
   }
 
   const toggleTodo = async (todo: Todo) => {
     if (readOnly) return
     const next = !todo.completed
-    setTodos(prev => prev.map(t => t.id === todo.id ? { ...t, completed: next } : t))
-    await supabase.from('todos').update({ completed: next, updated_at: new Date().toISOString() }).eq('id', todo.id)
+    await runOptimistic({
+      apply: () => setTodos(prev => prev.map(item => item.id === todo.id ? { ...item, completed: next } : item)),
+      write: async () => requireRows(await supabase.from('todos')
+        .update({ completed: next, updated_at: new Date().toISOString() }).eq('id', todo.id).select('id')),
+      revert: () => setTodos(prev => revertFields(prev, todo.id, { completed: todo.completed }, { onlyIf: cur => cur.completed === next })),
+      onError: reverted,
+      label: 'todo toggle',
+    })
   }
 
   const updateTodo = async (id: string, updates: Partial<Todo>) => {
     if (readOnly) return
-    setTodos(prev => prev.map(t => t.id === id ? { ...t, ...updates } as Todo : t))
-    await supabase.from('todos').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id)
+    const before = todos.find(item => item.id === id)
+    if (!before) return
+    const previous = pickFields(before, updates)
+    await runOptimistic({
+      apply: () => setTodos(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item)),
+      write: async () => requireRows(await supabase.from('todos')
+        .update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select('id')),
+      revert: () => setTodos(prev => revertFields(prev, id, previous, { onlyIf: cur => fieldsUnchanged(cur, updates) })),
+      onError: reverted,
+      label: 'todo update',
+    })
   }
 
   const deleteTodo = async (id: string) => {
     if (readOnly) return
-    setTodos(prev => prev.filter(t => t.id !== id))
-    await supabase.from('todos').delete().eq('id', id)
+    const index = todos.findIndex(item => item.id === id)
+    if (index === -1) return
+    const row = todos[index]
+    await runOptimistic({
+      apply: () => setTodos(prev => prev.filter(item => item.id !== id)),
+      write: async () => requireRows(await supabase.from('todos').delete().eq('id', id).select('id')),
+      revert: () => setTodos(prev => reinsertAt(prev, row, index)),
+      onError: reverted,
+      label: 'todo delete',
+    })
   }
 
   const filtered = useMemo(() => {
@@ -128,7 +167,7 @@ export default function TodoList({ pageId, embedded = false }: TodoListProps) {
             onChange={e => setNewText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') addTodo() }}
             placeholder={t('todo_add_placeholder')}
-            style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, color: 'var(--color-text)', backgroundColor: 'transparent' }}
+            style={{ flex: 1, border: 'none', fontSize: 14, color: 'var(--color-text)', backgroundColor: 'transparent' }}
           />
           <button
             onClick={addTodo}
@@ -220,7 +259,7 @@ const TodoRow = memo(function TodoRow({ todo, onToggle, onUpdate, onDelete, read
       onChange={e => setText(e.target.value)}
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setText(todo.text); setEditing(false) } }}
-      style={{ flex: 1, minWidth: 0, border: '1px solid var(--color-border)', borderRadius: 6, padding: '3px 8px', fontSize: 14, outline: 'none', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)' }}
+      style={{ flex: 1, minWidth: 0, border: '1px solid var(--color-border)', borderRadius: 6, padding: '3px 8px', fontSize: 14, color: 'var(--color-text)', backgroundColor: 'var(--color-surface)' }}
     />
   ) : (
     <span
@@ -236,7 +275,7 @@ const TodoRow = memo(function TodoRow({ todo, onToggle, onUpdate, onDelete, read
       value={todo.priority}
       onChange={readOnly ? undefined : e => onUpdate({ priority: e.target.value as TodoPriority })}
       disabled={readOnly}
-      title="Priority"
+      title={t('projects_priority')}
       style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: isMobile ? '5px 8px' : '3px 6px', fontSize: 12, backgroundColor: 'var(--color-surface)', color: priorityColors[todo.priority], cursor: readOnly ? 'default' : 'pointer', opacity: readOnly ? 0.6 : 1, flexShrink: 0 }}
     >
       <option value="low">{t('todo_priority_low')}</option>
@@ -247,7 +286,7 @@ const TodoRow = memo(function TodoRow({ todo, onToggle, onUpdate, onDelete, read
 
   const dueEl = (
     <label
-      title="Due date"
+      title={t('todo_due_date')}
       style={{ display: 'flex', alignItems: 'center', gap: 4, padding: isMobile ? '5px 8px' : '3px 6px', borderRadius: 6, border: '1px solid var(--color-border)', cursor: 'pointer', color: overdue ? 'var(--color-error)' : 'var(--color-text-muted)', fontSize: 12, backgroundColor: 'var(--color-surface)', flexShrink: 0 }}
     >
       <Calendar size={12} />
@@ -256,7 +295,7 @@ const TodoRow = memo(function TodoRow({ todo, onToggle, onUpdate, onDelete, read
         value={todo.due_date ?? ''}
         onChange={readOnly ? undefined : e => onUpdate({ due_date: e.target.value || null })}
         disabled={readOnly}
-        style={{ border: 'none', outline: 'none', fontSize: 12, color: 'inherit', backgroundColor: 'transparent', width: todo.due_date ? 110 : 16, cursor: 'pointer' }}
+        style={{ border: 'none', fontSize: 12, color: 'inherit', backgroundColor: 'transparent', width: todo.due_date ? 110 : 16, cursor: 'pointer' }}
       />
       {!todo.due_date && <Flag size={10} style={{ opacity: 0 }} />}
     </label>

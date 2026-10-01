@@ -31,7 +31,17 @@ que roda com a *service role* e é a **única fronteira de segurança** real:
 - Restore é **destrutivo** (limpa e reinsere as tabelas) — não é testado em produção.
 
 Tabelas/políticas: `supabase/migrations/20250622120000_site_backups.sql`
-(`site_backups`, `site_backup_settings`, RLS de leitura para admin e job de cron
-semanal). Escritas passam pela service role, que ignora RLS por design.
+(`site_backups`, `site_backup_settings` e RLS de leitura para admin). Escritas
+passam pela service role, que ignora RLS por design.
+
+## Backup automático (REL-008)
+
+O agendamento fica no servidor, na migration `*_rel008_backup_cron.sql`:
+- o `pg_cron` roda `private.request_site_backup()` todo dia às 06:00 UTC;
+- a função faz um `net.http_post` na `site-backup` com `run_auto_backup`, e a Edge Function decide se já venceu o intervalo (`interval_days`);
+- a URL e o segredo (`site_backup_url` e `backup_cron_secret`) ficam no **Vault**, fora do repositório;
+- o segredo precisa ser igual ao `BACKUP_CRON_SECRET` das Edge Functions.
+
+O painel só lista, mostra o atraso e dispara o backup manual. Antes, o automático só rodava quando um admin abria o painel.
 
 > ⚠️ Qualquer nova tabela/integração de backup **precisa nascer com RLS**.

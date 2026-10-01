@@ -225,7 +225,7 @@ export function SaleModal({ store, sale, accounts, onClose }: {
                   )}
                   <input style={{ ...inputStyle, flex: 1 }} type="number" step="0.01" min="0"
                     value={pickPrice} onChange={e => setPickPrice(e.target.value)} placeholder="0,00" />
-                  <button style={{ ...ghostBtnStyle, padding: '8px 12px' }} onClick={addItem} disabled={!picked}><Plus size={14} /></button>
+                  <button aria-label={t('common_add_item')} style={{ ...ghostBtnStyle, padding: '8px 12px' }} onClick={addItem} disabled={!picked}><Plus size={14} /></button>
                 </div>
               </div>
             ) : (
@@ -246,7 +246,7 @@ export function SaleModal({ store, sale, accounts, onClose }: {
                 )}
                 <input style={{ ...inputStyle, width: 92 }} type="number" step="0.01" min="0"
                   value={pickPrice} onChange={e => setPickPrice(e.target.value)} placeholder="0,00" />
-                <button style={{ ...ghostBtnStyle, padding: '8px 10px' }} onClick={addItem} disabled={!picked}><Plus size={14} /></button>
+                <button aria-label={t('common_add_item')} style={{ ...ghostBtnStyle, padding: '8px 10px' }} onClick={addItem} disabled={!picked}><Plus size={14} /></button>
               </div>
             )
           ) : items.length === 0 && (

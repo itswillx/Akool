@@ -1,7 +1,13 @@
 import asyncio
+import os
 import re
 from playwright import async_api
 from playwright.async_api import expect
+
+# SEC-001: credenciais e alvos do teste vêm do ambiente, nunca do código
+# (ver testsprite_tests/README.md).
+LOGIN_USER = os.environ["LOGIN_USER"]
+LOGIN_PASSWORD = os.environ["LOGIN_PASSWORD"]
 
 async def run_test():
     pw = None
@@ -51,13 +57,13 @@ async def run_test():
         # you@example.com email field
         elem = page.get_by_placeholder('you@example.com', exact=True)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("williamzenf5@gmail.com")
+        await elem.fill(LOGIN_USER)
         
         # -> Fill the Email field with the provided email, fill the Password field with the provided password, and click the 'Entrar' button to log in so the finance overview can be checked.
         # •••••••• password field
         elem = page.get_by_placeholder('••••••••', exact=True)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("123123123")
+        await elem.fill(LOGIN_PASSWORD)
         
         # -> Fill the Email field with the provided email, fill the Password field with the provided password, and click the 'Entrar' button to log in so the finance overview can be checked.
         # Entrar button

@@ -5,9 +5,10 @@ import { usePages } from '../contexts/PagesContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { setDocsSelection, type DocsSelection } from '../lib/docsNavigation'
 import { useDocsSelection } from '../hooks/useDocsSelection'
-import { PageItem, CreateNewDropdown, flattenPages } from './PageTree'
+import { PageItem, PageTreeRoot, CreateNewDropdown, flattenPages } from './PageTree'
 import PageEditor, { Lazy } from './PageEditor'
 import QuickNotes from './QuickNotes'
+import ErrorBoundary from './ErrorBoundary'
 
 const StudySection = lazy(() => import('../modules/study'))
 const ProjectsSection = lazy(() => import('../modules/projects'))
@@ -148,15 +149,19 @@ export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps
           ? <p style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '4px 8px' }}>{t('sidebar_loading')}</p>
           : pages.length === 0
             ? <p style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '4px 8px' }}>{t('sidebar_no_pages')}</p>
-            : pages.map(page => (
-                <PageItem
-                  key={page.id}
-                  page={page}
-                  depth={0}
-                  selectedId={selection?.kind === 'page' ? selection.id : null}
-                  onSelect={p => select({ kind: 'page', id: p.id })}
-                />
-              ))
+            : (
+              <PageTreeRoot label={t('sidebar_pages')} pages={pages}>
+                {pages.map(page => (
+                  <PageItem
+                    key={page.id}
+                    page={page}
+                    depth={0}
+                    selectedId={selection?.kind === 'page' ? selection.id : null}
+                    onSelect={p => select({ kind: 'page', id: p.id })}
+                  />
+                ))}
+              </PageTreeRoot>
+            )
         }
       </div>
     </>
@@ -212,7 +217,13 @@ export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps
     }
   }
 
-  const detail = renderDetail()
+  // Um boundary por seção (REL-005): o erro de uma seção fica nela, a lista à
+  // esquerda segue navegável, e trocar de seção ou de página limpa o erro.
+  const detail = (
+    <ErrorBoundary key={selection?.kind ?? 'none'} resetKey={selectedPage?.id}>
+      {renderDetail()}
+    </ErrorBoundary>
+  )
 
   // Mobile: single column. Show the detail (with a back button) when a section
   // or document is selected, otherwise the list.

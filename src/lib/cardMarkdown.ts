@@ -55,7 +55,7 @@ export function formatCardAsMarkdown(
   if (ctx.columnName) meta.push(metaLine(t('projects_table_column'), ctx.columnName))
   meta.push(metaLine(
     t('projects_priority'),
-    t(`projects_priority_${card.priority}` as 'projects_priority_low'),
+    t(`projects_priority_${card.priority}`),
   ))
   meta.push(metaLine(t('projects_assignee'), ctx.assigneeName?.trim() || t('projects_unassigned')))
   if (card.start_date) meta.push(metaLine(t('projects_start_date'), card.start_date))

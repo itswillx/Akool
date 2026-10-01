@@ -3,14 +3,29 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": "^22.13.0 || >=24"
+  },
   "scripts": {
     "dev": "vite",
+    "dev:staging": "vite --mode staging",
+    "dev:localdb": "vite --mode localdb",
     "build": "tsc -b && vite build",
+    "build:staging": "tsc -b && vite build --mode staging",
     "lint": "eslint .",
+    "lint:ci": "node scripts/lint-ratchet.mjs",
     "preview": "vite preview",
+    "preview:staging": "vite preview --mode staging --port 4173 --strictPort",
+    "staging:reset": "node scripts/staging-reset.mjs",
+    "drift": "node scripts/supabase-drift.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage && node scripts/coverage-ratchet.mjs",
+    "test:e2e": "playwright test",
+    "prepare": "node scripts/install-git-hooks.mjs",
     "import:cards": "node scripts/import-backlog-cards.mjs",
+    "cards": "node scripts/cards.mjs",
+    "gen:types": "node scripts/gen-db-types.mjs",
     "generate:architecture-map": "node scripts/generate-architecture-map.mjs",
     "generate:auth-flow-map": "node scripts/generate-auth-flow-map.mjs",
     "generate:maps": "node scripts/generate-architecture-map.mjs && node scripts/generate-auth-flow-map.mjs"
@@ -31,6 +46,7 @@
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@sentry/react": "^11.0.0",
     "@supabase/supabase-js": "^2.105.4",
     "@xyflow/react": "^12.10.2",
     "class-variance-authority": "^0.7.1",
@@ -46,12 +62,20 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@sentry/vite-plugin": "^5.4.0",
     "@tailwindcss/postcss": "^4.3.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.9",
+    "axe-core": "^4.13.0",
     "eslint": "^10.2.1",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
@@ -61,5 +85,10 @@
     "typescript-eslint": "^8.58.2",
     "vite": "^8.0.10",
     "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "eslint-plugin-jsx-a11y": {
+      "eslint": "$eslint"
+    }
   }
 }

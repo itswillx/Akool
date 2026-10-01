@@ -31,7 +31,8 @@ export default function LinkedNotePanel({ pageId }: LinkedNotePanelProps) {
 
       if (!cancelled) {
         if (!existing) {
-          await supabase.from('note_contents').insert({ page_id: pageId, content: [] })
+          const { error } = await supabase.from('note_contents').insert({ page_id: pageId, content: [] })
+          if (error) console.error('[linked note] note_contents insert failed', error)
         }
         setNoteReady(true)
       }
@@ -69,7 +70,7 @@ export default function LinkedNotePanel({ pageId }: LinkedNotePanelProps) {
             <StickyNote size={13} style={{ color: 'var(--color-text-muted)' }} />
             <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-muted)' }}>{t('linked_note_title')}</span>
             <div style={{ flex: 1 }} />
-            <button
+            <button aria-label={t('common_close')}
               onClick={() => setOpen(false)}
               style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4, cursor: 'pointer', border: 'none', backgroundColor: 'transparent', color: 'var(--color-text-muted)' }}
             >

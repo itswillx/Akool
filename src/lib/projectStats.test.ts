@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ProjectCard, ProjectCardPriority } from '../types'
+import type { ProjectCard } from '../types'
 import {
   overviewSummary,
   countByColumnId,
@@ -58,7 +58,7 @@ describe('countByColumnId / countByPriority', () => {
   })
   it('always returns all four priority keys', () => {
     const r = countByPriority([card({ priority: 'urgent' }), card({ priority: 'urgent' }), card({ priority: 'low' })])
-    expect(r).toEqual({ urgent: 2, high: 0, medium: 0, low: 1 } as Record<ProjectCardPriority, number>)
+    expect(r).toEqual({ urgent: 2, high: 0, medium: 0, low: 1 })
   })
 })
 

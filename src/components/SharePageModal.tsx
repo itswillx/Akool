@@ -5,9 +5,11 @@ import type { PageShare, PageShareRole } from '../types'
 import { supabase } from '../lib/supabase'
 import { sanitizeIlikeTerm } from '../lib/profileSearch'
 import { isRateLimited } from '../lib/rateLimit'
+import { mapWriteError, requireRows, runGuarded } from '../lib/optimistic'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { useLanguage } from '../i18n/LanguageContext'
+import { useDialog } from '../hooks/useDialog'
 import { UserAvatar } from './UserAvatar'
 
 interface UserProfile {
@@ -87,7 +89,7 @@ function RoleDropdown({
       </button>
       {open && !disabled && pos && createPortal(
         <>
-          <div
+          <div role="presentation"
             style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
             onClick={() => setOpen(false)}
           />
@@ -126,6 +128,7 @@ function RoleDropdown({
 export default function SharePageModal({ open, onClose, pageId, pageTitle }: SharePageModalProps) {
   const { user } = useAuth()
   const { t } = useLanguage()
+  const { titleId, dialogProps } = useDialog({ open, onClose, closeOnEsc: true })
   const { showToast } = useToast()
   const ROLE_LABELS = useRoleLabels()
   const [shares, setShares] = useState<PageShare[]>([])
@@ -147,11 +150,7 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
       .eq('page_id', pageId)
       .order('created_at', { ascending: true })
     if (data) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setShares(data.map((row: any) => ({
-        ...row,
-        profile: Array.isArray(row.profiles) ? row.profiles[0] : row.profiles,
-      })))
+      setShares(data.map(({ profiles, ...row }) => ({ ...row, profile: profiles ?? undefined })))
     }
     setLoadingShares(false)
   }, [pageId])
@@ -179,7 +178,7 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
         return
       }
       if (data) {
-        setSearchResults((data as UserProfile[]).filter(p => !existingIds.has(p.id)))
+        setSearchResults(data.filter(p => !existingIds.has(p.id)))
       }
     }, 300)
   }
@@ -205,16 +204,26 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
     setAdding(null)
   }
 
+  // REL-004: a falha aparece no aviso do modal (o recarregamento mostra o
+  // estado real). .select('id') + requireRows: o RLS recusa com 0 linhas.
   const handleRoleChange = async (shareId: string, role: PageShareRole) => {
     setSaving(shareId)
-    await supabase.from('page_shares').update({ role }).eq('id', shareId)
+    setErrorMsg(null)
+    await runGuarded(
+      async () => requireRows(await supabase.from('page_shares').update({ role }).eq('id', shareId).select('id')),
+      { label: 'share role', onError: error => setErrorMsg(mapWriteError(error, t, 'toast_error_save')) },
+    )
     await loadShares()
     setSaving(null)
   }
 
   const handleRemove = async (shareId: string) => {
     setSaving(shareId)
-    await supabase.from('page_shares').delete().eq('id', shareId)
+    setErrorMsg(null)
+    await runGuarded(
+      async () => requireRows(await supabase.from('page_shares').delete().eq('id', shareId).select('id')),
+      { label: 'share remove', onError: error => setErrorMsg(mapWriteError(error, t, 'toast_error_delete')) },
+    )
     await loadShares()
     setSaving(null)
   }
@@ -226,11 +235,11 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
 
   return (
     <>
-      <div
+      <div role="presentation"
         style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 100 }}
         onClick={onClose}
       />
-      <div style={{
+      <div {...dialogProps} style={{
         position: 'fixed', top: '50%', left: '50%',
         transform: 'translate(-50%, -50%)',
         backgroundColor: 'var(--color-surface)', borderRadius: 14,
@@ -243,12 +252,14 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '18px 20px 14px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
-            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text)' }}>{t('share_title')}</h2>
+            <h2 id={titleId} style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text)' }}>{t('share_title')}</h2>
             <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 360 }}>
               {pageTitle || t('share_no_title')}
             </p>
           </div>
           <button
+            type="button"
+            aria-label={t('dialog_close')}
             onClick={onClose}
             style={{ flexShrink: 0, marginLeft: 12, width: 28, height: 28, border: 'none', borderRadius: 7, background: 'var(--color-border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}
           >
@@ -258,18 +269,18 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
 
         {/* Search */}
         <div style={{ padding: '12px 20px', flexShrink: 0, position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, backgroundColor: 'var(--color-bg-tertiary)' }}>
-            <Search size={14} color="#9b9a97" style={{ flexShrink: 0 }} />
+          <div className="field-box" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, backgroundColor: 'var(--color-bg-tertiary)' }}>
+            <Search size={14} color="var(--color-icon)" style={{ flexShrink: 0 }} />
             <input
               ref={searchRef}
               value={searchQuery}
               onChange={e => { handleSearch(e.target.value); setSearchOpen(true) }}
               onFocus={() => setSearchOpen(true)}
               placeholder={t('share_search_placeholder')}
-              style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13, background: 'transparent', color: 'var(--color-text)' }}
+              style={{ flex: 1, border: 'none', fontSize: 13, background: 'transparent', color: 'var(--color-text)' }}
             />
             {searchQuery && (
-              <button
+              <button aria-label={t('common_clear')}
                 onClick={() => { setSearchQuery(''); setSearchResults([]); setSearchOpen(false) }}
                 style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: 0, display: 'flex' }}
               >
@@ -277,6 +288,7 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
               </button>
             )}
           </div>
+          <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--color-text-muted)' }}>{t('share_search_hint')}</p>
 
           {searchOpen && searchResults.length > 0 && (
             <div style={{

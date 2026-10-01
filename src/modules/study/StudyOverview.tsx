@@ -5,6 +5,7 @@ import { useLanguage } from '../../i18n/LanguageContext'
 import { countByStatus, isTopicOverdue, topicProgress } from '../../lib/studyProgress'
 import { Avatar, ProgressBar, SectionLabel, TargetChip } from './StudyBits'
 import { formatTimestamp } from './studyUi'
+import { activateProps } from '../../lib/a11y'
 
 // "Visão geral": stat cards, the studying queue ("continue"), upcoming
 // targets and the latest diary entries — everything computed client-side
@@ -104,6 +105,7 @@ export default function StudyOverview({ topics, cardsByTopic, logsByTopic, loadi
               return (
                 <div
                   key={topic.id}
+                  {...activateProps(() => onOpenTopic(topic.id))}
                   onClick={() => onOpenTopic(topic.id)}
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 12, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer' }}
                 >
@@ -136,6 +138,7 @@ export default function StudyOverview({ topics, cardsByTopic, logsByTopic, loadi
               {upcoming.map(topic => (
                 <div
                   key={topic.id}
+                  {...activateProps(() => onOpenTopic(topic.id))}
                   onClick={() => onOpenTopic(topic.id)}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer' }}
                 >
@@ -156,6 +159,7 @@ export default function StudyOverview({ topics, cardsByTopic, logsByTopic, loadi
               {recentLogs.map(log => (
                 <div
                   key={log.id}
+                  {...activateProps(() => onOpenTopic(log.topic_id))}
                   onClick={() => onOpenTopic(log.topic_id)}
                   style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer' }}
                 >

@@ -1,7 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { User, AuthChangeEvent } from '@supabase/supabase-js'
 import { supabase, createEphemeralAuthClient, recoveryLinkDetected } from '../lib/supabase'
+import { assuranceFromSession, needsMfaChallenge } from '../lib/mfa'
+import { localDateKey } from '../lib/localDate'
+import { clearLocalUserData } from '../lib/localData'
+import { getT, toLang } from '../i18n/translations'
 
 export interface UserProfile {
   id: string
@@ -22,7 +26,9 @@ export interface UserProfile {
 
 interface AuthContextType {
   user: User | null
-  session: Session | null
+  // Sem `session` de propósito (PERF-001): o token muda a cada foco/refresh e
+  // levava junto o app inteiro. Quem precisa do token lê na hora da chamada
+  // com `supabase.auth.getSession()`.
   profile: UserProfile | null
   isAdmin: boolean
   loading: boolean
@@ -30,6 +36,11 @@ interface AuthContextType {
   // True after landing from a password-recovery email link (PASSWORD_RECOVERY
   // event): the app shows the "set new password" screen until completed.
   recoveryMode: boolean
+  // SEC-004: sessão só com senha (AAL1) de quem ativou MFA. O app mostra a tela
+  // do código até `verifyMfa` subir a sessão para AAL2.
+  mfaPending: boolean
+  // Erro 'invalid_code' | 'no_factor' ou a mensagem crua do Supabase.
+  verifyMfa: (code: string) => Promise<{ error: string | null }>
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signUp: (email: string, password: string, inviteCode: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
@@ -72,15 +83,31 @@ export function mergeAuthUser(prev: User | null, nextUser: User | null, sameAcco
 // objeto) em efeitos/memos/callbacks — sempre de `user?.id` (e `user?.email` também,
 // se precisar; ver o padrão em FinancePanel.tsx:228-234). Ver `isSameAccountEvent`
 // abaixo, e o callback de `onAuthStateChange` para o porquê.
+// last_login_date é o aviso de login diário (App.tsx), não uma fronteira de
+// permissão: gravar é best-effort. REL-004: a falha fica no console em vez de
+// sumir.
+// UX-011: o AuthProvider fica acima do LanguageProvider (que depende do perfil
+// daqui), então as mensagens saem com getT no idioma guardado: o do perfil (o
+// updateProfile grava a troca) ou, antes do login, o escolhido na tela de login.
+function authT() {
+  const stored = localStorage.getItem('excalinotion_auth_lang')
+  return getT(toLang(stored))
+}
+
+async function recordLoginDate(userId: string, today: string) {
+  const { error } = await supabase.from('profiles').update({ last_login_date: today }).eq('id', userId)
+  if (error) console.warn('[auth] last_login_date not saved', error)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [justSignedIn, setJustSignedIn] = useState(false)
   const [recoveryMode, setRecoveryMode] = useState(
     () => recoveryLinkDetected || sessionStorage.getItem(RECOVERY_FLAG) === '1'
   )
+  const [mfaPending, setMfaPending] = useState(false)
 
   const loadProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
@@ -89,7 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('id', userId)
       .single()
     if (data) {
-      const profile: UserProfile = data as UserProfile
+      // `language` é texto livre no banco (sem CHECK).
+      const profile: UserProfile = { ...data, language: toLang(data.language) }
       // Catches a ban that happened after this session was already open —
       // signIn's own is_active check only covers the login moment itself.
       if (!profile.is_active) {
@@ -110,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
+      setMfaPending(needsMfaChallenge(assuranceFromSession(session)))
       setUser(session?.user ?? null)
       currentUserIdRef.current = session?.user?.id ?? null
       if (session?.user) {
@@ -125,10 +153,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRecoveryMode(true)
         sessionStorage.setItem(RECOVERY_FLAG, '1')
       }
-      if (event === 'SIGNED_OUT') sessionStorage.removeItem(RECOVERY_FLAG)
+      // SEC-017: qualquer logout (botão, outra aba, sessão revogada, login
+      // diário vencido) apaga o que o usuário deixou no navegador. O
+      // sessionStorage.clear() de lá também tira o RECOVERY_FLAG.
+      if (event === 'SIGNED_OUT') clearLocalUserData()
 
-      // Always: consumers read a fresh `session.access_token` at call time.
-      setSession(session)
+      // Síncrono (lê o JWT e os fatores da própria sessão): chamar a API do
+      // supabase-js aqui dentro pode travar no lock da sessão.
+      setMfaPending(needsMfaChallenge(assuranceFromSession(session)))
 
       const nextUser = session?.user ?? null
       // With autoRefreshToken (the default), supabase-js listens to
@@ -170,15 +202,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single()
       if (prof && !prof.is_active) {
         await supabase.auth.signOut()
-        return { error: new Error('Sua conta está desativada. Contate o administrador.') }
+        return { error: new Error(authT()('auth_account_disabled')) }
       }
     }
     if (data.user) {
       // Client-writable by design: it's the daily-login UX nag in App.tsx,
       // not a permission boundary. The privilege-escalation trigger on
       // profiles already locks down role/is_active/invite_slots_remaining.
-      const today = new Date().toISOString().split('T')[0]
-      await supabase.from('profiles').update({ last_login_date: today }).eq('id', data.user.id)
+      const today = localDateKey()
+      await recordLoginDate(data.user.id, today)
       await loadProfile(data.user.id)
     }
     return { error: null }
@@ -202,7 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string): Promise<{ error: string | null }> => {
-    if (!user?.email) return { error: 'Usuário não autenticado.' }
+    if (!user?.email) return { error: authT()('settings_unauthenticated') }
     // Verify the current password on a throwaway client: signing in on the
     // main client would fire SIGNED_IN → loadProfile → new profile object,
     // which lets the daily-login guard in App.tsx sign the user out mid-change.
@@ -213,8 +245,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // updateUser, whose USER_UPDATED → loadProfile would otherwise hand the
     // daily-login guard a stale last_login_date. Client-writable by design,
     // see the note on the same update in signIn above.
-    const today = new Date().toISOString().split('T')[0]
-    await supabase.from('profiles').update({ last_login_date: today }).eq('id', user.id)
+    const today = localDateKey()
+    await recordLoginDate(user.id, today)
     // current_password is required by the project's "Require current password
     // when changing password" auth setting; sessions older than that check
     // otherwise get 400 "Current password required when setting new password."
@@ -252,8 +284,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Client-writable by design, see the note on the same update in signIn above.
     setJustSignedIn(true)
     if (user) {
-      const today = new Date().toISOString().split('T')[0]
-      await supabase.from('profiles').update({ last_login_date: today }).eq('id', user.id)
+      const today = localDateKey()
+      await recordLoginDate(user.id, today)
       await loadProfile(user.id)
     }
     sessionStorage.removeItem(RECOVERY_FLAG)
@@ -271,7 +303,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [signOut])
 
   const updateProfile = useCallback(async (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url' | 'finance_dashboard_view'>>): Promise<{ error: string | null }> => {
-    if (!user) return { error: 'Usuário não autenticado.' }
+    if (!user) return { error: authT()('settings_unauthenticated') }
     const { error } = await supabase.from('profiles').update(data).eq('id', user.id)
     if (error) return { error: error.message }
     setProfile(prev => prev ? { ...prev, ...data } : prev)
@@ -283,12 +315,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) await loadProfile(user.id)
   }, [user, loadProfile])
 
+  const verifyMfa = useCallback(async (code: string): Promise<{ error: string | null }> => {
+    const { data: factors, error: listError } = await supabase.auth.mfa.listFactors()
+    if (listError) return { error: listError.message }
+    // `totp` lista só os fatores já verificados.
+    const factor = factors?.totp?.[0]
+    if (!factor) return { error: 'no_factor' }
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.trim() })
+    if (error) {
+      return { error: error.code === 'mfa_verification_failed' || /invalid|expired/i.test(error.message) ? 'invalid_code' : error.message }
+    }
+    const { data: { session: upgraded } } = await supabase.auth.getSession()
+    setMfaPending(needsMfaChallenge(assuranceFromSession(upgraded)))
+    return { error: null }
+  }, [])
+
   const isAdmin = profile?.role === 'admin'
 
   const value = useMemo<AuthContextType>(() => ({
-    user, session, profile, isAdmin, loading, justSignedIn, recoveryMode,
+    user, profile, isAdmin, loading, justSignedIn, recoveryMode, mfaPending, verifyMfa,
     signIn, signUp, signOut, changePassword, sendPasswordReset, completePasswordReset, cancelPasswordReset, updateProfile, refreshProfile,
-  }), [user, session, profile, isAdmin, loading, justSignedIn, recoveryMode, signIn, signUp, signOut, changePassword, sendPasswordReset, completePasswordReset, cancelPasswordReset, updateProfile, refreshProfile])
+  }), [user, profile, isAdmin, loading, justSignedIn, recoveryMode, mfaPending, verifyMfa, signIn, signUp, signOut, changePassword, sendPasswordReset, completePasswordReset, cancelPasswordReset, updateProfile, refreshProfile])
 
   return (
     <AuthContext.Provider value={value}>

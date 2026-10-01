@@ -5,6 +5,7 @@ import type { ProjectBoard, ProjectCard, ProjectColumn, ProjectCardPriority } fr
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useDialog } from '../hooks/useDialog'
 import { fetchAccessibleBoards, fetchBoardCards } from '../lib/projectImport'
 
 const PRIORITY_COLORS: Record<ProjectCardPriority, string> = {
@@ -56,13 +57,8 @@ export default function ImportProjectCardsModal({ open, onClose, onImport }: Pro
     return () => { cancelled = true }
   }, [open, user?.id, resetToBoards])
 
-  // Esc closes the modal.
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  // Esc fecha, Tab fica preso e o foco volta a quem abriu (UX-003).
+  const { titleId, dialogProps } = useDialog({ open, onClose, closeOnEsc: true })
 
   const openBoard = useCallback((b: ProjectBoard) => {
     setBoard(b)
@@ -122,11 +118,12 @@ export default function ImportProjectCardsModal({ open, onClose, onImport }: Pro
   if (!open) return null
 
   return createPortal(
-    <div
+    <div role="presentation"
       onClick={onClose}
       style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? 12 : 24 }}
     >
       <div
+        {...dialogProps}
         onClick={e => e.stopPropagation()}
         style={{
           backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.24)',
@@ -146,14 +143,14 @@ export default function ImportProjectCardsModal({ open, onClose, onImport }: Pro
             </span>
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <h2 id={titleId} style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {step === 'boards' ? t('import_cards_modal_title') : (board?.name || t('import_cards_step_cards'))}
             </h2>
             <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-muted)' }}>
               {step === 'boards' ? t('import_cards_step_projects') : t('import_cards_step_cards')}
             </p>
           </div>
-          <button type="button" onClick={onClose} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+          <button type="button" aria-label={t('dialog_close')} onClick={onClose} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
             <X size={18} />
           </button>
         </div>
@@ -195,7 +192,7 @@ export default function ImportProjectCardsModal({ open, onClose, onImport }: Pro
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder={t('projects_filter_search')}
-                  style={{ width: '100%', padding: '8px 10px 8px 30px', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 13, backgroundColor: 'var(--color-bg)', color: 'var(--color-text)', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '8px 10px 8px 30px', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 13, backgroundColor: 'var(--color-bg)', color: 'var(--color-text)', boxSizing: 'border-box' }}
                 />
               </div>
               {loadingCards ? (
@@ -229,7 +226,7 @@ export default function ImportProjectCardsModal({ open, onClose, onImport }: Pro
                               <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
                                 <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text)', lineHeight: 1.35, textDecoration: c.completed ? 'line-through' : 'none', wordBreak: 'break-word' }}>{c.title || t('projects_new_card')}</span>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ fontSize: 9.5, fontWeight: 700, color: pColor, backgroundColor: `${pColor}1f`, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{t(`projects_priority_${c.priority}` as Parameters<typeof t>[0])}</span>
+                                  <span style={{ fontSize: 9.5, fontWeight: 700, color: pColor, backgroundColor: `${pColor}1f`, padding: '1px 6px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{t(`projects_priority_${c.priority}`)}</span>
                                   {(c.checklist?.length ?? 0) > 0 ? <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{`${c.checklist.filter(i => i.completed).length}/${c.checklist.length}`}</span> : null}
                                 </span>
                               </span>

@@ -13,10 +13,46 @@ export interface ParsedBacklogCard {
   files: string[]
 }
 
+// UX-011: cada aviso também sai estruturado (código + card), para a tela de
+// importação traduzir. `warnings` continua em português para a CLI
+// (scripts/import-backlog-cards.ts).
+export type BacklogIssueCode =
+  | 'invalid_heading' | 'id_mismatch' | 'no_subtasks' | 'no_priority'
+  | 'no_effort' | 'no_topic' | 'duplicate_id' | 'no_cards'
+
+export interface BacklogIssue {
+  code: BacklogIssueCode
+  cardId?: string
+  /** id_mismatch: o ID da tabela. */
+  detail?: string
+}
+
 export interface ParseResult {
   cards: ParsedBacklogCard[]
   warnings: string[]
+  issues: BacklogIssue[]
   topics: string[]
+}
+
+const ISSUE_TEXT: Record<BacklogIssueCode, (i: BacklogIssue) => string> = {
+  invalid_heading: () => 'Bloco ignorado: heading CARD inválido ou ausente',
+  id_mismatch: i => `${i.cardId}: ID na tabela (${i.detail}) difere do heading`,
+  no_subtasks: i => `${i.cardId}: nenhuma subtarefa encontrada`,
+  no_priority: i => `${i.cardId}: prioridade ausente — usando medium`,
+  no_effort: i => `${i.cardId}: esforço ausente`,
+  no_topic: i => `${i.cardId}: sem seção Tópico associada`,
+  duplicate_id: i => `${i.cardId}: ID duplicado — apenas a primeira ocorrência será importada`,
+  no_cards: () => 'Nenhum card encontrado no arquivo',
+}
+
+interface Report {
+  warnings: string[]
+  issues: BacklogIssue[]
+}
+
+function warn(report: Report, issue: BacklogIssue) {
+  report.issues.push(issue)
+  report.warnings.push(ISSUE_TEXT[issue.code](issue))
 }
 
 const CARD_HEADING_RE = /^###\s+CARD\s+([A-Z]{2,5}-\d{3})\s+[—-]\s+(.+)$/m
@@ -125,10 +161,10 @@ function slugTopic(topic: string): string {
   return topic.trim().toLowerCase()
 }
 
-function parseCardBlock(block: string, topic: string | null, warnings: string[]): ParsedBacklogCard | null {
+function parseCardBlock(block: string, topic: string | null, report: Report): ParsedBacklogCard | null {
   const headingMatch = block.match(CARD_HEADING_RE)
   if (!headingMatch) {
-    warnings.push('Bloco ignorado: heading CARD inválido ou ausente')
+    warn(report, { code: 'invalid_heading' })
     return null
   }
 
@@ -137,7 +173,7 @@ function parseCardBlock(block: string, topic: string | null, warnings: string[])
   const meta = parseMetadata(block)
 
   if (meta.id && meta.id !== externalId) {
-    warnings.push(`${externalId}: ID na tabela (${meta.id}) difere do heading`)
+    warn(report, { code: 'id_mismatch', cardId: externalId, detail: meta.id })
   }
 
   const priority = mapPriority(meta.prioridade)
@@ -159,16 +195,16 @@ function parseCardBlock(block: string, topic: string | null, warnings: string[])
   const checklist = parseChecklist(block)
 
   if (checklist.length === 0) {
-    warnings.push(`${externalId}: nenhuma subtarefa encontrada`)
+    warn(report, { code: 'no_subtasks', cardId: externalId })
   }
   if (!meta.prioridade) {
-    warnings.push(`${externalId}: prioridade ausente — usando medium`)
+    warn(report, { code: 'no_priority', cardId: externalId })
   }
   if (!effort) {
-    warnings.push(`${externalId}: esforço ausente`)
+    warn(report, { code: 'no_effort', cardId: externalId })
   }
   if (!topic) {
-    warnings.push(`${externalId}: sem seção Tópico associada`)
+    warn(report, { code: 'no_topic', cardId: externalId })
   }
 
   return {
@@ -186,7 +222,7 @@ function parseCardBlock(block: string, topic: string | null, warnings: string[])
 }
 
 export function parseBacklogMarkdown(source: string): ParseResult {
-  const warnings: string[] = []
+  const report: Report = { warnings: [], issues: [] }
   const topics: string[] = []
   const cards: ParsedBacklogCard[] = []
 
@@ -212,11 +248,11 @@ export function parseBacklogMarkdown(source: string): ParseResult {
     const start = cardStarts[i].index
     const end = i + 1 < cardStarts.length ? cardStarts[i + 1].index : lines.length
     const block = lines.slice(start, end).join('\n')
-    const card = parseCardBlock(block, cardStarts[i].topic, warnings)
+    const card = parseCardBlock(block, cardStarts[i].topic, report)
     if (!card) continue
 
     if (seenIds.has(card.externalId)) {
-      warnings.push(`${card.externalId}: ID duplicado — apenas a primeira ocorrência será importada`)
+      warn(report, { code: 'duplicate_id', cardId: card.externalId })
       continue
     }
     seenIds.add(card.externalId)
@@ -224,8 +260,8 @@ export function parseBacklogMarkdown(source: string): ParseResult {
   }
 
   if (cards.length === 0) {
-    warnings.push('Nenhum card encontrado no arquivo')
+    warn(report, { code: 'no_cards' })
   }
 
-  return { cards, warnings, topics }
+  return { cards, warnings: report.warnings, issues: report.issues, topics }
 }

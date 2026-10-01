@@ -26,7 +26,7 @@ const STATUS_COLORS: Record<SiteBackup['status'], { bg: string; text: string }> 
 const GRID_COLUMNS = '1fr 100px 120px 90px 300px'
 
 export default function BackupPanel() {
-  const { session, isAdmin } = useAuth()
+  const { user, isAdmin } = useAuth()
   const { refreshPages } = usePages()
   const { t, lang } = useLanguage()
   const isMobile = useIsMobile()
@@ -34,7 +34,7 @@ export default function BackupPanel() {
     backups, settings, loading, runningAction,
     refreshList, createManualBackup,
     restoreBackup, validateBackup, deleteBackup, toggleAutoBackup,
-  } = useSiteBackup(isAdmin && !!session)
+  } = useSiteBackup(isAdmin && !!user)
 
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
   const [confirmRestore, setConfirmRestore] = useState<SiteBackup | null>(null)
@@ -55,14 +55,14 @@ export default function BackupPanel() {
   useEffect(() => () => { if (feedbackTimer.current) clearTimeout(feedbackTimer.current) }, [])
 
   useEffect(() => {
-    if (!isAdmin || !session) return
+    if (!isAdmin || !user) return
     let cancelled = false
-    refreshList({ initial: true, runAuto: true }).catch(err => {
+    refreshList({ initial: true }).catch(err => {
       if (!cancelled) showError(err)
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per admin session
-  }, [isAdmin, session?.user?.id])
+  }, [isAdmin, user?.id])
 
   const handleCreate = async () => {
     try {
@@ -216,7 +216,7 @@ export default function BackupPanel() {
                   : t('backup_last_auto_never')}
               </div>
             </div>
-            <button
+            <button aria-label={t('backup_auto_toggle')}
               onClick={handleToggleAuto}
               disabled={isBusy || !settings}
               style={{

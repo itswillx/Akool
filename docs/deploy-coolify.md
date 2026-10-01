@@ -14,13 +14,19 @@ Back-end fica no **Supabase** (auth + Edge Functions), independente do host do f
 | Static Site / SPA | habilitar se o painel oferecer |
 
 O [`nixpacks.toml`](../nixpacks.toml) fixa **Node 22**, instala dependências com
-`npm install` (inclui as devDependencies que o `vite build` precisa) e define
+`npm ci` (inclui as devDependencies que o `vite build` precisa) e define
 `NIXPACKS_SPA_OUTPUT_DIR=dist` para o Caddy servir o build com fallback SPA
 (deep-links e refresh em rotas internas não retornam 404).
 
-> Por que `npm install` e não `npm ci`? Em build Linux o `npm ci` pode falhar por
-> `optionalDependencies` nativas (rollup/esbuild) quando o `package-lock.json` foi
-> gerado em outro SO. `npm install` resolve isso sozinho.
+> **`npm ci` (DEV-004):** instala exatamente o `package-lock.json`. O lock traz as
+> bindings nativas de Linux x64 e arm64 (rolldown, lightningcss, Tailwind), então
+> não importa em que SO ele foi gerado. Se o lock sair de sincronia com o
+> `package.json`, o `npm ci` falha: rode `npm install` localmente e publique o lock.
+>
+> **Versão do Node:** o `package.json` exige `^22.13.0 || >=24` (`engines`), e o
+> `.npmrc` liga `engine-strict`. Se o Node 22 do Nixpacks for mais antigo, a
+> instalação para com `EBADENGINE` / "Unsupported engine", dizendo a versão
+> exigida e a encontrada.
 
 ## 2. Variáveis no Coolify (Build Time = ON)
 
@@ -41,8 +47,11 @@ Substitua `https://SUA-URL-COOLIFY` pela URL final (domínio) do recurso no Cool
 
 ### 3.1 Edge Functions → Secrets
 
-Functions ativas no projeto: `admin-ops`, `ai-chat`, `analyze-transaction-photo`,
-`categorize-transactions` e `site-backup`.
+Functions ativas no projeto, todas com fonte em `supabase/functions/`: `admin-ops`,
+`ai-chat`, `analyze-transaction-photo`, `cards-api`, `categorize-transactions`,
+`site-backup` e `study-lookup`. As duas órfãs (`categorize-transactions` v5 e
+`study-lookup` v1) foram versionadas a partir do código publicado em 26/09/2026
+(SEC-007); nenhum arquivo de `src/` desta pasta as chama.
 
 > `google-calendar` foi **aposentada em 2026-08-12 (SEC-009)**. A tabela
 > `user_google_tokens` que ela lia/gravava nunca chegou a ser provisionada no
@@ -55,16 +64,24 @@ Functions ativas no projeto: `admin-ops`, `ai-chat`, `analyze-transaction-photo`
 > **Pendente:** o fonte já saiu do repo, mas o deploy ainda está no ar. Para
 > concluir: `npx supabase functions delete google-calendar --project-ref nhfftophadasiezrzlsv`.
 > Enquanto isso não rodar, a function segue listada no dashboard sem fonte
-> correspondente aqui — o mesmo problema que `categorize-transactions` já tem
-> (ver `supabase/migrations/README.md`).
+> correspondente aqui: é a única nessa situação.
 
-O CORS das functions (`ai-chat`, `analyze-transaction-photo`, `site-backup`) é
-controlado por `ALLOWED_ORIGINS`. **Sem a URL do Coolify aqui, as chamadas de API
-do app são bloqueadas por CORS.**
+O CORS das functions chamadas pelo navegador vem de
+`supabase/functions/_shared/cors.ts` (SEC-007). Sem `ALLOWED_ORIGINS`, só o
+domínio de produção é aceito (`https://www.slinkysalsichinha.com.br`). **Se o
+app roda em outra URL (ex.: a do Coolify), defina o secret com todas as origens
+de produção:**
 
 ```env
-ALLOWED_ORIGINS=https://SUA-URL-COOLIFY,https://akool.netlify.app,http://localhost:5173
+ALLOWED_ORIGINS=https://SUA-URL-COOLIFY,https://www.slinkysalsichinha.com.br
 ```
+
+> `https://akool.netlify.app` **não** deve estar no secret: o site na Netlify foi
+> desativado (responde "site not found"), e o nome pode ser registrado por
+> outra pessoa, que passaria a ser uma origem aceita (REL-005, 26/09/2026).
+
+Localhost só em desenvolvimento (no `.env` do `supabase functions serve`), nunca
+no secret de produção.
 
 Secrets já usadas pelas functions (configure se ainda não existirem):
 
@@ -93,6 +110,9 @@ http://localhost:5173/**
 - [ ] `npm run build` passa localmente (gera `dist/`)
 - [ ] Login/signup funciona na URL do Coolify
 - [ ] Refresh em rota interna **não** retorna 404 (fallback SPA OK)
+- [ ] Asset que não existe responde 404: `curl -I https://SEU-DOMINIO/assets/nao-existe.js`
+- [ ] `index.html` com `Cache-Control: no-cache`; asset em `/assets/` com
+  `immutable`; `X-Frame-Options: DENY` e `X-Content-Type-Options: nosniff` em tudo
 - [ ] Backup admin (`site-backup`) sem erro CORS
 - [ ] Google Calendar OAuth (se usado) com redirect na URL do Coolify
 
@@ -106,5 +126,108 @@ http://localhost:5173/**
   documente em [`.env.example`](../.env.example).
 - **Rollback:** o Coolify mantém histórico de deploys — use "Redeploy" de um build
   anterior pelo painel.
-- **Netlify continua como fallback:** `netlify.toml` e `public/_redirects` seguem no
-  repo; nenhum dos dois interfere no build do Coolify.
+- **Netlify desativada:** o site `akool.netlify.app` não existe mais, e o
+  `netlify.toml` e o `public/_redirects` saíram do repo em 26/09/2026 (REL-005).
+  Os headers de segurança que só existiam lá foram para o Caddyfile. A CSP
+  ficou para o SEC-011, porque ligá-la sem teste pode quebrar o app; a que
+  estava no `netlify.toml`, como ponto de partida:
+  `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src * data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self';`
+
+## 6. Caddy: cache, 404 de assets e headers
+
+O Nixpacks serve o `dist/` com um Caddyfile próprio (Caddy 2.8.4). O
+[`nixpacks.toml`](../nixpacks.toml) o substitui pela seção `[staticAssets]`,
+mesclada por último no plano do Nixpacks. Em relação ao padrão, a versão do
+repo muda três coisas (REL-005):
+
+- **`/assets/*` sem fallback de SPA:** um chunk que não existe responde 404, e
+  não o `index.html` com status 200. Depois de um deploy, a aba antiga falha
+  limpo no `import()`, e o app recarrega na versão nova (`src/lib/chunkReload.ts`).
+- **Cache:** `public, max-age=31536000, immutable` só em asset que existe (o
+  nome tem hash) e `no-cache` no `index.html` e nas rotas.
+- **Headers de segurança:** `X-Frame-Options`, `X-Content-Type-Options`,
+  `Referrer-Policy` e `Permissions-Policy`.
+
+### 6.1 CSP, HSTS e fontes do Excalidraw (SEC-009)
+
+- **HSTS:** `Strict-Transport-Security: max-age=31536000`. O TLS termina no
+  proxy do Coolify, e o header passa por ele.
+- **CSP em Report-Only:** a política vai em `Content-Security-Policy-Report-Only`,
+  que só avisa e não bloqueia nada.
+  - **Onde ver:** as violações aparecem no console do navegador como
+    "[Report Only] Refused to …".
+  - **Depois de conferidas as telas logadas** (notas, desenho, financeiro), o
+    header troca de nome para `Content-Security-Policy` e passa a bloquear.
+  - **O que ela permite:**
+    - `script-src 'self'`, sem inline e sem eval (o `index.html` não tem mais
+      script inline);
+    - imagens https de qualquer site;
+    - conexões só com o próprio app, o Supabase do projeto (https e wss) e o
+      Sentry;
+    - iframes do YouTube, do Vimeo e do Figma.
+  - **O host do Supabase está escrito na política.** Se o projeto mudar, a CSP
+    muda junto.
+- **Fontes do Excalidraw:** saem do próprio app, em
+  `/excalidraw-assets/<versão>/fonts/`, e não mais do CDN `esm.sh`.
+  - **Build:** o `vite.config.ts` copia as fontes do pacote para o `dist/`, e o
+    `main.tsx` aponta o Excalidraw para lá.
+  - **Cache:** como a versão está no caminho, o cache é de 1 ano, e arquivo que
+    não existe dá 404.
+
+Antes de publicar uma mudança no Caddyfile, valide com o mesmo Caddy. Um
+Caddyfile inválido derruba o site no deploy:
+
+```bash
+caddy validate --config Caddyfile --adapter caddyfile
+```
+
+## 7. Observabilidade (Sentry)
+
+Erros de produção do app e das edge functions vão para o Sentry (REL-011).
+**Sem as variáveis abaixo, nada muda:** o SDK nem entra no bundle, e o reporter
+das functions não faz nada.
+
+**O que sai e o que não sai:**
+- **Sai:** a mensagem e o stack do erro, a versão do build, o navegador e o id da
+  conta (só o id).
+- **Não sai:** IP, e-mail, cookies, headers, breadcrumbs de console e tracing.
+- **Scrub:** e-mails, JWTs, tokens `akool_pat_`, chaves `sk-…`, `Bearer …`,
+  credenciais em URL, CPF e sequências longas de dígitos são trocados por
+  marcadores antes do envio (`supabase/functions/_shared/scrub.ts`, o mesmo nos
+  dois lados).
+
+### 7.1 Coolify (Build Variables)
+
+| Variável | Para quê |
+|---|---|
+| `VITE_SENTRY_DSN` | Liga o SDK no app. É público: vai no bundle. |
+| `SENTRY_AUTH_TOKEN` | Opcional; secret. Sobe os source maps no build (token de organização com `project:releases`). |
+| `SENTRY_ORG`, `SENTRY_PROJECT` | Junto com o token: para onde vão os mapas. |
+| `SENTRY_RELEASE` | Opcional. Versão do build, se o Coolify não expuser `SOURCE_COMMIT`. |
+
+Com token, org e projeto, o build gera os source maps, sobe para o Sentry e
+**apaga os `.map` do `dist/`**, para o código-fonte não ficar público no Caddy.
+Se o upload falhar, o build segue (o erro aparece no log do deploy).
+
+### 7.2 Supabase (Edge Functions → Secrets)
+
+```env
+SENTRY_DSN=<DSN do projeto no Sentry: o mesmo do app ou um projeto só das edges>
+```
+
+Os eventos das functions chegam com as tags `function` (nome da function) e
+`runtime=supabase-edge`. As falhas de backup chegam com `alert=backup_failed`.
+
+### 7.3 Alertas sugeridos
+
+1. **Backup falhou:** alerta de issue para evento com a tag
+   `alert:backup_failed`, avisando por e-mail na hora.
+2. **Pico nas edges:** alerta de métrica para número de eventos com
+   `runtime:supabase-edge` acima de 10 em 1 hora.
+
+### 7.4 Conferir
+
+No app, como admin, abra o menu da conta (botão com o seu avatar, no canto superior
+direito) e a aba **Auditoria**. A linha do Sentry deve
+dizer "ativo", e **Enviar evento de teste** faz o evento aparecer no Sentry em
+segundos.

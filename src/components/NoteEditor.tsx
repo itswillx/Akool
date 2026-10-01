@@ -19,6 +19,8 @@ import { useCollaborativeContent } from '../hooks/useCollaborativeContent'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useToast } from '../contexts/ToastContext'
+import { classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, type SaveStatus } from '../lib/contentPersistence'
+import SaveStatusBadge, { EditConflictBanner, EditorLoadError } from './SaveStatusBadge'
 
 interface NoteEditorProps {
   pageId: string
@@ -30,6 +32,8 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
   const [initialContent, setInitialContent] = useState<unknown[] | null>(null)
   const [initialUpdatedAt, setInitialUpdatedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const role = userShareRole(pageId)
   const isCollaborative = role !== null
@@ -38,29 +42,35 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setLoadError(false)
     setInitialContent(null)
 
     const load = async () => {
-      const { data } = await supabase
+      const result = classifyLoad<{ content: unknown; updated_at: string | null }>(await supabase
         .from('note_contents')
         .select('content, updated_at')
         .eq('page_id', pageId)
-        .single()
+        .maybeSingle())
 
-      if (!cancelled) {
-        if (data?.content && Array.isArray(data.content) && data.content.length > 0) {
-          setInitialContent(data.content)
-        } else {
-          setInitialContent([])
-        }
-        setInitialUpdatedAt(data?.updated_at ?? null)
+      if (cancelled) return
+      // REL-002: erro de leitura NÃO vira nota vazia — o autosave gravaria vazio
+      // por cima do conteúdo real. Só a página nova (sem linha) começa vazia.
+      if (result.kind === 'error') {
+        setLoadError(true)
         setLoading(false)
+        return
       }
+      const data = result.kind === 'ok' ? result.data : null
+      setInitialContent(data?.content && Array.isArray(data.content) && data.content.length > 0 ? data.content : [])
+      setInitialUpdatedAt(data?.updated_at ?? null)
+      setLoading(false)
     }
 
-    load()
+    void load()
     return () => { cancelled = true }
-  }, [pageId])
+  }, [pageId, reloadKey])
+
+  if (loadError) return <EditorLoadError onRetry={() => setReloadKey(k => k + 1)} />
 
   if (loading || initialContent === null) {
     return (
@@ -77,6 +87,7 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
       initialUpdatedAt={initialUpdatedAt}
       isCollaborative={isCollaborative}
       readOnly={!canEdit}
+      onReloadFromServer={() => setReloadKey(k => k + 1)}
     />
   )
 }
@@ -92,12 +103,14 @@ function EditorInner({
   initialUpdatedAt,
   isCollaborative,
   readOnly,
+  onReloadFromServer,
 }: {
   pageId: string
   initialContent: unknown[]
   initialUpdatedAt: string | null
   isCollaborative: boolean
   readOnly: boolean
+  onReloadFromServer: () => void
 }) {
   const { theme } = useTheme()
   const lastSaveAt = useRef<string | null>(initialUpdatedAt)
@@ -111,7 +124,7 @@ function EditorInner({
 
   useEffect(() => {
     if (!remoteContent || !remoteUpdatedAt) return
-    if (!lastSaveAt.current || remoteUpdatedAt > lastSaveAt.current) {
+    if (isNewer(remoteUpdatedAt, lastSaveAt.current)) {
       const withinProtectionWindow = Date.now() - localSavedAt.current < POST_SAVE_PROTECTION_MS
       if (!isDirty.current && !withinProtectionWindow) {
         lastSaveAt.current = remoteUpdatedAt
@@ -123,19 +136,40 @@ function EditorInner({
   const currentContent = remoteKey > 0 && remoteContent
     ? remoteContent as unknown[]
     : initialContent
+  // REL-009: a versão do conteúdo com que o editor monta; o save só grava sobre ela.
+  const currentVersion = remoteKey > 0 && remoteContent ? remoteUpdatedAt : initialUpdatedAt
 
-  return <EditorCore key={`${pageId}-${remoteKey}`} pageId={pageId} initialContent={currentContent} readOnly={readOnly} onSave={(at) => { lastSaveAt.current = at; localSavedAt.current = Date.now(); isDirty.current = false }} onDirty={() => { isDirty.current = true }} appTheme={theme} />
+  return (
+    <EditorCore
+      key={`${pageId}-${remoteKey}`}
+      pageId={pageId}
+      initialContent={currentContent}
+      readOnly={readOnly}
+      initialVersion={currentVersion}
+      onReloadFromServer={onReloadFromServer}
+      onSave={(at, stillDirty) => {
+        if (at) lastSaveAt.current = at
+        localSavedAt.current = Date.now()
+        // Só fica "limpo" se não houver edição mais nova esperando o próximo save.
+        if (!stillDirty) isDirty.current = false
+      }}
+      onDirty={() => { isDirty.current = true }}
+      appTheme={theme}
+    />
+  )
 }
 
-function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appTheme }: {
+function EditorCore({ pageId, initialContent, readOnly, initialVersion, onReloadFromServer, onSave, onDirty, appTheme }: {
   pageId: string
   initialContent: unknown[]
   readOnly: boolean
-  onSave: (at: string) => void
+  /** REL-009: a versão (`updated_at`) do conteúdo inicial; o save só grava sobre ela. */
+  initialVersion: string | null
+  onReloadFromServer: () => void
+  onSave: (at: string | null, stillDirty: boolean) => void
   onDirty?: () => void
   appTheme: 'light' | 'dark'
 }) {
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { t } = useLanguage()
   const { showToast } = useToast()
 
@@ -175,26 +209,52 @@ function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appThem
   // are inserted right after it.
   const referenceBlockIdRef = useRef<string | null>(null)
 
-  const save = useCallback(async () => {
-    const content = editor.document
-    const { data } = await supabase
-      .from('note_contents')
-      .upsert({ page_id: pageId, content }, { onConflict: 'page_id' })
-      .select('updated_at')
-      .single()
-    if (data?.updated_at) onSave(data.updated_at)
-  }, [editor, pageId, onSave])
+  // REL-002: autosave que confere o erro do upsert, mantém a edição em caso de
+  // falha ("Não salvo · Tentar de novo") e salva o pendente ao sair da página.
+  // REL-009: o save só grava sobre a versão conhecida; se outra pessoa salvou
+  // antes, o saver para em `conflict` e o aviso pede a escolha.
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [saver] = useState(() => createDebouncedSaver<unknown[]>({
+    delayMs: 1000,
+    onStatus: setSaveStatus,
+    version: initialVersion,
+    save: (content, { force, version }) => saveVersionedContent(supabase, {
+      table: 'note_contents', pageId, values: { content }, expected: version, force,
+    }),
+  }))
+  const [resolving, setResolving] = useState(false)
+  const keepMine = async () => {
+    setResolving(true)
+    try { await saver.flush({ force: true }) } finally { setResolving(false) }
+  }
+  const loadSaved = () => {
+    saver.discard()
+    onReloadFromServer()
+  }
+
+  useEffect(() => { saver.setOnSaved(onSave) }, [saver, onSave])
+
+  useEffect(() => {
+    const flush = () => { void saver.flush() }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+      flush()
+    }
+  }, [saver])
 
   const handleChange = useCallback(() => {
     if (readOnly) return
     onDirty?.()
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => save(), 1000)
-  }, [save, readOnly, onDirty])
+    saver.schedule(editor.document)
+  }, [saver, editor, readOnly, onDirty])
 
   // Slash menu: default items plus a "Projetos" entry that opens the card picker
   // and a "Diagrama" entry that inserts the (lazily loaded) Excalidraw block.
-  const getSlashItems = useCallback(async (query: string): Promise<DefaultReactSuggestionItem[]> => {
+  const getSlashItems = useCallback((query: string): Promise<DefaultReactSuggestionItem[]> => {
     const diagramItem: DefaultReactSuggestionItem = {
       title: t('diagram_slash_title'),
       subtext: t('diagram_slash_subtitle'),
@@ -222,7 +282,7 @@ function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appThem
         setImportOpen(true)
       },
     }
-    return filterSuggestionItems([...getDefaultReactSlashMenuItems(editor), diagramItem, projetosItem], query)
+    return Promise.resolve(filterSuggestionItems([...getDefaultReactSlashMenuItems(editor), diagramItem, projetosItem], query))
   }, [editor, t, readOnly, handleChange])
 
   const handleImport = useCallback((cards: ProjectCard[], board: ProjectBoard, columns: ProjectColumn[]) => {
@@ -241,14 +301,12 @@ function EditorCore({ pageId, initialContent, readOnly, onSave, onDirty, appThem
     handleChange()
   }, [editor, handleChange])
 
-  useEffect(() => {
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-    }
-  }, [])
-
   return (
-    <div className="flex-1 overflow-y-auto h-full">
+    <div className="flex-1 overflow-y-auto h-full" style={{ position: 'relative' }}>
+      <SaveStatusBadge status={saveStatus} onRetry={() => { void saver.flush() }} />
+      {saveStatus === 'conflict' && (
+        <EditConflictBanner busy={resolving} onLoadSaved={loadSaved} onKeepMine={() => { void keepMine() }} />
+      )}
       <BlockNoteView
         editor={editor}
         onChange={handleChange}

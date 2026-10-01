@@ -46,11 +46,8 @@ export default function ItemPicker({ onSelect, onClose }: {
         supabase.from('project_shares').select('project_boards(id, name)').eq('shared_with_user_id', userId),
       ])
       const boards = new Map<string, string>()
-      ;(ownRes.data ?? []).forEach(b => boards.set(b.id as string, b.name as string))
-      ;(sharedRes.data ?? []).forEach(r => {
-        type BoardRef = { id: string; name: string }
-        const raw = (r as unknown as { project_boards: BoardRef | BoardRef[] | null }).project_boards
-        const b = Array.isArray(raw) ? raw[0] : raw
+      ;(ownRes.data ?? []).forEach(b => boards.set(b.id, b.name))
+      ;(sharedRes.data ?? []).forEach(({ project_boards: b }) => {
         if (b) boards.set(b.id, b.name)
       })
       if (boards.size === 0) return
@@ -89,12 +86,12 @@ export default function ItemPicker({ onSelect, onClose }: {
 
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden', backgroundColor: 'var(--color-surface)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderBottom: '1px solid var(--color-border)' }}>
+      <div className="field-box" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderBottom: '1px solid var(--color-border)' }}>
         <Search size={13} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
         <input
           autoFocus value={q} onChange={e => setQ(e.target.value)}
           placeholder={t('item_picker_placeholder')}
-          style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', minWidth: 0 }}
+          style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', minWidth: 0 }}
         />
         <button onClick={onClose} title={t('projects_cancel')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}>
           <X size={13} />
@@ -107,7 +104,7 @@ export default function ItemPicker({ onSelect, onClose }: {
             {pageResults.map(p => (
               <button key={p.id} onClick={() => onSelect({ type: 'page', targetId: p.id, title: p.title || 'Untitled' })} style={rowStyle}>
                 <span style={{ flexShrink: 0 }}>{p.icon || '📄'}</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.title || 'Untitled'}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.title || t('page_header_untitled')}</span>
               </button>
             ))}
           </>

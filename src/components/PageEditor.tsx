@@ -1,6 +1,7 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useState, useRef } from 'react'
 import type { ReactNode } from 'react'
 import type { Page, PageType } from '../types'
+import SplitDivider from './SplitDivider'
 import PageHeader from './PageHeader'
 
 const NoteEditor = lazy(() => import('./NoteEditor'))
@@ -77,39 +78,20 @@ function SplitView({ pageId, splitRatio, setSplitRatio, dragging, setDragging, i
   setDragging: (v: boolean) => void
   isMobile?: boolean
 }) {
-  const handleMouseDown = () => setDragging(true)
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!dragging) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    if (isMobile) {
-      const y = e.clientY - rect.top
-      const ratio = Math.min(80, Math.max(20, (y / rect.height) * 100))
-      setSplitRatio(ratio)
-    } else {
-      const x = e.clientX - rect.left
-      const ratio = Math.min(80, Math.max(20, (x / rect.width) * 100))
-      setSplitRatio(ratio)
-    }
-  }
-
-  const handleMouseUp = () => setDragging(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  // UX-010: o divisor usa Pointer Events com captura (touch, e não se perde
+  // sobre o desenho). Sem seleção de texto só durante o arrasto.
+  const divider = (
+    <SplitDivider containerRef={containerRef} ratio={splitRatio} onChange={setSplitRatio} onDraggingChange={setDragging} stacked={isMobile} />
+  )
 
   if (isMobile) {
     return (
-      <div
-        style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', userSelect: 'none', cursor: dragging ? 'row-resize' : 'auto' }}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-      >
+      <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', userSelect: dragging ? 'none' : undefined }}>
         <div style={{ height: `${splitRatio}%`, minHeight: 0, overflowY: 'auto' }}>
           <Lazy><NoteEditor key={`note-${pageId}`} pageId={pageId} /></Lazy>
         </div>
-        <div
-          style={{ height: 6, flexShrink: 0, backgroundColor: 'var(--color-border)', cursor: 'row-resize' }}
-          onMouseDown={handleMouseDown}
-        />
+        {divider}
         <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
           <Lazy><DrawingCanvas key={`drawing-${pageId}`} pageId={pageId} showLinkedNotePanel /></Lazy>
         </div>
@@ -118,19 +100,11 @@ function SplitView({ pageId, splitRatio, setSplitRatio, dragging, setDragging, i
   }
 
   return (
-    <div
-      style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', userSelect: 'none', cursor: dragging ? 'col-resize' : 'auto' }}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-    >
+    <div ref={containerRef} style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', userSelect: dragging ? 'none' : undefined }}>
       <div style={{ width: `${splitRatio}%`, minWidth: 0, overflowY: 'auto' }}>
         <Lazy><NoteEditor key={`note-${pageId}`} pageId={pageId} /></Lazy>
       </div>
-      <div
-        style={{ width: 4, flexShrink: 0, backgroundColor: 'var(--color-border)', cursor: 'col-resize', position: 'relative' }}
-        onMouseDown={handleMouseDown}
-      />
+      {divider}
       <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
         <Lazy><DrawingCanvas key={`drawing-${pageId}`} pageId={pageId} showLinkedNotePanel /></Lazy>
       </div>

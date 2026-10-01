@@ -13,8 +13,21 @@ Era um painel irmão de Documentos (`activePanel: 'projects'` + modo
   o card PERF-005, fora do escopo da migração de navegação.
 - `ProjectsNav.tsx` — a faixa lateral (desktop) / chips de visualização (mobile),
   no padrão do `modules/study/StudyNav.tsx`.
-- `CardFilterBar.tsx`, `GanttView.tsx`, `ImportCardsModal.tsx` — usados só pelo
-  painel.
+- `CardFilterBar.tsx`, `GanttView.tsx`, `ImportCardsModal.tsx`, `QueueModal.tsx`
+  — usados só pelo painel. `ModalShell.tsx` é a casca comum dos modais do módulo.
+
+## Fila de desenvolvimento (IA)
+
+- Tabela `project_card_queue` + RPCs `cq_*`
+  (`supabase/migrations/20260925123814_project_card_queue_api.sql`). Toda escrita
+  passa pelas RPCs; o app só lê a tabela (selos no kanban + realtime).
+- O app monta a fila no `QueueModal` (colunas, urgência, cards) e pelo botão
+  "Adicionar à fila" do card. A IA consome pela edge `cards-api`, autenticada
+  por token pessoal (Configurações → API), via `npm run cards` / skill `/fila`.
+- `cq_next` move o card para a coluna "Fazendo" e `cq_complete` para
+  "Concluído", achadas pelo nome; sem essas colunas o card fica onde está.
+- Espelho da ordenação para a prévia do modal: `src/lib/cardQueue.ts`
+  (`previewQueueOrder`). Mudou a ordem no SQL, mude lá também.
 
 ## Regras
 

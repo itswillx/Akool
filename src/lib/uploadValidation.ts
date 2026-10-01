@@ -2,8 +2,9 @@
 // allowlist + max size so a change to one upload surface can't silently
 // loosen another. Keep these values in sync with the DB-level
 // file_size_limit/allowed_mime_types set in
-// supabase/migrations/20260812130000_sec_storage_upload_limits.sql.
-export type UploadContext = 'note-image' | 'card-image' | 'finance-attachment'
+// supabase/migrations/20260812130000_sec_storage_upload_limits.sql and
+// supabase/migrations/20260928144311_sec011_storage_limits_rest.sql.
+export type UploadContext = 'note-image' | 'card-image' | 'finance-attachment' | 'avatar' | 'transaction-photo'
 
 interface ContextRule {
   bucket: string
@@ -40,6 +41,18 @@ const UPLOAD_RULES: Record<UploadContext, ContextRule> = {
     bucket: 'store-files',
     maxBytes: 15 * 1024 * 1024,
     allowedMime: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'],
+  },
+  // SEC-011: o avatar sobe o JPEG do recorte (imageCrop.ts); PNG/WebP ficam
+  // permitidos no bucket para uma troca futura de formato.
+  avatar: {
+    bucket: 'avatars',
+    maxBytes: 2 * 1024 * 1024,
+    allowedMime: ['image/jpeg', 'image/png', 'image/webp'],
+  },
+  'transaction-photo': {
+    bucket: 'transaction-photos',
+    maxBytes: 10 * 1024 * 1024,
+    allowedMime: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
   },
 }
 

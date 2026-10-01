@@ -13,6 +13,9 @@ type AmountTx = Pick<FinanceTransaction, 'type' | 'amount'>
 export type FinanceTxAgg = Pick<FinanceTransaction,
   'id' | 'user_id' | 'account_id' | 'category_id' | 'type' | 'amount' | 'date' | 'workspace_id'>
 
+/** O `select` que devolve exatamente um FinanceTxAgg. */
+export const FINANCE_TX_AGG_COLUMNS = 'id, user_id, account_id, category_id, type, amount, date, workspace_id'
+
 export interface Totals { income: number; expense: number; balance: number }
 
 // Sum income / expense (and net balance) for a list of transactions. The list is
@@ -44,6 +47,40 @@ export function accountBalance(
 ): number {
   const { income, expense } = monthTotals(transactions.filter(tx => tx.account_id === account.id))
   return account.initial_balance + income - expense
+}
+
+// Balance of every account in a single pass over the transactions — same rule
+// as accountBalance, for lists that need all of them (sidebar, Accounts tab):
+// calling accountBalance per account is O(accounts × transactions).
+export function balancesByAccount(
+  accounts: Pick<FinanceAccount, 'id' | 'initial_balance'>[],
+  transactions: (AmountTx & Pick<FinanceTransaction, 'account_id'>)[],
+): Map<string, number> {
+  const out = new Map(accounts.map(a => [a.id, a.initial_balance]))
+  for (const tx of transactions) {
+    const current = tx.account_id ? out.get(tx.account_id) : undefined
+    if (current === undefined) continue
+    if (tx.type === 'income') out.set(tx.account_id!, current + tx.amount)
+    else if (tx.type === 'expense') out.set(tx.account_id!, current - tx.amount)
+  }
+  return out
+}
+
+// How many transactions each category has, in a single pass (the Categories
+// tab used to filter the whole list once per category, twice per render).
+export function countByCategory(transactions: Pick<FinanceTransaction, 'category_id'>[]): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const tx of transactions) {
+    if (tx.category_id) out.set(tx.category_id, (out.get(tx.category_id) ?? 0) + 1)
+  }
+  return out
+}
+
+// Total contributed per goal id, in a single pass.
+export function sumByGoal(contributions: { goal_id: string; amount: number }[]): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const c of contributions) out.set(c.goal_id, (out.get(c.goal_id) ?? 0) + c.amount)
+  return out
 }
 
 // Total expense per category id (only expense transactions with a category).

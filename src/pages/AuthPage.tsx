@@ -3,12 +3,16 @@ import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase, recoveryLinkError } from '../lib/supabase'
 import { isRateLimited, rateLimitRetryAfter } from '../lib/rateLimit'
-import { getT } from '../i18n/translations'
+import { isJsonObject } from '../lib/json'
+import { getT, toLang } from '../i18n/translations'
 import type { Lang, TranslationKey } from '../i18n/translations'
-import { helpContent } from '../i18n/helpContent'
+import { tourSteps } from '../i18n/tourContent'
 import type { HelpIcon } from '../i18n/helpContent'
 import { HelpGlyph } from '../components/helpIcons'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { isPasswordValid } from '../lib/passwordPolicy'
+import { Field } from '../components/Field'
+import { PasswordStrengthMeter } from '../components/PasswordFields'
 
 const HIGHLIGHTS: { icon: HelpIcon; key: TranslationKey }[] = [
   { icon: 'fileText', key: 'auth_highlight_pages' },
@@ -20,12 +24,15 @@ const HIGHLIGHTS: { icon: HelpIcon; key: TranslationKey }[] = [
 
 // Left-hand marketing panel: an autoplaying carousel of the app's real
 // features, reusing the same curated copy as the in-app Welcome Tour
-// (src/components/WelcomeTour.tsx, src/i18n/helpContent.ts `tour`) so this
+// (src/components/WelcomeTour.tsx, src/i18n/tourContent.ts) so this
 // stays truthful and in sync instead of duplicating marketing copy. Hidden on
 // mobile by the caller.
+
+const AUTH_LABEL_STYLE = { display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 } as const
+
 function AuthMarketingPanel({ lang }: { lang: Lang }) {
   const t = getT(lang)
-  const steps = helpContent[lang].tour
+  const steps = tourSteps[lang]
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
 
@@ -114,7 +121,7 @@ function AuthMarketingPanel({ lang }: { lang: Lang }) {
 
 export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginRequired?: boolean }) {
   const { signIn, signUp, sendPasswordReset } = useAuth()
-  const storedLang = (localStorage.getItem('excalinotion_auth_lang') ?? 'pt-BR') as Lang
+  const storedLang = toLang(localStorage.getItem('excalinotion_auth_lang'))
   const t = getT(storedLang)
   const isMobile = useIsMobile()
   // An expired/used recovery link redirects here with an error hash — open
@@ -147,6 +154,12 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
       const { error } = await signIn(email, password)
       if (error) setError(error.message)
     } else {
+      // SEC-004: mesma política da troca e da redefinição de senha.
+      if (!isPasswordValid(password)) {
+        setError(t('auth_password_weak'))
+        setLoading(false)
+        return
+      }
       const code = inviteCode.trim().toUpperCase()
       if (!code) {
         setError(t('auth_invite_required'))
@@ -157,7 +170,7 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
       // por IP). Antes o `error` era descartado, então qualquer falha — rede,
       // 429, 500 — virava "código inválido", e uma rejeição do fetch pulava o
       // `setLoading(false)` lá embaixo e travava o botão em "Carregando...".
-      let validation: { valid?: boolean } | null = null
+      let valid = false
       try {
         const { data, error: rpcError } = await supabase.rpc('validate_invite_code', { p_code: code })
         if (rpcError) {
@@ -170,13 +183,14 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
           setLoading(false)
           return
         }
-        validation = data
+        // A RPC devolve jsonb ({ valid, … }); só `valid: true` libera.
+        valid = isJsonObject(data) && data.valid === true
       } catch {
         setError(t('auth_invite_check_failed'))
         setLoading(false)
         return
       }
-      if (!validation?.valid) {
+      if (!valid) {
         setError(t('auth_invite_invalid'))
         setLoading(false)
         return
@@ -249,31 +263,44 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
-              <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 }}>{t('auth_email')}</label>
+              <Field label={t('auth_email')} labelStyle={AUTH_LABEL_STYLE}>{control => (
               <input
+                {...control}
                 type="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--color-border)', borderRadius: 8, fontSize: 14, outline: 'none', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', boxSizing: 'border-box', transition: 'border-color 0.15s' }}
+                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--color-border)', borderRadius: 8, fontSize: 14, color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', boxSizing: 'border-box', transition: 'border-color 0.15s' }}
                 placeholder="you@example.com"
                 onFocus={e => (e.target.style.borderColor = 'var(--color-text)')}
                 onBlur={e => (e.target.style.borderColor = 'var(--color-border)')}
               />
+              )}</Field>
             </div>
             {mode !== 'forgot' && (
             <div>
-              <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 }}>{t('auth_password')}</label>
+              <Field label={t('auth_password')} labelStyle={AUTH_LABEL_STYLE}>{control => (
               <input
+                {...control}
                 type="password"
+                // UX-007: o gerenciador de senhas preenche no login e sugere uma
+                // senha forte no cadastro.
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--color-border)', borderRadius: 8, fontSize: 14, outline: 'none', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', boxSizing: 'border-box', transition: 'border-color 0.15s' }}
+                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--color-border)', borderRadius: 8, fontSize: 14, color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', boxSizing: 'border-box', transition: 'border-color 0.15s' }}
                 placeholder="••••••••"
                 onFocus={e => (e.target.style.borderColor = 'var(--color-text)')}
                 onBlur={e => (e.target.style.borderColor = 'var(--color-border)')}
               />
+              )}</Field>
+              {mode === 'signup' && password.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <PasswordStrengthMeter password={password} t={t} />
+                </div>
+              )}
               {mode === 'signin' && (
                 <button
                   type="button"
@@ -288,22 +315,28 @@ export default function AuthPage({ dailyLoginRequired = false }: { dailyLoginReq
 
             {mode === 'signup' && (
               <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 }}>{t('auth_invite_code')}</label>
+                <Field label={t('auth_invite_code')} labelStyle={AUTH_LABEL_STYLE}>{control => (
                 <input
+                  {...control}
                   type="text"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
                   required
                   value={inviteCode}
                   onChange={e => setInviteCode(e.target.value.toUpperCase())}
-                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--color-border)', borderRadius: 8, fontSize: 14, outline: 'none', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', boxSizing: 'border-box', transition: 'border-color 0.15s', fontFamily: 'monospace', letterSpacing: '0.08em' }}
+                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--color-border)', borderRadius: 8, fontSize: 14, color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', boxSizing: 'border-box', transition: 'border-color 0.15s', fontFamily: 'monospace', letterSpacing: '0.08em' }}
                   placeholder={t('auth_invite_placeholder')}
                   onFocus={e => (e.target.style.borderColor = 'var(--color-text)')}
                   onBlur={e => (e.target.style.borderColor = 'var(--color-border)')}
                 />
+                )}</Field>
               </div>
             )}
 
-            {error && <p style={{ color: '#ef4444', fontSize: 13, margin: 0 }}>{error}</p>}
-            {success && <p style={{ color: '#22c55e', fontSize: 13, margin: 0 }}>{success}</p>}
+            {/* UX-007: o erro é anunciado na hora; o sucesso, quando o leitor terminar. */}
+            {error && <p role="alert" style={{ color: '#ef4444', fontSize: 13, margin: 0 }}>{error}</p>}
+            {success && <p role="status" aria-live="polite" style={{ color: '#22c55e', fontSize: 13, margin: 0 }}>{success}</p>}
 
             <button
               type="submit"

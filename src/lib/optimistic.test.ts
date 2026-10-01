@@ -44,7 +44,7 @@ describe('runOptimistic', () => {
       apply: () => { list = list.filter(c => c.id !== 'b') },
       write: async () => ({ data: null, error: denied }),
       revert: () => { list = reinsertAt(list, removed, 1) },
-      onError: error => showToast('error', mapWriteError(error, t, 'study_error_delete')),
+      onError: error => { showToast('error', mapWriteError(error, t, 'study_error_delete')) },
     })
 
     expect(ok).toBe(false)
@@ -238,7 +238,7 @@ describe('mapWriteError', () => {
   })
 
   it('cai no fallback da operacao quando a causa nao e reconhecivel', () => {
-    expect(mapWriteError({ message: 'duplicate key value', code: '23505' }, t, 'study_error_delete'))
+    expect(mapWriteError({ message: 'algo inesperado', code: 'XX000' }, t, 'study_error_delete'))
       .toBe('Não foi possível excluir. Tente novamente.')
   })
 })

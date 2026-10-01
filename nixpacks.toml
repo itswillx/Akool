@@ -4,14 +4,98 @@
 [variables]
 # Node 22 LTS — atende aos requisitos do Vite 8 / React 19.
 NIXPACKS_NODE_VERSION = "22"
-# Faz o Caddy servir o build estático com try_files (deep-links/refresh não dão 404).
+# Pasta que o Caddy serve (usada no Caddyfile abaixo como {$NIXPACKS_SPA_OUTPUT_DIR}).
 NIXPACKS_SPA_OUTPUT_DIR = "dist"
 
 [phases.install]
-# `npm install` (em vez de `npm ci`) evita falha de optionalDependencies
-# nativas (rollup/esbuild) quando o package-lock foi gerado fora do Linux.
-# Instala também devDependencies, necessárias ao `vite build`.
-cmds = ["npm install --no-audit --no-fund"]
+# DEV-004: `npm ci` instala exatamente o que está no package-lock (build
+# reprodutível) e falha de propósito se o lock sair de sincronia com o
+# package.json. O lock (v3) traz as bindings nativas de Linux x64 e arm64
+# (rolldown, lightningcss, Tailwind), então não depende do SO onde foi gerado;
+# scripts/repo-hygiene.test.ts trava isso. Instala também as devDependencies,
+# necessárias ao `vite build`. O .npmrc liga engine-strict: Node fora do
+# "engines" do package.json falha aqui, com mensagem clara.
+cmds = ["npm ci --no-audit --no-fund"]
 
 [phases.build]
 cmds = ["npm run build"]
+
+# Substitui o Caddyfile padrão do Nixpacks (/assets/Caddyfile): o plano deste
+# arquivo é mesclado por último, então esta versão vence. Base igual à do
+# Nixpacks (porta, raiz, /health, gzip), mais (REL-005):
+# - /assets/* sem fallback de SPA: chunk que não existe dá 404 de verdade, e não
+#   o index.html com status 200;
+# - cache de 1 ano só em asset que existe (o nome tem hash) e revalidação
+#   sempre no index.html, para um deploy novo chegar no próximo carregamento;
+# - os headers de segurança que antes só existiam no netlify.toml.
+# Mudou algo aqui? Valide com `caddy validate --adapter caddyfile` (Caddy 2.8,
+# a versão que o Nixpacks fixa) antes de publicar: Caddyfile inválido derruba
+# o site no deploy.
+[staticAssets]
+Caddyfile = '''
+{
+	admin off
+	persist_config off
+	auto_https off
+	log {
+		format json
+	}
+	servers {
+		trusted_proxies static private_ranges 100.0.0.0/8
+	}
+}
+
+:{$PORT:3000} {
+	log {
+		format json
+	}
+
+	rewrite /health /*
+
+	root * ../app/{$NIXPACKS_SPA_OUTPUT_DIR}
+
+	encode gzip
+
+	header {
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()"
+		# SEC-009: HTTPS obrigatório por 1 ano (o TLS termina no proxy do Coolify).
+		Strict-Transport-Security "max-age=31536000"
+		# SEC-009: CSP só avisando (Report-Only) até as telas logadas serem
+		# conferidas; depois vira Content-Security-Policy. Sem unsafe-inline e sem
+		# unsafe-eval em script-src. style-src precisa de unsafe-inline: BlockNote,
+		# Mantine e Excalidraw injetam <style>. Imagens https de qualquer site
+		# (imagem colada por URL nas notas).
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://nhfftophadasiezrzlsv.supabase.co; media-src 'self' blob: https://nhfftophadasiezrzlsv.supabase.co; connect-src 'self' data: blob: https://nhfftophadasiezrzlsv.supabase.co wss://nhfftophadasiezrzlsv.supabase.co https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.figma.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	}
+
+	@asset_exists {
+		path /assets/*
+		file
+	}
+	header @asset_exists Cache-Control "public, max-age=31536000, immutable"
+
+	handle /assets/* {
+		file_server
+	}
+
+	# SEC-009: fontes do Excalidraw servidas pelo app; a versão está no caminho.
+	@excalidraw_asset_exists {
+		path /excalidraw-assets/*
+		file
+	}
+	header @excalidraw_asset_exists Cache-Control "public, max-age=31536000, immutable"
+
+	handle /excalidraw-assets/* {
+		file_server
+	}
+
+	handle {
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
+'''

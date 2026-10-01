@@ -1,21 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { allowedOrigins, corsHeaders } from "../_shared/cors.ts";
+import { captureException } from "../_shared/sentry.ts";
 
-const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
-  "https://www.slinkysalsichinha.com.br,https://akool.netlify.app,http://localhost:5173,http://localhost:4173,http://localhost:3000")
-  .split(",")
-  .map((o: string) => o.trim())
-  .filter(Boolean);
+// SEC-007: CORS em _shared/cors.ts; sem ALLOWED_ORIGINS, só produção.
+const ALLOWED_ORIGINS = allowedOrigins(Deno.env.get("ALLOWED_ORIGINS"));
 
 function corsHeadersFor(req: Request): Record<string, string> {
-  const origin = req.headers.get("origin") ?? "";
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Vary": "Origin",
-  };
+  return corsHeaders(req, ALLOWED_ORIGINS);
 }
 
 interface RateLimitVerdict {
@@ -227,6 +219,7 @@ Deno.serve(async (req: Request) => {
 
   } catch (err) {
     console.error("[ai-chat] ERROR:", err instanceof Error ? err.message : String(err));
+    await captureException(err, { fn: "ai-chat" });
     return new Response(JSON.stringify({ error: "Internal error processing request" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

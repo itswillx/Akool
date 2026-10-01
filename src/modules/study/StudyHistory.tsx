@@ -13,7 +13,7 @@ interface StudyHistoryProps {
   topics: StudyTopic[]
   logsByTopic: Record<string, StudyLog[]>
   onOpenTopic: (topicId: string) => void
-  requestDelete: (title: string, message: string, onConfirm: () => void) => void
+  requestDelete: (title: string, message: string, onConfirm: () => void | Promise<void>) => void
   deleteLog: (logId: string) => void
   isMobile?: boolean
 }

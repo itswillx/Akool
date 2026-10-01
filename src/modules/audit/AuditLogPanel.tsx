@@ -6,6 +6,8 @@ import { useLanguage } from '../../i18n/LanguageContext'
 import type { TranslationKey } from '../../i18n/translations'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import type { AuditLogEntry } from '../../types'
+import { activateProps } from '../../lib/a11y'
+import { observabilityStatus, sendTestEvent, type ObservabilityStatus } from '../../lib/observability'
 
 type TFn = (key: TranslationKey, vars?: Record<string, string | number>) => string
 
@@ -28,6 +30,33 @@ const ACTION_LABEL_KEYS: Record<string, TranslationKey> = {
   delete_user: 'audit_action_delete_user',
   restore_backup: 'audit_action_restore_backup',
   delete_backup: 'audit_action_delete_backup',
+}
+
+const SENTRY_STATUS_KEYS: Record<ObservabilityStatus, TranslationKey> = {
+  on: 'audit_sentry_on',
+  off: 'audit_sentry_off',
+  loading: 'audit_sentry_loading',
+  failed: 'audit_sentry_failed',
+}
+
+// REL-011: se o Sentry está ligado neste build, e um evento de teste para o
+// admin conferir a configuração depois de pôr o DSN no Coolify.
+function ObservabilityRow({ t }: { t: TFn }) {
+  const [status] = useState(observabilityStatus)
+  const [sent, setSent] = useState(false)
+  const dot = status === 'on' ? '#16a34a' : status === 'failed' ? '#dc2626' : '#9ca3af'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 10, fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+      <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: dot, flexShrink: 0 }} />
+      <span>{t(SENTRY_STATUS_KEYS[status])}</span>
+      {status === 'on' && (
+        <button type="button" onClick={() => setSent(sendTestEvent())} disabled={sent}
+          style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12, fontWeight: 500, cursor: sent ? 'default' : 'pointer', opacity: sent ? 0.7 : 1 }}>
+          {t(sent ? 'audit_sentry_test_sent' : 'audit_sentry_test')}
+        </button>
+      )}
+    </div>
+  )
 }
 
 function formatDate(iso: string, lang: string): string {
@@ -91,7 +120,7 @@ export default function AuditLogPanel() {
     if (error) {
       showError(error.message)
     } else {
-      const rows = (data ?? []) as AuditLogEntry[]
+      const rows: AuditLogEntry[] = data ?? []
       setEntries(prev => (offset === null ? rows : [...prev, ...rows]))
       setHasMore(rows.length === PAGE_SIZE)
     }
@@ -138,6 +167,7 @@ export default function AuditLogPanel() {
             </button>
           </div>
           <p style={{ margin: '6px 0 0', fontSize: 14, color: 'var(--color-text-muted)' }}>{t('audit_subtitle')}</p>
+          <ObservabilityRow t={t} />
         </div>
 
         {feedback && (
@@ -249,7 +279,7 @@ const AuditRow = memo(function AuditRow({
   if (isMobile) {
     return (
       <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
-        <div onClick={onToggle} style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, cursor: 'pointer' }}>
+        <div {...activateProps(onToggle)} aria-expanded={isExpanded} onClick={onToggle} style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, cursor: 'pointer' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>{actionLabel(entry.action, t)}</span>
             {statusBadge}
@@ -267,6 +297,8 @@ const AuditRow = memo(function AuditRow({
   return (
     <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--color-border)' }}>
       <div
+        {...activateProps(onToggle)}
+        aria-expanded={isExpanded}
         onClick={onToggle}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}

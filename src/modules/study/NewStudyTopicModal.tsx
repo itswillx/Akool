@@ -26,7 +26,7 @@ interface NewStudyTopicModalProps {
 const inputStyle = {
   width: '100%', boxSizing: 'border-box' as const, padding: '9px 12px', borderRadius: 8,
   border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)',
-  color: 'var(--color-text)', fontSize: 13.5, outline: 'none', fontFamily: 'inherit',
+  color: 'var(--color-text)', fontSize: 13.5, fontFamily: 'inherit',
 }
 
 const labelStyle = {
@@ -119,7 +119,7 @@ export default function NewStudyTopicModal({ open, onClose, onCreateManual, onIm
     else setErrorMsg(t('study_error_generic'))
   }
 
-  const primaryBtn = (label: string, onClick: () => void, disabled: boolean) => (
+  const primaryBtn = (label: string, onClick: () => void | Promise<void>, disabled: boolean) => (
     <button
       type="button"
       onClick={onClick}
@@ -130,7 +130,7 @@ export default function NewStudyTopicModal({ open, onClose, onCreateManual, onIm
     </button>
   )
 
-  const secondaryBtn = (label: string, onClick: () => void, disabled = false) => (
+  const secondaryBtn = (label: string, onClick: () => void | Promise<void>, disabled = false) => (
     <button
       type="button"
       onClick={onClick}

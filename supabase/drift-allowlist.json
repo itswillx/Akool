@@ -1,0 +1,6 @@
+{
+  "_comment": "DEV-005: exceções conhecidas do check de drift (scripts/supabase-drift.mjs). Ver supabase/migrations/README.md.",
+  "repoOnlyMigrations": ["baseline_remote_schema"],
+  "remoteOnlyMigrationsUntil": "20260627015918",
+  "remoteOnlyFunctions": []
+}

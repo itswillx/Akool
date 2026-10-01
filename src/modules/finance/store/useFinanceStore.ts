@@ -46,7 +46,7 @@ type NewSaleItem = Pick<FinanceStoreSaleItem,
   'sale_id' | 'product_id' | 'product_name' | 'quantity' | 'unit_price' | 'unit_cost_at_sale'>
 
 function normalizeAttachments<T extends { attachments: FinanceAttachment[] }>(row: T): T {
-  return { ...row, attachments: (row.attachments ?? []) as FinanceAttachment[] }
+  return { ...row, attachments: (row.attachments ?? []) }
 }
 
 // Storage has no ON DELETE CASCADE: dropping a row would leave its objects
@@ -94,12 +94,12 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
       if (cancelled) return
       const failed = [pr, pu, cu, sa, si, su].find(r => r.error)
       if (failed?.error) setError(failed.error.message)
-      setProducts(((pr.data as FinanceStoreProduct[]) ?? []).map(normalizeAttachments))
-      setPurchases(((pu.data as FinanceStorePurchase[]) ?? []).map(normalizeAttachments))
-      setCustomers((cu.data as FinanceStoreCustomer[]) ?? [])
-      setSales(((sa.data as FinanceStoreSale[]) ?? []).map(normalizeAttachments))
-      setSaleItems((si.data as FinanceStoreSaleItem[]) ?? [])
-      setSuppliers((su.data as FinanceSupplier[]) ?? [])
+      setProducts((pr.data ?? []).map(normalizeAttachments))
+      setPurchases((pu.data ?? []).map(normalizeAttachments))
+      setCustomers(cu.data ?? [])
+      setSales((sa.data ?? []).map(normalizeAttachments))
+      setSaleItems(si.data ?? [])
+      setSuppliers(su.data ?? [])
       setLoading(false)
     }).catch((e: Error) => {
       // A network failure must not leave the tab stuck on "Loading…".
@@ -180,7 +180,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
       .select()
       .single()
     if (err || !data) { setError(err?.message ?? null); return null }
-    const row = normalizeAttachments(data as FinanceStoreProduct)
+    const row = normalizeAttachments(data)
     setProducts(prev => [row, ...prev])
     return row
   }, [userId, workspaceId])
@@ -225,7 +225,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
       .select()
       .single()
     if (err || !data) { setError(err?.message ?? null); return null }
-    const row = normalizeAttachments(data as FinanceStorePurchase)
+    const row = normalizeAttachments(data)
     setPurchases(prev => [row, ...prev])
     return row
   }, [userId, workspaceId, insertLinkedTx])
@@ -297,7 +297,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
       .select()
       .single()
     if (err || !data) { setError(err?.message ?? null); return null }
-    const row = data as FinanceSupplier
+    const row = data
     setSuppliers(prev => [...prev, row].sort((a, b) => a.name.localeCompare(b.name)))
     return row
   }, [userId, workspaceId])
@@ -312,7 +312,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
       .select()
       .single()
     if (err || !data) { setError(err?.message ?? null); return null }
-    const row = data as FinanceStoreCustomer
+    const row = data
     setCustomers(prev => [...prev, row].sort((a, b) => a.name.localeCompare(b.name)))
     return row
   }, [userId, workspaceId])
@@ -341,7 +341,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
       .select()
       .single()
     if (err || !data) { setError(err?.message ?? null); return null }
-    const row = normalizeAttachments(data as FinanceStoreSale)
+    const row = normalizeAttachments(data)
     setSales(prev => [row, ...prev])
     return row
   }, [userId, workspaceId])
@@ -457,7 +457,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
       .select()
       .single()
     if (err || !data) { setError(err?.message ?? null); return null }
-    const row = data as FinanceStoreSaleItem
+    const row = data
     let nextItems: FinanceStoreSaleItem[] = []
     setSaleItems(prev => { nextItems = [...prev, row]; return nextItems })
     const sale = sales.find(s => s.id === form.sale_id)
@@ -474,7 +474,7 @@ export function useFinanceStore(userId: string | undefined, workspaceId: string 
       .insert(forms.map(f => ({ ...f, user_id: userId, workspace_id: workspaceId })))
       .select()
     if (err || !data) { setError(err?.message ?? null); return [] }
-    const rows = data as FinanceStoreSaleItem[]
+    const rows: FinanceStoreSaleItem[] = data
     let nextItems: FinanceStoreSaleItem[] = []
     setSaleItems(prev => { nextItems = [...prev, ...rows]; return nextItems })
     const saleId = forms[0].sale_id

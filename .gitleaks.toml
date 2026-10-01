@@ -1,0 +1,30 @@
+# SEC-001: varredura de segredos (gitleaks) no CI e no pre-commit (.githooks/).
+# Regras padrão do gitleaks + o token pessoal da API de cards do app.
+# Credencial literal nos testes TestSprite (senha só de dígitos, que o gitleaks
+# não pega) fica com scripts/testsprite-credentials.test.ts.
+title = "Akool"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "akool-api-token"
+description = "Token pessoal da API de cards (Configurações → API; formato de public.create_api_token)"
+regex = '''akool_pat_[0-9a-f]{64}'''
+keywords = ["akool_pat_"]
+
+# Falsos positivos conhecidos (01/10/2026, PR #1). As exceções são estreitas:
+# 1. supabase/schema-snapshot.json guarda md5 (32 hex) das definições de policies,
+#    funções e triggers, gerado por supabase/checks/schema-snapshot.sql (DEV-005).
+#    Só valores md5 nesse arquivo passam; qualquer outro formato continua barrado.
+[[allowlists]]
+description = "md5 das definições no retrato do schema"
+condition = "AND"
+paths = ['''^supabase/schema-snapshot\.json$''']
+regexes = ['''^[0-9a-f]{32}$''']
+
+# 2. JWT de exemplo (sub 1234567890, assinatura "signature-signature") que o
+#    teste do scrub usa para provar que JWTs somem dos logs.
+[[allowlists]]
+description = "JWT fictício do teste de scrub"
+regexes = ['''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.c2lnbmF0dXJlLXNpZ25hdHVyZQ''']

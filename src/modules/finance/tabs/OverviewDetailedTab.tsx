@@ -19,7 +19,7 @@ import {
   cardSurfaceStyle, sectionCaptionStyle, ghostBtnStyle, tabularNums,
   FIN_ACCENT, FIN_NEG, FIN_NEG_SOFT, FIN_POS, FIN_POS_SOFT, FIN_WARN,
 } from '../ui'
-import type { TabId } from '../FinancePanel'
+import type { TabId } from '../financeFormat'
 import type { ProjectsSection } from '../myprojects/section'
 
 // Presentational "client-friendly" take on the finance overview, selected via

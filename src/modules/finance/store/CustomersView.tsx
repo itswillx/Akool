@@ -7,6 +7,7 @@ import type { FinanceStoreCustomer } from '../../../types'
 import { cardSurfaceStyle, primaryBtnStyle, tabularNums } from '../ui'
 import { CHANNEL_KEY, SALE_STATUS_KEY, badgeStyle, emptyStateStyle, saleStatusColor } from './storeUi'
 import type { FinanceStoreStore } from './useFinanceStore'
+import { activateProps } from '../../../lib/a11y'
 
 // Customer list with derived stats. Clicking a row expands the purchase
 // history (the thing you usually want from a customer); editing is behind the
@@ -41,6 +42,8 @@ export function CustomersView({ store, onNew, onEdit }: {
             <div key={customer.id}
               style={{ borderBottom: index === store.customers.length - 1 ? 'none' : '1px solid var(--color-border)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', cursor: 'pointer' }}
+                {...activateProps(() => setExpanded(open ? null : customer.id))}
+                aria-expanded={open}
                 onClick={() => setExpanded(open ? null : customer.id)}>
                 <span style={{ color: 'var(--color-text-muted)', display: 'flex', flexShrink: 0 }}>
                   {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}

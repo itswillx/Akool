@@ -159,3 +159,13 @@ ${NOTION_LIST_BLOCK}
     expect(result.cards.map(c => c.externalId)).toEqual(['SEC-001', 'PERF-001'])
   })
 })
+
+describe('issues (UX-011)', () => {
+  it('reports each warning as a code the screen can translate', () => {
+    const result = parseBacklogMarkdown('### CARD ORPH-001 — Sem tópico\n\n- **ID:** ORPH-002\n')
+    expect(result.issues.map(i => i.code)).toEqual(expect.arrayContaining(['id_mismatch', 'no_subtasks', 'no_priority', 'no_effort', 'no_topic']))
+    expect(result.issues.find(i => i.code === 'id_mismatch')).toEqual({ code: 'id_mismatch', cardId: 'ORPH-001', detail: 'ORPH-002' })
+    expect(result.warnings).toHaveLength(result.issues.length)
+    expect(parseBacklogMarkdown('nada aqui').issues).toEqual([{ code: 'no_cards' }])
+  })
+})

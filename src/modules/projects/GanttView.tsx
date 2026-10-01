@@ -7,6 +7,7 @@ import {
   monthSegments, weekSegments, daySegments, yearSegments, isoWeek, buildLinks, linkPath,
   type GanttBar, type GanttNode, type Segment,
 } from '../../lib/ganttLayout'
+import { activateProps } from '../../lib/a11y'
 
 type Zoom = 'day' | 'week' | 'month'
 const PX_PER_DAY: Record<Zoom, number> = { day: 34, week: 16, month: 5 }
@@ -85,7 +86,7 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
   const beginDrag = (e: ReactPointerEvent, card: ProjectCard, mode: DragMode) => {
     if (!canEdit || isMobile || !onCardReschedule) return
     e.stopPropagation()
-    try { (e.currentTarget as Element).setPointerCapture(e.pointerId) } catch { /* ignore */ }
+    try { (e.currentTarget).setPointerCapture(e.pointerId) } catch { /* ignore */ }
     dragState.current = { id: card.id, mode, startX: e.clientX, startDate: card.start_date, dueDate: card.due_date, days: 0, moved: false }
     setDrag({ id: card.id, mode, days: 0 })
   }
@@ -104,7 +105,7 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
   const endDrag = (e: ReactPointerEvent) => {
     const d = dragState.current
     if (!d) return
-    try { (e.currentTarget as Element).releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+    try { (e.currentTarget).releasePointerCapture(e.pointerId) } catch { /* ignore */ }
     if (d.moved && d.days !== 0 && onCardReschedule) {
       let start = d.startDate
       let due = d.dueDate
@@ -302,12 +303,13 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
               return (
                 <div
                   key={row.card.id}
+                  {...activateProps(() => onCardClick(row.card))}
                   onClick={() => onCardClick(row.card)}
                   style={{ height: ROW_H, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--color-border)', cursor: 'pointer', opacity: row.card.completed ? 0.6 : 1 }}
                 >
                   <div style={{ width: NAME_W, display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 8 + row.depth * 16, paddingRight: 8, minWidth: 0 }}>
                     {row.hasChildren ? (
-                      <button onClick={e => { e.stopPropagation(); toggleCollapse(row.card.id) }} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 0, flexShrink: 0 }}>
+                      <button aria-label={row.collapsed ? t('common_expand') : t('common_collapse')} type="button" aria-expanded={!row.collapsed} onClick={e => { e.stopPropagation(); toggleCollapse(row.card.id) }} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 0, flexShrink: 0 }}>
                         {row.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                       </button>
                     ) : <span style={{ width: 14, flexShrink: 0 }} />}
@@ -364,8 +366,11 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
                 const bar = barById.get(row.card.id)
                 const color = cardColor(row.card)
                 return (
+                  // A barra repete o clique do rótulo da linha, que é o caminho do
+                  // teclado (Tab + Enter); aqui ficaria uma segunda parada por card.
                   <div
                     key={row.card.id}
+                    data-kbd="row-label"
                     onClick={() => { if (draggedRef.current) { draggedRef.current = false; return } onCardClick(row.card) }}
                     onMouseEnter={() => { if (!isMobile) setHoveredId(row.card.id) }}
                     onMouseLeave={() => { if (!isMobile) setHoveredId(null) }}

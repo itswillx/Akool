@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { stockCapital } from '../../lib/financeStoreCalc'
-import type {
-  FinanceStoreProduct, FinanceStorePurchase, FinanceStoreSale, FinanceStoreSaleItem,
-} from '../../types'
 
 // Read-only bridge from the store submodule to the finance overview:
 // deliberately separate from the full hook so the overview does not pay for
@@ -40,10 +37,10 @@ export function useAllocationSummary(userId: string | undefined): AllocationSumm
     ])
     return {
       stockCapital: stockCapital(
-        (prod.data as Pick<FinanceStoreProduct, 'id' | 'archived'>[]) ?? [],
-        (pur.data as Pick<FinanceStorePurchase, 'product_id' | 'quantity' | 'unit_cost' | 'other_costs'>[]) ?? [],
-        (saleItems.data as Pick<FinanceStoreSaleItem, 'product_id' | 'sale_id' | 'quantity'>[]) ?? [],
-        (sales.data as Pick<FinanceStoreSale, 'id' | 'status'>[]) ?? [],
+        prod.data ?? [],
+        pur.data ?? [],
+        saleItems.data ?? [],
+        sales.data ?? [],
       ),
     }
   }, [userId])

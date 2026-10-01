@@ -14,6 +14,11 @@ lerna-debug.log*
 
 node_modules
 dist
+coverage
+# Playwright (QA-003): sessão do usuário de teste e relatórios
+e2e/.auth/
+test-results/
+playwright-report/
 dist-ssr
 *.local
 
@@ -28,9 +33,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# Local Netlify folder
-.netlify
-
 # Cursor IDE config (pode conter segredos de MCP — nunca commitar)
 .cursor/
 
@@ -44,3 +46,11 @@ deploy-out.json
 # TestSprite temporários
 testsprite_tests/tmp/
 testsprite_tests\tmp\config.json
+
+# SEC-008: estado local do Supabase CLI (project ref, org, host do pooler) e
+# exports com dados reais — nunca no repositório.
+supabase/.temp/
+supabase/backups/
+
+# Claude Code: permissões pessoais deste Mac
+.claude/settings.local.json

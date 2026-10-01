@@ -1,28 +1,17 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { allowedOrigins, corsHeaders } from "../_shared/cors.ts";
+import { captureException } from "../_shared/sentry.ts";
+import {
+  AUDITED_ACTIONS, checkSetRole, checkTarget, isDemotingAdmin, leftNoAdmin, revokesSessionsAfterRoleChange,
+} from "./rules.ts";
 
-const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
-  "https://www.slinkysalsichinha.com.br,https://akool.netlify.app,http://localhost:5173,http://localhost:4173,http://localhost:3000")
-  .split(",")
-  .map((o: string) => o.trim())
-  .filter(Boolean);
+// SEC-007: CORS em _shared/cors.ts; sem ALLOWED_ORIGINS, só produção.
+const ALLOWED_ORIGINS = allowedOrigins(Deno.env.get("ALLOWED_ORIGINS"));
 
 function corsHeadersFor(req: Request): Record<string, string> {
-  const origin = req.headers.get("origin") ?? "";
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Vary": "Origin",
-  };
+  return corsHeaders(req, ALLOWED_ORIGINS);
 }
-
-// Actions that leave a row in audit_log. `list_users` is a read — logging it
-// would bury the mutations in noise.
-const AUDITED_ACTIONS = new Set(["set_role", "ban_user", "unban_user", "delete_user"]);
-
-const VALID_ROLES = new Set(["admin", "standard"]);
 
 // Best-effort append to the audit trail. Never throws — a broken audit_log
 // insert must not block or mask the outcome of the action being logged.
@@ -138,6 +127,8 @@ Deno.serve(async (req: Request) => {
           errorMessage: message,
         });
       }
+      // REL-011: 500 aqui é falha real (ex.: sessões não revogadas no SEC-006).
+      if (status >= 500) await captureException(new Error(message), { fn: "admin-ops", tags: { action: String(action) } });
       return new Response(JSON.stringify({ error: message }), {
         status, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -151,14 +142,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (!user_id) {
-      return await deny(400, "Missing user_id");
-    }
-
-    // Prevent admin from acting on themselves for destructive actions
-    if (user_id === user.id && (action === "delete_user" || action === "ban_user" || action === "set_role")) {
-      return await deny(400, "Cannot perform this action on yourself");
-    }
+    const targetRejection = checkTarget(action, user_id, user.id);
+    if (targetRejection) return await deny(targetRejection.status, targetRejection.message);
 
     // Read the target up front: delete_user cascades the profiles row away, so
     // the e-mail has to be captured before the action runs, not after.
@@ -192,10 +177,12 @@ Deno.serve(async (req: Request) => {
       });
       if (error) throw error;
       await adminClient.from("profiles").update({ is_active: false }).eq("id", user_id);
-      // Best-effort: kill any session the user already holds so the ban
-      // applies on next refresh instead of waiting for it to expire.
+      // Kill any session the user already holds so the ban applies on next
+      // refresh instead of waiting for it to expire.
       const { error: revokeErr } = await adminClient.rpc("admin_revoke_user_sessions", { target_id: user_id });
-      if (revokeErr) console.error("[admin-ops] session revoke failed:", revokeErr.message);
+      // SEC-006: o ban já vale (o Auth recusa o refresh), mas sessão aberta que
+      // não caiu não pode sair como sucesso na UI nem no audit_log.
+      if (revokeErr) return await deny(500, `User banned, but open sessions were not revoked: ${revokeErr.message}`);
       await logAudit(adminClient, {
         actorId: audit.actorId, actorLabel: audit.actorLabel,
         action: "ban_user", targetType: "user", targetId: user_id,
@@ -223,42 +210,30 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "set_role") {
-      if (!role || !VALID_ROLES.has(role)) {
-        return await deny(400, "Invalid role");
-      }
-      if (!targetRole) {
-        return await deny(404, "User not found");
-      }
+      const change = checkSetRole(role, targetRole);
+      if (!change.ok) return await deny(change.status, change.message);
 
-      audit.details = { ...audit.details, from_role: targetRole, to_role: role };
+      audit.details = { ...audit.details, from_role: change.fromRole, to_role: change.toRole };
 
-      const { error } = await adminClient.from("profiles").update({ role }).eq("id", user_id);
+      const { error } = await adminClient.from("profiles").update({ role: change.toRole }).eq("id", user_id);
       if (error) throw error;
 
-      // Never let the bench end up empty — nobody left with admin means nobody
-      // can promote anyone back from inside the app. The check has to come
-      // *after* the write: a count taken beforehand can only ever be >= 2 (the
-      // caller is an admin and can't target themselves), so it would never
-      // fire, and two admins demoting each other at the same instant would
-      // both see a healthy count. Checking after and putting the role back is
-      // what actually catches that race.
-      if (targetRole === "admin" && role !== "admin") {
+      // Último admin: conferido DEPOIS da escrita (ver rules.ts).
+      if (isDemotingAdmin(change.fromRole, change.toRole)) {
         const { count, error: countErr } = await adminClient
           .from("profiles")
           .select("id", { count: "exact", head: true })
           .eq("role", "admin");
         if (countErr) throw countErr;
-        if ((count ?? 0) === 0) {
-          await adminClient.from("profiles").update({ role: targetRole }).eq("id", user_id);
+        if (leftNoAdmin(count)) {
+          await adminClient.from("profiles").update({ role: change.fromRole }).eq("id", user_id);
           return await deny(400, "Cannot demote the last admin");
         }
       }
 
-      // A demoted admin keeps an admin-looking UI (and a stale cached profile)
-      // until they reload. Dropping their sessions makes it take effect now.
-      if (role !== "admin") {
+      if (revokesSessionsAfterRoleChange(change.toRole)) {
         const { error: revokeErr } = await adminClient.rpc("admin_revoke_user_sessions", { target_id: user_id });
-        if (revokeErr) console.error("[admin-ops] session revoke failed:", revokeErr.message);
+        if (revokeErr) return await deny(500, `Role changed, but open sessions were not revoked: ${revokeErr.message}`);
       }
 
       await logAudit(adminClient, {
@@ -277,6 +252,7 @@ Deno.serve(async (req: Request) => {
 
   } catch (err: unknown) {
     console.error("[admin-ops] ERROR:", err instanceof Error ? err.message : String(err));
+    await captureException(err, { fn: "admin-ops", tags: { action: String(audit.action ?? "unknown") } });
     const message = err instanceof Error ? err.message : "Internal error";
     if (adminClient && audit.action && AUDITED_ACTIONS.has(audit.action)) {
       await logAudit(adminClient, {

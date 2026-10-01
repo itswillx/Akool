@@ -1,6 +1,8 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useAuth } from './AuthContext'
+import { useToast } from './ToastContext'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export type Theme = 'light' | 'dark'
 
@@ -23,6 +25,8 @@ function applyTheme(t: Theme) {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const { profile, updateProfile } = useAuth()
+  const { showToast } = useToast()
+  const { t: translate } = useLanguage()
   const [theme, setThemeState] = useState<Theme>(() => {
     const stored = localStorage.getItem(LS_KEY) as Theme | null
     return stored === 'dark' ? 'dark' : 'light'
@@ -31,7 +35,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Sync from profile when it loads
   useEffect(() => {
     if (profile?.theme) {
-      const t = profile.theme as Theme
+      const t = profile.theme
       setThemeState(t)
       localStorage.setItem(LS_KEY, t)
       applyTheme(t)
@@ -44,15 +48,23 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const setTheme = async (t: Theme) => {
+  const setTheme = useCallback(async (t: Theme) => {
     setThemeState(t)
     localStorage.setItem(LS_KEY, t)
     applyTheme(t)
-    await updateProfile({ theme: t })
-  }
+    // REL-004: o tema já vale na tela; se a conta não gravar, ele volta ao da
+    // conta no próximo carregamento, e o aviso diz isso.
+    const { error } = await updateProfile({ theme: t })
+    if (error) {
+      console.error('[theme] profile save failed', error)
+      showToast('warning', translate('theme_save_error'), { dedupeKey: 'theme-save-error' })
+    }
+  }, [updateProfile, showToast, translate])
+
+  const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme])
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   )

@@ -39,9 +39,9 @@ export const ProjectCardBlock = createReactBlockSpec(
       try { snap = JSON.parse(block.props.snapshot || '{}') as ProjectCardSnapshot } catch { snap = null }
       const data = snap ?? ({} as Partial<ProjectCardSnapshot>)
 
-      const priority = (data.priority ?? 'medium') as ProjectCardPriority
+      const priority = (data.priority ?? 'medium')
       const pColor = PRIORITY_COLORS[priority] ?? PRIORITY_COLORS.medium
-      const priorityLabel = t(`projects_priority_${priority}` as Parameters<typeof t>[0])
+      const priorityLabel = t(`projects_priority_${priority}`)
 
       const due = data.dueDate ? new Date(data.dueDate + 'T00:00:00') : null
       const overdue = !!due && !data.completed && due.getTime() < new Date(todayStr() + 'T00:00:00').getTime()
@@ -106,9 +106,9 @@ export const ProjectCardBlock = createReactBlockSpec(
               <MarkdownText text={data.description} style={{ fontSize: 12.5, color: 'var(--color-text-subtle)', lineHeight: 1.5 }} />
             ) : null}
 
-            {(data.labels?.length ?? 0) > 0 && (
+            {data.labels && data.labels.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {data.labels!.map((l, i) => (
+                {data.labels.map((l, i) => (
                   <span key={i} style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-muted)', backgroundColor: 'var(--color-hover)', padding: '1px 6px', borderRadius: 4 }}>{l}</span>
                 ))}
               </div>

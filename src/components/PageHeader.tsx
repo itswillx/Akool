@@ -1,12 +1,15 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { FileText, Pencil, Layers, ChevronDown, CheckSquare, UserPlus, FileDown } from 'lucide-react'
 import type { Page, PageType } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
 import { usePagePresence, type PresenceUser } from '../hooks/usePagePresence'
+import { usePageShared } from '../hooks/usePageShared'
 import { useLanguage } from '../i18n/LanguageContext'
-import SharePageModal from './SharePageModal'
 import { UserAvatar } from './UserAvatar'
+
+// PERF-009: compartilhar só baixa quando abre.
+const SharePageModal = lazy(() => import('./SharePageModal'))
 
 const ICONS = [
   '📄','📝','📋','📊','📈','📉','🗒️','🗂️','📁','📂',
@@ -87,7 +90,9 @@ export default function PageHeader({ page, isMobile = false }: PageHeaderProps) 
   const [customEmoji, setCustomEmoji] = useState('')
   const [exporting, setExporting] = useState(false)
 
-  const activeUsers = usePagePresence(page.id)
+  // PERF-008: presence só em página compartilhada (privada não faz requisição).
+  const shared = usePageShared(page, showShare)
+  const activeUsers = usePagePresence(page.id, shared)
   const role = userShareRole(page.id)
   const canShare = role === 'owner' || role === 'co_owner'
   const canEdit = role === 'owner' || role === 'co_owner' || role === 'editor'
@@ -135,7 +140,7 @@ export default function PageHeader({ page, isMobile = false }: PageHeaderProps) 
                 onChange={e => setCustomEmoji(e.target.value)}
                 placeholder={t('page_header_emoji_placeholder')}
                 maxLength={8}
-                style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13, color: 'var(--color-text)', backgroundColor: 'transparent', minWidth: 0 }}
+                style={{ flex: 1, border: 'none', fontSize: 13, color: 'var(--color-text)', backgroundColor: 'transparent', minWidth: 0 }}
               />
               <button
                 onClick={() => { if (customEmoji.trim()) { handleIconSelect(customEmoji.trim()); setCustomEmoji('') } }}
@@ -166,14 +171,25 @@ export default function PageHeader({ page, isMobile = false }: PageHeaderProps) 
             onChange={e => setTitleValue(e.target.value)}
             onBlur={handleTitleBlur}
             onKeyDown={e => { if (e.key === 'Enter') handleTitleBlur() }}
-            style={{ flex: 1, minWidth: 0, fontSize: isMobile ? 24 : 36, fontWeight: 700, color: 'var(--color-text)', background: 'none', border: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.2, padding: 0 }}
+            className="keep-font-size"
+            style={{ flex: 1, minWidth: 0, fontSize: isMobile ? 24 : 36, fontWeight: 700, color: 'var(--color-text)', background: 'none', border: 'none', fontFamily: 'inherit', lineHeight: 1.2, padding: 0 }}
           />
         ) : (
           <h1
-            onClick={() => { if (canEdit) { setEditingTitle(true); setTitleValue(page.title) } }}
             style={{ flex: 1, minWidth: 0, fontSize: isMobile ? 24 : 36, fontWeight: 700, color: page.title ? 'var(--color-text)' : 'var(--color-border-active)', cursor: canEdit ? 'text' : 'default', lineHeight: 1.2, margin: 0, wordBreak: 'break-word' }}
           >
-            {page.title || t('page_header_untitled')}
+            {/* O h1 continua sendo o título da página; quem edita ganha um botão
+                dentro dele (Tab + Enter), com o mesmo visual. */}
+            {canEdit ? (
+              <button
+                type="button"
+                title={t('a11y_edit_title')}
+                onClick={() => { setEditingTitle(true); setTitleValue(page.title) }}
+                style={{ background: 'none', border: 'none', padding: 0, margin: 0, font: 'inherit', color: 'inherit', textAlign: 'left', cursor: 'text', width: '100%', wordBreak: 'inherit' }}
+              >
+                {page.title || t('page_header_untitled')}
+              </button>
+            ) : (page.title || t('page_header_untitled'))}
           </h1>
         )}
 
@@ -202,7 +218,7 @@ export default function PageHeader({ page, isMobile = false }: PageHeaderProps) 
                 const date = new Date().toISOString().slice(0, 10)
                 const safeTitle = (page.title || 'page').replace(/[^a-zA-Z0-9_-]/g, '_')
                 const { exportPagesToPdf } = await import('../hooks/usePdfExport')
-                await exportPagesToPdf([page], `${safeTitle}-${date}.pdf`)
+                await exportPagesToPdf([page], `${safeTitle}-${date}.pdf`, t)
               } catch (err) {
                 console.error('[PageHeader] PDF export error:', err)
               } finally {
@@ -266,7 +282,7 @@ export default function PageHeader({ page, isMobile = false }: PageHeaderProps) 
       </div>
 
       {(showIconPicker || showTypeMenu) && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => { setShowIconPicker(false); setShowTypeMenu(false) }} />
+        <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => { setShowIconPicker(false); setShowTypeMenu(false) }} />
       )}
 
       {/* Shared indicator */}
@@ -276,12 +292,16 @@ export default function PageHeader({ page, isMobile = false }: PageHeaderProps) 
         </p>
       )}
 
-      <SharePageModal
-        open={showShare}
-        onClose={() => setShowShare(false)}
-        pageId={page.id}
-        pageTitle={page.title}
-      />
+      {showShare && (
+        <Suspense fallback={null}>
+          <SharePageModal
+            open
+            onClose={() => setShowShare(false)}
+            pageId={page.id}
+            pageTitle={page.title}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

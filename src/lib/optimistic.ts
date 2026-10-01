@@ -1,4 +1,5 @@
 import type { TranslationKey } from '../i18n/translations'
+import { mapSupabaseError } from './supabaseErrors'
 
 // Encanamento compartilhado das mutacoes otimistas (REL-002).
 //
@@ -170,21 +171,11 @@ export function findInGroups<T extends { id: string }>(
 // ── Mensagem ─────────────────────────────────────────────────────────────────
 
 /**
- * Mapeia o erro do Postgrest para uma chave i18n. As duas camadas: quando a
- * causa e reconhecivel o usuario ve o "por que" (rede caiu / sem permissao),
- * senao cai na mensagem especifica da operacao.
+ * Mapeia o erro do Postgrest para a mensagem de quem usa o app. Delegado ao
+ * mapSupabaseError (ARCH-003): permissão, sessão, rede, duplicado, referência,
+ * valor inválido, não encontrado e tempo esgotado; senão, a mensagem da
+ * operação (`fallbackKey`).
  */
 export function mapWriteError(error: WriteError, t: TFn, fallbackKey: TranslationKey): string {
-  const code = error.code ?? ''
-  const message = error.message ?? ''
-  if (
-    code === '42501' || code === 'PGRST301' || code === 'PGRST_NO_ROWS' ||
-    /row-level security|permission denied|not authorized|jwt/i.test(message)
-  ) {
-    return t('toast_error_permission')
-  }
-  if (/failed to fetch|networkerror|network request failed|load failed|timeout|aborted/i.test(message)) {
-    return t('toast_error_network')
-  }
-  return t(fallbackKey)
+  return mapSupabaseError(error, t, fallbackKey).message
 }

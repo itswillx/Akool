@@ -1,0 +1,57 @@
+# DEV-005: publica UMA edge function, escolhida à mão (nada vai para produção
+# sozinho). O verify_jwt vem do supabase/config.toml; --use-api empacota no
+# servidor, sem Docker. Produção passa pelo Environment "production" do GitHub
+# (configure aprovação obrigatória em Settings → Environments).
+name: Deploy function
+
+on:
+  workflow_dispatch:
+    inputs:
+      function:
+        description: 'Function'
+        required: true
+        type: choice
+        options:
+          - admin-ops
+          - ai-chat
+          - analyze-transaction-photo
+          - cards-api
+          - categorize-transactions
+          - site-backup
+          - study-lookup
+      target:
+        description: 'Destino'
+        required: true
+        type: choice
+        default: staging
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-function-${{ inputs.target }}-${{ inputs.function }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Deploy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          FUNCTION: ${{ inputs.function }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          if [ "$TARGET" = "production" ]; then REF=nhfftophadasiezrzlsv; else REF=ixqpkmxmgftchgwbrogw; fi
+          npx --yes supabase@2.118.0 functions deploy "$FUNCTION" --project-ref "$REF" --use-api

@@ -48,10 +48,10 @@ function normalizeCard(row: StudyCard): StudyCard {
   return {
     ...row,
     rationale: row.rationale ?? '',
-    checkpoints: (row.checkpoints ?? []) as StudyCard['checkpoints'],
-    resources: (row.resources ?? []) as StudyCard['resources'],
+    checkpoints: (row.checkpoints ?? []),
+    resources: (row.resources ?? []),
     // Branch per quiz kind so TS keeps each member's userAnswer type narrow.
-    quiz: ((row.quiz ?? []) as StudyCard['quiz']).map(q =>
+    quiz: ((row.quiz ?? [])).map(q =>
       q.kind === 'choice'
         ? { ...q, userAnswer: q.userAnswer ?? null }
         : { ...q, userAnswer: q.userAnswer ?? null },
@@ -98,28 +98,42 @@ export function useStudyTopics(userId: string | undefined) {
     [showToast, t],
   )
 
+  // O aviso de carga lê toast/idioma por ref: trocar o idioma não recarrega.
+  const notifyRef = useRef({ showToast, t })
+  useEffect(() => { notifyRef.current = { showToast, t } }, [showToast, t])
+
   useEffect(() => {
     if (!userId) return
     let cancelled = false
+    // QA-001: leitura que falhou não vira "nenhum tópico" (a tela convidaria a
+    // recriar tudo) nem deixa o carregamento girando para sempre.
+    const failLoad = (error: unknown) => {
+      if (cancelled) return
+      console.error('study load error:', error)
+      notifyRef.current.showToast('error', notifyRef.current.t('study_load_error'), { dedupeKey: 'study:load' })
+      setLoading(false)
+    }
     Promise.all([
       supabase.from('study_topics').select('*').eq('user_id', userId).order('updated_at', { ascending: false }),
       supabase.from('study_cards').select('*').eq('user_id', userId).order('sort_order', { ascending: true }),
       supabase.from('study_logs').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
     ]).then(([topicsRes, cardsRes, logsRes]) => {
       if (cancelled) return
-      setTopics(() => ((topicsRes.data as StudyTopic[]) ?? []))
+      const readError = topicsRes.error ?? cardsRes.error ?? logsRes.error
+      if (readError) { failLoad(readError); return }
+      setTopics(() => topicsRes.data ?? [])
       const cards: Record<string, StudyCard[]> = {}
-      for (const row of ((cardsRes.data as StudyCard[]) ?? []).map(normalizeCard)) {
+      for (const row of (cardsRes.data ?? []).map(normalizeCard)) {
         (cards[row.topic_id] ??= []).push(row)
       }
       setCards(() => cards)
       const logs: Record<string, StudyLog[]> = {}
-      for (const row of ((logsRes.data as StudyLog[]) ?? [])) {
+      for (const row of logsRes.data ?? []) {
         (logs[row.topic_id] ??= []).push(row)
       }
       setLogs(() => logs)
       setLoading(false)
-    })
+    }, failLoad)
     return () => { cancelled = true }
   }, [userId, setTopics, setCards, setLogs])
 
@@ -141,7 +155,7 @@ export function useStudyTopics(userId: string | undefined) {
       { label: 'createTopicManual', onError: toastWriteError('study_error_create', 'study:create') },
     )
     if (!res.ok || !res.data) return null
-    const topic = res.data as StudyTopic
+    const topic = res.data
     setTopics(prev => [topic, ...prev])
     return topic
   }, [userId, setTopics, toastWriteError])
@@ -170,7 +184,7 @@ export function useStudyTopics(userId: string | undefined) {
       { label: 'insertCards', onError: toastWriteError('study_error_create', 'study:create') },
     )
     if (!res.ok || !res.data) return 0
-    const inserted = (res.data as StudyCard[]).map(normalizeCard).sort((a, b) => a.sort_order - b.sort_order)
+    const inserted = res.data.map(normalizeCard).sort((a, b) => a.sort_order - b.sort_order)
     setCards(prev => ({ ...prev, [topicId]: [...(prev[topicId] ?? []), ...inserted] }))
     return inserted.length
   }, [userId, setCards, toastWriteError])
@@ -267,7 +281,7 @@ export function useStudyTopics(userId: string | undefined) {
       { label: 'createCard', onError: toastWriteError('study_error_create', 'study:create') },
     )
     if (!res.ok || !res.data) return
-    const card = normalizeCard(res.data as StudyCard)
+    const card = normalizeCard(res.data)
     setCards(prev => ({ ...prev, [topicId]: [...(prev[topicId] ?? []), card] }))
   }, [userId, setCards, toastWriteError])
 
@@ -381,7 +395,7 @@ export function useStudyTopics(userId: string | undefined) {
       { label: 'addLog', onError: toastWriteError('study_error_create', 'study:create') },
     )
     if (!res.ok || !res.data) return
-    const log = res.data as StudyLog
+    const log = res.data
     setLogs(prev => ({ ...prev, [topicId]: [log, ...(prev[topicId] ?? [])] }))
   }, [userId, setLogs, toastWriteError])
 

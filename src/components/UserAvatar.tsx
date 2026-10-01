@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { avatarColor, initials } from '../lib/avatar'
+import { avatarColor, initials, safeHexColor } from '../lib/avatar'
 import { resolveSignedUrl } from '../lib/storageUrl'
 
 export const AVATAR_BUCKET = 'avatars'
@@ -36,6 +36,7 @@ export function UserAvatar({ name, seed, emoji, color, url, size = 28, title }: 
   }, [url])
 
   const photoSrc = url && photo?.path === url ? photo.src : null
+  const safeColor = safeHexColor(color)
 
   const base: React.CSSProperties = {
     width: size,
@@ -61,7 +62,7 @@ export function UserAvatar({ name, seed, emoji, color, url, size = 28, title }: 
     // A chosen color stays solid (deliberate pick). Without one, a soft tint
     // of the user's deterministic color — the old var(--color-active) fallback
     // read as a muddy gray blob on the dark topbar chip.
-    const bg = color || `color-mix(in srgb, ${avatarColor(seed || name)} 30%, transparent)`
+    const bg = safeColor || `color-mix(in srgb, ${avatarColor(seed || name)} 30%, transparent)`
     return (
       <span style={{ ...base, background: bg, fontSize: size * 0.62, lineHeight: 1 }} title={title}>
         {emoji}
@@ -70,7 +71,7 @@ export function UserAvatar({ name, seed, emoji, color, url, size = 28, title }: 
   }
 
   return (
-    <span style={{ ...base, background: color || avatarColor(seed || name), color: '#fff', fontSize: size * 0.42, fontWeight: 700 }} title={title}>
+    <span style={{ ...base, background: safeColor || avatarColor(seed || name), color: '#fff', fontSize: size * 0.42, fontWeight: 700 }} title={title}>
       {initials(name)}
     </span>
   )

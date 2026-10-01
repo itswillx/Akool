@@ -133,7 +133,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
             const value = e.target.value.trim()
             if (value !== card.title) onUpdate({ title: value })
           }}
-          style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 14.5, fontWeight: 700, color: 'var(--color-text)', fontFamily: 'inherit', padding: 0 }}
+          style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 14.5, fontWeight: 700, color: 'var(--color-text)', fontFamily: 'inherit', padding: 0 }}
         />
         {editingDue ? (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
@@ -143,7 +143,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
               defaultValue={card.due_date ?? ''}
               onChange={e => onUpdate({ due_date: e.target.value || null })}
               onBlur={() => setEditingDue(false)}
-              style={{ width: 132, boxSizing: 'border-box', padding: '4px 7px', borderRadius: 7, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12, outline: 'none', fontFamily: 'inherit', colorScheme: 'light dark' }}
+              style={{ width: 132, boxSizing: 'border-box', padding: '4px 7px', borderRadius: 7, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12, fontFamily: 'inherit', colorScheme: 'light dark' }}
             />
             <button
               onMouseDown={e => e.preventDefault()}
@@ -293,7 +293,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                     setEditingCheckpointId(null)
                   }}
                   style={{
-                    width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', background: 'transparent',
+                    width: '100%', boxSizing: 'border-box', border: 'none', background: 'transparent',
                     resize: 'none', overflow: 'hidden', fontSize: 13, lineHeight: 1.45,
                     fontFamily: 'inherit', padding: 0, color: 'var(--color-text)', display: 'block',
                   }}
@@ -344,7 +344,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                     setEditingNoteId(null)
                   }}
                   style={{
-                    width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', background: 'transparent',
+                    width: '100%', boxSizing: 'border-box', border: 'none', background: 'transparent',
                     resize: 'none', overflow: 'hidden', fontSize: 12, lineHeight: 1.45, fontStyle: 'italic',
                     fontFamily: 'inherit', padding: 0, marginTop: 2, color: 'var(--color-text-muted)', display: 'block',
                   }}
@@ -374,7 +374,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                 <StickyNote size={12} />
               </button>
             )}
-            <button
+            <button aria-label={t('common_remove')}
               onClick={() => onRequestRemoveCheckpoint(point)}
               type="button"
               style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, marginTop: 2, flexShrink: 0 }}
@@ -391,7 +391,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCheckpoint() } }}
             onBlur={() => { if (newPoint.trim()) addCheckpoint() }}
             placeholder={t('study_add_checkpoint_placeholder')}
-            style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', padding: 0 }}
+            style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', padding: 0 }}
           />
         </div>
       </div>
@@ -401,26 +401,35 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
         <SectionLabel>{t('study_resources')}</SectionLabel>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           {card.resources.map(resource => (
-            <a
+            // O chip é o link + um botão de remover ao lado (botão dentro de
+            // <a> não é permitido e não recebia foco).
+            <span
               key={resource.id}
-              href={/^https?:\/\//i.test(resource.url) ? resource.url : undefined}
-              target="_blank"
-              rel="noopener noreferrer"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%', padding: '3px 9px',
-                borderRadius: 999, fontSize: 12, color: 'var(--color-primary)', textDecoration: 'none',
+                borderRadius: 999, fontSize: 12,
                 backgroundColor: 'var(--color-hover)', border: '1px solid var(--color-border)',
               }}
             >
-              <Link2 size={11} style={{ flexShrink: 0 }} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{resource.title}</span>
-              <span
-                onClick={e => { e.preventDefault(); e.stopPropagation(); removeResource(resource.id) }}
-                style={{ display: 'flex', cursor: 'pointer', color: 'var(--color-text-muted)' }}
+              <a
+                href={/^https?:\/\//i.test(resource.url) ? resource.url : undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0, color: 'var(--color-primary)', textDecoration: 'none' }}
+              >
+                <Link2 size={11} style={{ flexShrink: 0 }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{resource.title}</span>
+              </a>
+              <button
+                type="button"
+                aria-label={t('a11y_remove_resource')}
+                title={t('a11y_remove_resource')}
+                onClick={() => removeResource(resource.id)}
+                style={{ display: 'flex', padding: 0, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
               >
                 <X size={11} />
-              </span>
-            </a>
+              </button>
+            </span>
           ))}
           {!addingResource && (
             <button
@@ -439,14 +448,14 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
               value={resourceTitle}
               onChange={e => setResourceTitle(e.target.value)}
               placeholder={t('study_resource_title_placeholder')}
-              style={{ flex: '1 1 130px', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit' }}
+              style={{ flex: '1 1 130px', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, fontFamily: 'inherit' }}
             />
             <input
               value={resourceUrl}
               onChange={e => setResourceUrl(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addResource() } }}
               placeholder={t('study_resource_url_placeholder')}
-              style={{ flex: '2 1 180px', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit' }}
+              style={{ flex: '2 1 180px', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, fontFamily: 'inherit' }}
             />
             <button
               onClick={addResource}

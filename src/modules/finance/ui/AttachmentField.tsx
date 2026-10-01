@@ -5,6 +5,7 @@ import { useLanguage } from '../../../i18n/LanguageContext'
 import { supabase } from '../../../lib/supabase'
 import { resolveSignedUrl } from '../../../lib/storageUrl'
 import { validateUpload } from '../../../lib/uploadValidation'
+import { useDialog } from '../../../hooks/useDialog'
 import type { FinanceAttachment } from '../../../types'
 import { ghostBtnStyle, labelStyle } from './tokens'
 
@@ -62,12 +63,15 @@ function AttachmentThumb({ attachment, bucket, onView }: {
 // Fullscreen viewer for a clicked thumbnail. Unlike the form modals, the
 // backdrop DOES dismiss: there is nothing typed to lose in a viewer.
 function Lightbox({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+  const { t } = useLanguage()
+  // A tela inteira é o diálogo: clique no fundo, Esc e o X fecham (UX-003).
+  const { dialogProps } = useDialog({ onClose, closeOnEsc: true, label: name })
   return (
-    <div onClick={onClose}
+    <div {...dialogProps} onClick={onClose}
       style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
       <img src={url} alt={name} onClick={e => e.stopPropagation()}
         style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 10, boxShadow: '0 12px 48px rgba(0,0,0,0.5)', cursor: 'default' }} />
-      <button type="button" onClick={onClose}
+      <button type="button" aria-label={t('dialog_close')} onClick={onClose}
         style={{ position: 'absolute', top: 16, right: 16, width: 38, height: 38, borderRadius: 10, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <X size={20} />
       </button>

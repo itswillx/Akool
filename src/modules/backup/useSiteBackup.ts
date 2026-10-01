@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../../lib/env'
 import type { SiteBackup, SiteBackupSettings } from '../../types'
 
-const EDGE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/site-backup`
-const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const EDGE_FN = `${SUPABASE_URL}/functions/v1/site-backup`
+const ANON_KEY = SUPABASE_ANON_KEY
 
 async function getAccessToken(): Promise<string> {
   const { data: { session } } = await supabase.auth.getSession()
@@ -33,7 +34,7 @@ async function callSiteBackup(body: Record<string, unknown>) {
   } catch {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
   }
-  if (!res.ok) throw new Error(String(data.error ?? 'Request failed'))
+  if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Request failed')
   return data as {
     backups?: SiteBackup[]
     settings?: SiteBackupSettings
@@ -68,50 +69,20 @@ export function useSiteBackup(enabled: boolean) {
   const [loading, setLoading] = useState(true)
   const [runningAction, setRunningAction] = useState<string | null>(null)
 
-  const runAutoBackupIfDue = useCallback(async (
-    currentBackups: SiteBackup[],
-    currentSettings: SiteBackupSettings | null,
-  ): Promise<boolean> => {
-    if (!enabled || !currentSettings?.auto_enabled) return false
-    const intervalMs = (currentSettings.interval_days ?? 7) * 86400000
-    const lastAuto = currentSettings.last_auto_at ? new Date(currentSettings.last_auto_at).getTime() : 0
-    if (Date.now() - lastAuto < intervalMs) return false
-    if (currentBackups.some(b => b.status === 'running')) return false
-
-    setRunningAction('auto')
-    try {
-      await callSiteBackup({ action: 'create_backup', type: 'automatic' })
-      return true
-    } catch {
-      // silent fallback — cron may handle it
-      return false
-    } finally {
-      setRunningAction(null)
-    }
-  }, [enabled])
-
-  const refreshList = useCallback(async (options?: { initial?: boolean; runAuto?: boolean }) => {
+  // REL-008: o backup automático é agendado no servidor (pg_cron chamando
+  // run_auto_backup, migration rel008_backup_cron). Antes, só rodava quando um
+  // admin abria este painel; o painel agora só lista e dispara o manual.
+  const refreshList = useCallback(async (options?: { initial?: boolean }) => {
     if (!enabled) return
     if (options?.initial) setLoading(true)
     try {
-      let { backups: nextBackups, settings: nextSettings } = await fetchListAndSettings()
+      const { backups: nextBackups, settings: nextSettings } = await fetchListAndSettings()
       setBackups(nextBackups)
       setSettings(nextSettings)
-
-      if (options?.runAuto) {
-        const ran = await runAutoBackupIfDue(nextBackups, nextSettings)
-        if (ran) {
-          const updated = await fetchListAndSettings()
-          nextBackups = updated.backups
-          nextSettings = updated.settings
-          setBackups(nextBackups)
-          setSettings(nextSettings)
-        }
-      }
     } finally {
       if (options?.initial) setLoading(false)
     }
-  }, [enabled, runAutoBackupIfDue])
+  }, [enabled])
 
   const createManualBackup = useCallback(async () => {
     if (!enabled) return

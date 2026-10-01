@@ -1,15 +1,21 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
-import { X, User, Lock, Check, Sun, Moon, Gift, Copy, CheckCheck, Users, Database, ScrollText, LogOut, Camera, Crop, Trash2, ChevronDown, ChevronUp, LayoutDashboard, LayoutList } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback, useId, lazy, Suspense } from 'react'
+import { X, User, Lock, Check, Sun, Moon, Gift, Copy, CheckCheck, Users, Database, ScrollText, LogOut, Camera, Crop, Trash2, ChevronDown, ChevronUp, LayoutDashboard, LayoutList, KeyRound, ShieldCheck } from 'lucide-react'
 import { PasswordInput, PasswordStrengthMeter } from './PasswordFields'
+import { Field, type FieldControlProps } from './Field'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useDialog } from '../hooks/useDialog'
 import { supabase } from '../lib/supabase'
 import { AVATAR_BUCKET, UserAvatar } from './UserAvatar'
 import { AVATAR_COLORS } from '../lib/avatar'
 import { resolveSignedUrl } from '../lib/storageUrl'
+import { validateUpload } from '../lib/uploadValidation'
 import AvatarCropModal from './AvatarCropModal'
+import ApiTokensSection from './ApiTokensSection'
+import MfaSection from './MfaSection'
+import { isPasswordValid } from '../lib/passwordPolicy'
 import type { Lang } from '../i18n/translations'
 
 // Curated picks that read well at avatar sizes (faces, people, symbols).
@@ -28,7 +34,7 @@ interface Props {
   onClose: () => void
 }
 
-type Tab = 'profile' | 'password' | 'invites' | 'users' | 'backup' | 'audit'
+type Tab = 'profile' | 'password' | 'security' | 'invites' | 'api' | 'users' | 'backup' | 'audit'
 
 interface InviteCode {
   id: string
@@ -43,6 +49,8 @@ interface InviteCode {
 export default function UserSettingsModal({ open, onClose }: Props) {
   const { user, profile, isAdmin, changePassword, updateProfile, refreshProfile, signOut } = useAuth()
   const { t } = useLanguage()
+  // O fundo fecha (clique fora), então o Esc também (UX-003).
+  const { titleId, dialogProps } = useDialog({ open, onClose, closeOnEsc: true })
   const { theme, setTheme } = useTheme()
   const isMobile = useIsMobile()
   const [tab, setTab] = useState<Tab>('profile')
@@ -86,7 +94,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
       .from('invite_codes')
       .select('id, code, created_at, expires_at, used_at, used_by')
       .order('created_at', { ascending: false })
-    const codes = (data ?? []) as InviteCode[]
+    const codes: InviteCode[] = data ?? []
     const usedByIds = codes.map(c => c.used_by).filter(Boolean) as string[]
     if (usedByIds.length > 0) {
       const { data: profiles } = await supabase
@@ -161,8 +169,16 @@ export default function UserSettingsModal({ open, onClose }: Props) {
     if (!user) return
     setAvatarBusy(true)
     const previous = profile?.avatar_url ?? null
-    const path = `${user.id}/${crypto.randomUUID()}.jpg`
-    const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, blob)
+    // SEC-011: o JPEG do recorte passa pelas mesmas regras do bucket.
+    const checked = validateUpload('avatar', new File([blob], 'avatar', { type: blob.type || 'image/jpeg' }))
+    if (!checked.ok) {
+      setProfileMsg({ type: 'error', text: t(checked.reason === 'too_large' ? 'upload_error_too_large' : 'upload_error_invalid_type') })
+      setAvatarBusy(false)
+      closeCropModal()
+      return
+    }
+    const path = `${user.id}/${crypto.randomUUID()}.${checked.ext}`
+    const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, checked.file, { contentType: checked.file.type })
     if (upErr) {
       setProfileMsg({ type: 'error', text: upErr.message })
     } else {
@@ -230,7 +246,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
     setPwdMsg(null)
-    if (newPwd.length < 6) { setPwdMsg({ type: 'error', text: t('settings_pwd_short') }); return }
+    if (!isPasswordValid(newPwd)) { setPwdMsg({ type: 'error', text: t('settings_pwd_short') }); return }
     if (newPwd !== confirmPwd) { setPwdMsg({ type: 'error', text: t('settings_pwd_mismatch') }); return }
     setPwdLoading(true)
     const { error } = await changePassword(currentPwd, newPwd)
@@ -253,19 +269,19 @@ export default function UserSettingsModal({ open, onClose }: Props) {
 
   return (
     <>
-    <div
+    <div role="presentation"
       ref={overlayRef}
       onClick={handleOverlayClick}
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? 12 : 24 }}
     >
-      <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.24)', width: '100%', maxWidth: wideTab ? (isMobile ? '100%' : 980) : 460, height: wideTab ? 'calc(100dvh - 48px)' : undefined, maxHeight: 'calc(100dvh - 48px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div {...dialogProps} style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.24)', width: '100%', maxWidth: wideTab ? (isMobile ? '100%' : 980) : 460, height: wideTab ? 'calc(100dvh - 48px)' : undefined, maxHeight: 'calc(100dvh - 48px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Modal header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px 0' }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--color-text)' }}>{t('settings_title')}</h2>
+            <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--color-text)' }}>{t('settings_title')}</h2>
             <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--color-text-muted)' }}>{user?.email}</p>
           </div>
-          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>
+          <button type="button" aria-label={t('dialog_close')} onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>
             <X size={15} />
           </button>
         </div>
@@ -274,7 +290,9 @@ export default function UserSettingsModal({ open, onClose }: Props) {
         <div className="finance-hide-scrollbar" style={{ display: 'flex', gap: 3, padding: '16px 24px 0', flexWrap: 'nowrap', overflowX: 'auto' }}>
           <TabBtn active={tab === 'profile'} onClick={() => setTab('profile')} icon={<User size={13} />} label={t('settings_tab_profile')} />
           <TabBtn active={tab === 'password'} onClick={() => setTab('password')} icon={<Lock size={13} />} label={t('settings_tab_password')} />
+          <TabBtn active={tab === 'security'} onClick={() => setTab('security')} icon={<ShieldCheck size={13} />} label={t('settings_tab_security')} />
           <TabBtn active={tab === 'invites'} onClick={() => setTab('invites')} icon={<Gift size={13} />} label={t('settings_tab_invites')} />
+          <TabBtn active={tab === 'api'} onClick={() => setTab('api')} icon={<KeyRound size={13} />} label={t('settings_tab_api')} />
           {isAdmin && <TabBtn active={tab === 'users'} onClick={() => setTab('users')} icon={<Users size={13} />} label={t('sidebar_users')} />}
           {isAdmin && <TabBtn active={tab === 'backup'} onClick={() => setTab('backup')} icon={<Database size={13} />} label={t('sidebar_backup')} />}
           {isAdmin && <TabBtn active={tab === 'audit'} onClick={() => setTab('audit')} icon={<ScrollText size={13} />} label={t('sidebar_audit')} />}
@@ -295,6 +313,8 @@ export default function UserSettingsModal({ open, onClose }: Props) {
           {tab === 'audit' && (
             <Suspense fallback={<PanelFallback />}><AuditLogPanel /></Suspense>
           )}
+          {tab === 'api' && <ApiTokensSection />}
+          {tab === 'security' && <MfaSection />}
           {/* Profile tab */}
           {tab === 'profile' && (
             <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -363,7 +383,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {AVATAR_COLORS.map(c => (
-                        <button key={c} type="button"
+                        <button aria-label={t('common_color', { color: c })} aria-pressed={avatarColor === c} key={c} type="button"
                           onClick={() => setAvatarColor(prev => (prev === c ? null : c))}
                           style={{ width: 24, height: 24, borderRadius: '50%', background: c, cursor: 'pointer', border: avatarColor === c ? '2.5px solid var(--color-text)' : '1px solid var(--color-border)' }} />
                       ))}
@@ -372,8 +392,10 @@ export default function UserSettingsModal({ open, onClose }: Props) {
                 )}
               </div>
 
-              <FieldLabel label={t('settings_display_name')}>
+              <FieldLabel label={t('settings_display_name')}>{control => (
                 <input
+                  {...control}
+                  autoComplete="nickname"
                   type="text"
                   value={displayName}
                   onChange={e => setDisplayName(e.target.value)}
@@ -382,16 +404,18 @@ export default function UserSettingsModal({ open, onClose }: Props) {
                   onFocus={e => (e.target.style.borderColor = 'var(--color-text)')}
                   onBlur={e => (e.target.style.borderColor = 'var(--color-border)')}
                 />
-              </FieldLabel>
+              )}</FieldLabel>
 
-              <FieldLabel label={t('settings_email')}>
+              <FieldLabel label={t('settings_email')}>{control => (
                 <input
+                  {...control}
                   type="email"
+                  autoComplete="email"
                   value={user?.email ?? ''}
                   disabled
                   style={{ ...inputStyle, backgroundColor: 'var(--color-input-disabled-bg)', color: 'var(--color-text-muted)', cursor: 'not-allowed' }}
                 />
-              </FieldLabel>
+              )}</FieldLabel>
 
               {/* Language picker */}
               <FieldLabel label={t('settings_language')}>
@@ -464,39 +488,48 @@ export default function UserSettingsModal({ open, onClose }: Props) {
           {/* Password tab */}
           {tab === 'password' && (
             <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <FieldLabel label={t('settings_current_password')}>
+              <FieldLabel label={t('settings_current_password')}>{control => (
                 <PasswordInput
+                  control={control}
+                  autoComplete="current-password"
+                  t={t}
                   value={currentPwd}
                   onChange={setCurrentPwd}
                   show={showCurrent}
                   onToggleShow={() => setShowCurrent(v => !v)}
                   placeholder="••••••••"
                 />
-              </FieldLabel>
+              )}</FieldLabel>
 
-              <FieldLabel label={t('settings_new_password')}>
+              <FieldLabel label={t('settings_new_password')}>{control => (
                 <PasswordInput
+                  control={control}
+                  autoComplete="new-password"
+                  t={t}
                   value={newPwd}
                   onChange={setNewPwd}
                   show={showNew}
                   onToggleShow={() => setShowNew(v => !v)}
                   placeholder={t('settings_password_min')}
                 />
-              </FieldLabel>
+              )}</FieldLabel>
 
               {newPwd.length > 0 && (
                 <PasswordStrengthMeter password={newPwd} t={t} />
               )}
 
-              <FieldLabel label={t('settings_confirm_password')}>
+              <FieldLabel label={t('settings_confirm_password')}>{control => (
                 <PasswordInput
+                  control={control}
+                  autoComplete="new-password"
+                  t={t}
                   value={confirmPwd}
                   onChange={setConfirmPwd}
                   show={showConfirm}
                   onToggleShow={() => setShowConfirm(v => !v)}
                   placeholder={t('settings_password_repeat')}
                 />
-              </FieldLabel>
+              )}</FieldLabel>
 
               {pwdMsg && <FeedbackBanner type={pwdMsg.type} text={pwdMsg.text} />}
 
@@ -673,10 +706,22 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
   )
 }
 
-function FieldLabel({ label, children }: { label: string; children: React.ReactNode }) {
+const FIELD_LABEL_STYLE = { display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 } as const
+
+// UX-007: campo de texto (render prop) vira <Field>, com o label ligado ao
+// input; grupo de botões (idioma, tema…) vira role="group" nomeado pelo título,
+// em vez de um label solto, que não rotulava nada.
+function FieldLabel({ label, children }: {
+  label: string
+  children: React.ReactNode | ((control: FieldControlProps) => React.ReactNode)
+}) {
+  const groupId = useId()
+  if (typeof children === 'function') {
+    return <div><Field label={label} labelStyle={FIELD_LABEL_STYLE}>{children}</Field></div>
+  }
   return (
-    <div>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 }}>{label}</label>
+    <div role="group" aria-labelledby={groupId}>
+      <span id={groupId} style={FIELD_LABEL_STYLE}>{label}</span>
       {children}
     </div>
   )
@@ -684,7 +729,8 @@ function FieldLabel({ label, children }: { label: string; children: React.ReactN
 
 function FeedbackBanner({ type, text }: { type: 'success' | 'error'; text: string }) {
   return (
-    <div style={{ padding: '8px 12px', borderRadius: 8, backgroundColor: type === 'success' ? '#f0fdf4' : '#fef2f2', border: `1px solid ${type === 'success' ? '#bbf7d0' : '#fecaca'}`, color: type === 'success' ? '#15803d' : '#dc2626', fontSize: 13 }}>
+    // UX-007: erro anunciado na hora; sucesso quando o leitor terminar.
+    <div role={type === 'error' ? 'alert' : 'status'} style={{ padding: '8px 12px', borderRadius: 8, backgroundColor: type === 'success' ? '#f0fdf4' : '#fef2f2', border: `1px solid ${type === 'success' ? '#bbf7d0' : '#fecaca'}`, color: type === 'success' ? '#15803d' : '#dc2626', fontSize: 13 }}>
       {text}
     </div>
   )
@@ -697,7 +743,6 @@ const inputStyle: React.CSSProperties = {
   border: '1.5px solid var(--color-border)',
   borderRadius: 8,
   fontSize: 14,
-  outline: 'none',
   color: 'var(--color-text)',
   boxSizing: 'border-box',
   transition: 'border-color 0.15s',

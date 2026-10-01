@@ -27,7 +27,7 @@ export default function ImportStudyMarkdown({ onResult }: ImportStudyMarkdownPro
 
   const handleFile = useCallback((file: File) => {
     const reader = new FileReader()
-    reader.onload = () => setMarkdown(String(reader.result ?? ''))
+    reader.onload = () => setMarkdown((typeof reader.result === 'string' ? reader.result : ''))
     reader.readAsText(file)
   }, [])
 

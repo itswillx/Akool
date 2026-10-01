@@ -50,19 +50,19 @@ export async function fetchDocsGraphData(userId: string, pageIds: string[]): Pro
   const [rawCards, columns, boardShares, pageShares] = await Promise.all([
     chunkedIn(boardIds, CHUNK, async batch => {
       const { data } = await supabase.from('project_cards').select('*').in('board_id', batch)
-      return (data ?? []) as ProjectCard[]
+      return (data ?? [])
     }),
     chunkedIn(boardIds, CHUNK, async batch => {
       const { data } = await supabase.from('project_columns').select('id, board_id, name').in('board_id', batch)
-      return (data ?? []) as { id: string; board_id: string; name: string }[]
+      return (data ?? [])
     }),
     chunkedIn(boardIds, CHUNK, async batch => {
       const { data } = await supabase.from('project_shares').select('board_id, shared_with_user_id').in('board_id', batch)
-      return (data ?? []) as { board_id: string; shared_with_user_id: string }[]
+      return (data ?? [])
     }),
     chunkedIn(pageIds, CHUNK, async batch => {
       const { data } = await supabase.from('page_shares').select('page_id, shared_with_user_id').in('page_id', batch)
-      return (data ?? []) as { page_id: string; shared_with_user_id: string }[]
+      return (data ?? [])
     }),
   ])
 
@@ -91,7 +91,7 @@ export async function fetchDocsGraphData(userId: string, pageIds: string[]): Pro
       .from('profiles')
       .select('id, email, display_name, avatar_emoji, avatar_color, avatar_url')
       .in('id', batch)
-    return (data ?? []) as (ProfileBadge & { id: string })[]
+    return (data ?? [])
   })
 
   return {
