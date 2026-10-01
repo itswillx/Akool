@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import type { ReactNode } from 'react'
 import type { Page, PageType, PageShareRole } from '../types'
 import { supabase } from '../lib/supabase'
@@ -56,6 +57,10 @@ function addNodeToTree(list: Page[], parentId: string | null | undefined, newNod
   return { tree, inserted }
 }
 
+// QA-006: nomes do inventário; fora do componente para não entrarem nas deps dos hooks.
+const ACTIVE_PAGE_KEY = LOCAL_KEYS.pagesActive
+const ACTIVE_PANEL_KEY = LOCAL_KEYS.pagesPanel
+
 export function PagesProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const { showToast } = useToast()
@@ -84,8 +89,6 @@ export function PagesProvider({ children }: { children: ReactNode }) {
   const hasLoadedOnceRef = useRef(false)
   const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const ACTIVE_PAGE_KEY = 'excalinotion_active_page_id'
-  const ACTIVE_PANEL_KEY = 'excalinotion_active_panel'
 
   const setActivePage = useCallback((page: Page | null) => {
     setActivePanelRaw(null)

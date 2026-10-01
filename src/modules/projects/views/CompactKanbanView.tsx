@@ -1,5 +1,6 @@
 // ARCH-002: saiu do ProjectsPanel.tsx sem mudança de lógica.
 import type { DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core'
+import { sessionKey } from '../../../lib/localKeys'
 import {
 DndContext, DragOverlay,
 useSensors
@@ -13,7 +14,7 @@ import { dndAccessibility } from '../../../lib/dndAccessibility'
 import type { ProjectCard, ProjectCardPriority, ProjectColumn } from '../../../types'
 import { CardView } from '../board/Card'
 import { Column } from '../board/Column'
-import { collisionDetection, COMPACT_COLUMN_KEY } from '../projectsShared'
+import { collisionDetection } from '../projectsShared'
 
 // ─── Compact kanban (mobile focus) ────────────────────────────────────────────
 
@@ -61,7 +62,7 @@ export function CompactKanbanView({
   onReorderColumn?: (colId: string, dir: -1 | 1) => void
 }) {
   const { t } = useLanguage()
-  const storageKey = `${COMPACT_COLUMN_KEY}${boardId}`
+  const storageKey = sessionKey.compactColumn(boardId)
 
   const [activeColumnId, setActiveColumnId] = useState(() => {
     try {

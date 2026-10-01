@@ -49,6 +49,11 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      # DEV-008: vulnerabilidade high/critical em dependência de produção sem
+      # exceção válida (scripts/audit-allowlist.json) barra o PR.
+      - name: Audit (produção)
+        run: npm run audit:ci
+
       - name: Tipos (tsc -b)
         run: npx tsc -b
 

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import { ShieldCheck } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { isTotpCode } from '../lib/mfa'
@@ -9,7 +10,7 @@ import { getT, toLang } from '../i18n/translations'
 // Fica fora do LanguageProvider, como AuthPage e ResetPasswordPage.
 export default function MfaChallengePage() {
   const { user, verifyMfa, signOut } = useAuth()
-  const storedLang = toLang(localStorage.getItem('excalinotion_auth_lang'))
+  const storedLang = toLang(localStorage.getItem(LOCAL_KEYS.authLang))
   const t = getT(storedLang)
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)

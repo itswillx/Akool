@@ -1,0 +1,35 @@
+# DEV-009: o deploy é Coolify (Nixpacks); o preview por PR é o "Preview
+# Deployments" do recurso, ligado no painel (docs/deploy-coolify.md, seção
+# "Preview por PR"). Este workflow só comenta o link no PR, a partir da
+# variável de repositório PREVIEW_URL_TEMPLATE (ex.:
+# https://pr-{number}.preview.exemplo.com.br). Sem a variável, avisa e pula.
+name: Preview link
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Comentar o link do preview
+        env:
+          TEMPLATE: ${{ vars.PREVIEW_URL_TEMPLATE }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$TEMPLATE" ]; then
+            echo "::notice::PREVIEW_URL_TEMPLATE não definida (Settings → Variables): sem comentário de preview."
+            exit 0
+          fi
+          URL="${TEMPLATE//\{number\}/$NUMBER}"
+          gh pr comment "$NUMBER" --repo "$REPO" --body "🔍 Preview deste PR (Coolify, contra o staging): $URL
+
+O preview sobe depois do build do Coolify; se o link não abrir em alguns minutos, veja o deploy no painel."

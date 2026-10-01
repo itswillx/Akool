@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LOCAL_KEYS } from '../../../lib/localKeys'
 import { X } from 'lucide-react'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import type { FinanceAccount, FinanceCategory, FinanceStoreCustomer, FinanceStoreProduct, FinanceStorePurchase, FinanceStoreSale } from '../../../types'
@@ -26,7 +27,7 @@ const SECTIONS: { id: Section; key: TranslationKey }[] = [
 ]
 
 // Which section is open survives a reload, like the finance tab itself.
-const SECTION_KEY = 'finance_store_section'
+const SECTION_KEY = LOCAL_KEYS.financeStoreSection
 
 function isSection(value: unknown): value is Section {
   return typeof value === 'string' && SECTIONS.some(s => s.id === value)

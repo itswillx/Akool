@@ -27,7 +27,8 @@ setup('login do usuário de teste', async ({ page }) => {
   await page.evaluate(() => {
     const sessionKey = Object.keys(localStorage).find(k => /^sb-.*-auth-token$/.test(k))
     const userId = sessionKey ? (JSON.parse(localStorage.getItem(sessionKey) ?? '{}') as { user?: { id?: string } }).user?.id : undefined
-    if (userId) localStorage.setItem(`akool_onboarding_seen_${userId}`, '1')
+    // QA-006: a chave é a de src/lib/localKeys.ts (localKey.onboardingSeen).
+    if (userId) localStorage.setItem(`akool:onboarding.seen:${userId}`, '1')
   })
   await page.context().storageState({ path: STATE })
 })

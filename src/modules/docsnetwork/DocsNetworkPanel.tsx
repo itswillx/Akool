@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { LOCAL_KEYS } from '../../lib/localKeys'
 import type { Page } from '../../types'
 import {
   DEFAULT_DOCS_FILTERS, MAX_DOCS_NODES, buildDocsGraph,
@@ -80,13 +81,13 @@ export default function DocsNetworkPanel({ isMobile, pages, onOpenPage }: {
     if (node.kind === 'card') {
       const card = source.cards.find(c => c.id === node.refId)
       if (!card) return
-      localStorage.setItem('projects_active_board', card.board_id)
-      localStorage.setItem('projects_open_card', card.id)
+      localStorage.setItem(LOCAL_KEYS.projectsActiveBoard, card.board_id)
+      localStorage.setItem(LOCAL_KEYS.projectsOpenCard, card.id)
       setDocsSelection({ kind: 'projects' })
       return
     }
     if (node.kind === 'board') {
-      localStorage.setItem('projects_active_board', node.refId)
+      localStorage.setItem(LOCAL_KEYS.projectsActiveBoard, node.refId)
       setDocsSelection({ kind: 'projects' })
       return
     }

@@ -1,4 +1,5 @@
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import {
   ChevronDown, ChevronRight, Plus, FileText, Pencil, Layers, Trash2, Star,
@@ -10,7 +11,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { useLanguage } from '../i18n/LanguageContext'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
 
-const EXPANDED_KEY = 'excalinotion_expanded_pages'
+const EXPANDED_KEY = LOCAL_KEYS.pagesExpanded
 
 
 function getExpandedMap(): Record<string, boolean> {

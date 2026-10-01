@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import { Lock } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { PasswordInput, PasswordStrengthMeter } from '../components/PasswordFields'
@@ -13,7 +14,7 @@ const RESET_LABEL_STYLE = { display: 'block', fontSize: 14, fontWeight: 500, col
 
 export default function ResetPasswordPage() {
   const { user, completePasswordReset, cancelPasswordReset } = useAuth()
-  const storedLang = toLang(localStorage.getItem('excalinotion_auth_lang'))
+  const storedLang = toLang(localStorage.getItem(LOCAL_KEYS.authLang))
   const t = getT(storedLang)
   const [newPwd, setNewPwd] = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')

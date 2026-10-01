@@ -1,4 +1,5 @@
 import { lazy, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import { RailButton } from './RailButton'
 import { Files, FileText, ArrowLeft, StickyNote, GraduationCap, FolderKanban, Waypoints, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import type { Page, PageType } from '../types'
@@ -20,7 +21,7 @@ const NetworkSection = lazy(() => import('../modules/docsnetwork'))
 // store de lib/docsNavigation, observável de fora — deep links (Dashboard,
 // QuickNotes, bloco de card) trocam a seção mesmo com o painel já montado.
 
-const COLLAPSED_KEY = 'excalinotion_docs_rail_collapsed'
+const COLLAPSED_KEY = LOCAL_KEYS.docsRailCollapsed
 
 function readCollapsed(): boolean {
   try { return localStorage.getItem(COLLAPSED_KEY) === '1' } catch { return false }

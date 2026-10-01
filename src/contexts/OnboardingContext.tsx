@@ -1,4 +1,5 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { localKey } from '../lib/localKeys'
 import type { ReactNode } from 'react'
 import { useAuth } from './AuthContext'
 
@@ -13,7 +14,6 @@ interface OnboardingContextType {
 
 const OnboardingContext = createContext<OnboardingContextType | null>(null)
 
-const SEEN_PREFIX = 'akool_onboarding_seen_'
 
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
@@ -23,7 +23,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     const userId = user?.id
     if (!userId) return
     try {
-      const seen = localStorage.getItem(SEEN_PREFIX + userId)
+      const seen = localStorage.getItem(localKey.onboardingSeen(userId))
       if (!seen) setShowTour(true)
     } catch {
       // localStorage unavailable; skip auto-open
@@ -37,7 +37,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     const userId = user?.id
     if (userId) {
       try {
-        localStorage.setItem(SEEN_PREFIX + userId, '1')
+        localStorage.setItem(localKey.onboardingSeen(userId), '1')
       } catch {
         // ignore persistence errors
       }

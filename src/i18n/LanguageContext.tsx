@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from 'react'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import type { ReactNode } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { getT, isLangLoaded, loadLang, subscribeLangs, toLang } from './translations'
@@ -16,7 +17,7 @@ const LanguageContext = createContext<LanguageContextType>({
 
 function storedAuthLang(): Lang {
   try {
-    return toLang(localStorage.getItem('excalinotion_auth_lang'))
+    return toLang(localStorage.getItem(LOCAL_KEYS.authLang))
   } catch {
     return 'pt-BR'
   }

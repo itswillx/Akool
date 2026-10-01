@@ -1,4 +1,5 @@
 import { createReactBlockSpec } from '@blocknote/react'
+import { LOCAL_KEYS } from '../../lib/localKeys'
 import { PROJECT_PRIORITY_COLORS as PRIORITY_COLORS } from '../../lib/priorities'
 import { localeOf } from '../../i18n/translations'
 import { Calendar, CheckSquare, ExternalLink } from 'lucide-react'
@@ -8,7 +9,7 @@ import { usePages } from '../../contexts/PagesContext'
 import { setDocsSelection } from '../../lib/docsNavigation'
 import { MarkdownText } from '../MarkdownText'
 
-const ACTIVE_BOARD_KEY = 'projects_active_board'
+const ACTIVE_BOARD_KEY = LOCAL_KEYS.projectsActiveBoard
 
 function todayStr() {
   const d = new Date()

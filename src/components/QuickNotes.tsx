@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import { flattenTree as flatten } from '../lib/pageTree'
 import { StickyNote, Trash2, Plus, Link2, X, FileText, FolderKanban } from 'lucide-react'
 import type { QuickNote, QuickNoteColor, QuickNoteLinkedItem } from '../types'
@@ -167,8 +168,8 @@ function QuickNoteCard({ note, onUpdate, onRequestDelete }: {
       // Chaves gravadas ANTES da troca: o ProjectsPanel as lê no mount. Quando
       // este componente roda dentro do DocumentsPanel (já montado), é o
       // setDocsSelection que efetivamente troca a seção — setActivePanel vira no-op.
-      localStorage.setItem('projects_active_board', item.boardId)
-      localStorage.setItem('projects_open_card', item.targetId)
+      localStorage.setItem(LOCAL_KEYS.projectsActiveBoard, item.boardId)
+      localStorage.setItem(LOCAL_KEYS.projectsOpenCard, item.targetId)
       setDocsSelection({ kind: 'projects' })
       setActivePanel('documents')
     }

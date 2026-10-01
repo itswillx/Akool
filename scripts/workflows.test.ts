@@ -25,3 +25,52 @@ describe('deploy-functions.yml', () => {
     expect(deploy).toMatch(/supabase@\d+\.\d+\.\d+ functions deploy/)
   })
 })
+
+// DEV-008: dependências vigiadas toda semana, e o CI barra vulnerabilidade alta
+// em produção sem exceção válida.
+describe('dependabot.yml e audit no CI', () => {
+  const dependabot = readFileSync(join(ROOT, '.github/dependabot.yml'), 'utf8')
+  const ci = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
+
+  it('vigia npm e GitHub Actions toda semana, agrupando minor e patch', () => {
+    expect(dependabot).toMatch(/package-ecosystem: npm[\s\S]*interval: weekly/)
+    expect(dependabot).toMatch(/package-ecosystem: github-actions[\s\S]*interval: weekly/)
+    expect(dependabot).toMatch(/groups:\s*\n\s*minor-e-patch:\s*\n\s*update-types: \[minor, patch\]/)
+  })
+
+  it('o CI roda o gate de audit depois de instalar', () => {
+    const install = ci.indexOf('run: npm ci')
+    const audit = ci.indexOf('run: npm run audit:ci')
+    expect(install).toBeGreaterThan(0)
+    expect(audit).toBeGreaterThan(install)
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+    expect(pkg.scripts['audit:ci']).toBe('node scripts/audit-gate.mjs')
+  })
+
+  it('toda exceção do audit tem GHSA, motivo e validade', () => {
+    const list = JSON.parse(readFileSync(join(ROOT, 'scripts/audit-allowlist.json'), 'utf8')) as { id: string; motivo: string; ate: string }[]
+    for (const e of list) {
+      expect(e.id).toMatch(/^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/)
+      expect(e.motivo.length).toBeGreaterThan(10)
+      expect(e.ate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    }
+  })
+})
+
+// DEV-009: o link do preview vem de uma variável do repositório, nunca de um
+// domínio fixo no workflow, e o job só precisa comentar no PR.
+describe('preview-link.yml', () => {
+  const wf = readFileSync(join(ROOT, '.github/workflows/preview-link.yml'), 'utf8')
+
+  it('roda quando o PR abre, com a permissão mínima', () => {
+    expect(wf).toMatch(/pull_request:\s*\n\s*types: \[opened, reopened\]/)
+    expect(wf).toMatch(/permissions:\s*\n\s*contents: read\s*\n\s*pull-requests: write/)
+    expect(wf).not.toMatch(/secrets\./)
+  })
+
+  it('usa a variável PREVIEW_URL_TEMPLATE e pula sem ela', () => {
+    expect(wf).toContain('vars.PREVIEW_URL_TEMPLATE')
+    expect(wf).toContain('exit 0')
+    expect(wf).not.toMatch(/https?:\/\/[a-z0-9.-]+\.(com|br|app)\b/)
+  })
+})

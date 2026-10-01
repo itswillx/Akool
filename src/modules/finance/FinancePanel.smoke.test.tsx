@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { LOCAL_KEYS } from '../../lib/localKeys'
 import { render, screen, userEvent, waitFor } from '../../test/rtl'
 
 // ARCH-001: o painel inteiro monta depois da divisão em hooks e arquivos —
@@ -44,7 +45,7 @@ describe('FinancePanel (montagem completa)', () => {
 
     for (const tab of ['transactions', 'budgets', 'accounts', 'categories', 'recurring', 'overview']) {
       await user.click(screen.getAllByRole('button', { name: `finance_tab_${tab}` })[0])
-      await waitFor(() => expect(localStorage.getItem('finance_active_tab')).toBe(tab))
+      await waitFor(() => expect(localStorage.getItem(LOCAL_KEYS.financeTab)).toBe(tab))
     }
 
     await user.click(screen.getAllByRole('button', { name: /finance_new_transaction/ })[0])

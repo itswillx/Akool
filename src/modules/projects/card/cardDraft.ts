@@ -2,7 +2,8 @@
 import { supabase } from '../../../lib/supabase'
 import { uploadContextBucket, validateUpload } from '../../../lib/uploadValidation'
 import type { ProjectCardAttachment, ProjectCardChecklistItem, ProjectCardLink, ProjectCardPriority } from '../../../types'
-import { CARD_DRAFT_PREFIX, CARD_MODAL_STATE_KEY } from '../projectsShared'
+import { CARD_MODAL_STATE_KEY } from '../projectsShared'
+import { sessionKey } from '../../../lib/localKeys'
 
 // ─── Card modal ───────────────────────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ interface CardModalStored {
 }
 
 export function getDraftKey(boardId: string, cardId: string | null, columnId?: string) {
-  return `${CARD_DRAFT_PREFIX}${boardId}:${cardId ?? 'new'}:${columnId ?? ''}`
+  return sessionKey.cardDraft(boardId, cardId, columnId)
 }
 
 export function saveCardDraft(key: string, draft: CardDraftStored) {

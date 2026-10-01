@@ -13,9 +13,11 @@
 //    é no-op; só a notificação troca a seção.
 // Sem React neste arquivo — o hook fica em hooks/useDocsSelection.ts.
 
-export const DOCS_SELECTED_KEY = 'excalinotion_docs_selected_id'
-export const ACTIVE_PANEL_KEY = 'excalinotion_active_panel'
-export const WORKSPACE_MODE_KEY = 'akool_workspace_mode'
+import { LOCAL_KEYS } from './localKeys'
+
+export const DOCS_SELECTED_KEY = LOCAL_KEYS.docsSelected
+export const ACTIVE_PANEL_KEY = LOCAL_KEYS.pagesPanel
+export const WORKSPACE_MODE_KEY = LOCAL_KEYS.workspaceMode
 
 // 'projects' saiu das duas uniões abaixo — ver migrateLegacyProjects.
 export type WorkspaceMode = 'all' | 'finance' | 'documents'

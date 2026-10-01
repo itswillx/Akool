@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import type { ReactNode } from 'react'
 import { useAuth } from './AuthContext'
 import { useToast } from './ToastContext'
@@ -13,7 +14,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
-const LS_KEY = 'excalinotion_theme'
+const LS_KEY = LOCAL_KEYS.theme
 
 function applyTheme(t: Theme) {
   if (t === 'dark') {

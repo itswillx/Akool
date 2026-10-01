@@ -6,7 +6,9 @@
 // entrar em loop. Falha passageira de rede não recarrega sozinha: o erro chega
 // ao ErrorBoundary, que oferece "Recarregar página".
 
-const RELOAD_KEY = 'akool:chunk-reload-at'
+import { LOCAL_KEYS } from './localKeys'
+
+const RELOAD_KEY = LOCAL_KEYS.chunkReloadAt
 const RELOAD_GUARD_MS = 30_000
 
 // Mensagens de import() de chunk que falhou: Chrome, Firefox, Safari e o CSS

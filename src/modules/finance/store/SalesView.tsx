@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LOCAL_KEYS } from '../../../lib/localKeys'
 import { LayoutGrid, List as ListIcon, Plus, ShoppingBag, Undo2 } from 'lucide-react'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { useIsMobile } from '../../../hooks/useIsMobile'
@@ -19,7 +20,7 @@ import { activateProps } from '../../../lib/a11y'
 
 type SalesMode = 'board' | 'list'
 
-const MODE_KEY = 'finance_store_sales_mode'
+const MODE_KEY = LOCAL_KEYS.financeStoreSalesMode
 
 export function SalesView({ store, categories, onNew, onEdit }: {
   store: FinanceStoreStore

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { LOCAL_KEYS, SESSION_KEYS } from '../lib/localKeys'
 import type { ReactNode } from 'react'
 import type { User, AuthChangeEvent } from '@supabase/supabase-js'
 import { supabase, createEphemeralAuthClient, recoveryLinkDetected } from '../lib/supabase'
@@ -57,7 +58,7 @@ interface AuthContextType {
 
 // Survives a mid-flow page reload of the recovery tab: the recovery hash is
 // consumed on first load, so the flag is what keeps the reset screen up.
-const RECOVERY_FLAG = 'akool_recovery_pending'
+const RECOVERY_FLAG = SESSION_KEYS.recoveryPending
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
@@ -90,7 +91,7 @@ export function mergeAuthUser(prev: User | null, nextUser: User | null, sameAcco
 // daqui), então as mensagens saem com getT no idioma guardado: o do perfil (o
 // updateProfile grava a troca) ou, antes do login, o escolhido na tela de login.
 function authT() {
-  const stored = localStorage.getItem('excalinotion_auth_lang')
+  const stored = localStorage.getItem(LOCAL_KEYS.authLang)
   return getT(toLang(stored))
 }
 
@@ -129,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setProfile(profile)
       if (profile.language) {
-        localStorage.setItem('excalinotion_auth_lang', profile.language)
+        localStorage.setItem(LOCAL_KEYS.authLang, profile.language)
       }
     }
   }, [])
@@ -309,7 +310,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.from('profiles').update(data).eq('id', user.id)
     if (error) return { error: error.message }
     setProfile(prev => prev ? { ...prev, ...data } : prev)
-    if (data.language) localStorage.setItem('excalinotion_auth_lang', data.language)
+    if (data.language) localStorage.setItem(LOCAL_KEYS.authLang, data.language)
     return { error: null }
   }, [user])
 

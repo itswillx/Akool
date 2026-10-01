@@ -23,6 +23,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage && node scripts/coverage-ratchet.mjs",
+    "audit:ci": "node scripts/audit-gate.mjs",
     "test:e2e": "playwright test",
     "prepare": "node scripts/install-git-hooks.mjs",
     "import:cards": "node scripts/import-backlog-cards.mjs",

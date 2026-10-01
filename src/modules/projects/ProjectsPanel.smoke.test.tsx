@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { LOCAL_KEYS } from '../../lib/localKeys'
 import { render, screen, userEvent, waitFor } from '../../test/rtl'
 import type { ProjectBoard, ProjectCard, ProjectColumn } from '../../types'
 
@@ -62,7 +63,7 @@ describe('ProjectsPanel (montagem completa)', () => {
 
     for (const view of ['list', 'overview', 'compact', 'kanban']) {
       await user.click(screen.getAllByRole('button', { name: `projects_view_${view}` })[0])
-      await waitFor(() => expect(localStorage.getItem('projects_view')).toBe(view))
+      await waitFor(() => expect(localStorage.getItem(LOCAL_KEYS.projectsView)).toBe(view))
     }
 
     await user.click(screen.getByText('Primeiro card'))

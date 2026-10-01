@@ -1,0 +1,27 @@
+# DEV-008: atualizações de dependências toda segunda-feira. As minor e patch do
+# npm vêm num PR só (grupo); cada major vem sozinha. As Actions também. O CI
+# roda em cada PR; o merge é manual. Decisão de 01/10/2026: as vulnerabilidades
+# conhecidas (scripts/audit-allowlist.json) são corrigidas por estes PRs, não
+# por `npm audit fix` à mão.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    labels: [dependências]
+    groups:
+      minor-e-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    labels: [dependências]

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import { localDateKey } from '../lib/localDate'
 import {
   FileText, Pencil, Layers, CheckSquare, Star, ArrowRight,
@@ -293,7 +294,7 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
           {showFinance && (
             <StatCard
-              onClick={() => { localStorage.setItem('finance_active_tab', 'overview'); setActivePanel('finance') }}
+              onClick={() => { localStorage.setItem(LOCAL_KEYS.financeTab, 'overview'); setActivePanel('finance') }}
               icon={<Wallet size={15} />} iconColor="#6366f1"
               label={t('sidebar_finance')} sub={t('dashboard_finance_balance')}
               value={fmtCurrency(finance.totalBalance)}
