@@ -158,10 +158,10 @@ export function CompactKanbanView({
             columnsCount={columns.length}
             onMovePrev={prevCol ? (cardId) => onMoveCardToColumn(cardId, prevCol.id) : undefined}
             onMoveNext={nextCol ? (cardId) => onMoveCardToColumn(cardId, nextCol.id) : undefined}
-            onAddCard={() => onAddCard(activeCol.id)}
+            onAddCard={onAddCard}
             onCardClick={onCardClick}
-            onRename={() => onRename(activeCol)}
-            onDelete={() => onDelete(activeCol)}
+            onRename={onRename}
+            onDelete={onDelete}
           />
         </div>
         <DragOverlay>

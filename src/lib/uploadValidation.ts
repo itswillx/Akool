@@ -1,3 +1,5 @@
+import { compressImage } from './imageCompress'
+
 // Contexts mirror Supabase storage buckets. Each context defines its own
 // allowlist + max size so a change to one upload surface can't silently
 // loosen another. Keep these values in sync with the DB-level
@@ -71,6 +73,20 @@ export function validateUpload(context: UploadContext, file: File): UploadValida
     return { ok: false, reason: 'too_large', context }
   }
   return { ok: true, file, ext: MIME_EXT[file.type] }
+}
+
+/**
+ * PERF-010: comprime a foto e depois valida. Como a compressão vem antes do
+ * limite de tamanho, uma foto de celular de 12 MB passa, já reduzida. O avatar
+ * já chega recortado e reduzido (imageCrop), então segue direto.
+ */
+export async function prepareUpload(
+  context: UploadContext,
+  file: File,
+  compress: (file: File) => Promise<File> = compressImage,
+): Promise<UploadValidationResult> {
+  const prepared = context === 'avatar' ? file : await compress(file)
+  return validateUpload(context, prepared)
 }
 
 export function uploadContextBucket(context: UploadContext): string {

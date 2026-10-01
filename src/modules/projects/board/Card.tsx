@@ -7,7 +7,7 @@ ChevronLeft, ChevronRight,
 Image,
 Link2
 } from 'lucide-react'
-import { useContext } from 'react'
+import { memo, useContext } from 'react'
 import { UserAvatar } from '../../../components/UserAvatar'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { cardKeyDown } from '../../../lib/dndAccessibility'
@@ -17,7 +17,9 @@ import { PriorityBadge, QueueBadgePill } from '../ui'
 
 // ─── Card presentational ────────────────────────────────────────────────────
 
-export function CardView({ card, priorityLabel, dragging }: { card: ProjectCard; priorityLabel: string; dragging?: boolean }) {
+// PERF-011: memo; com props iguais (o mesmo objeto de card), o card não redesenha
+// quando o painel ou outra coluna muda.
+export const CardView = memo(function CardView({ card, priorityLabel, dragging }: { card: ProjectCard; priorityLabel: string; dragging?: boolean }) {
   const { t } = useLanguage()
   const due = card.due_date ? new Date(card.due_date + 'T00:00:00') : null
   const overdue = due && !card.completed && due.getTime() < new Date(todayStr() + 'T00:00:00').getTime()
@@ -84,17 +86,20 @@ export function CardView({ card, priorityLabel, dragging }: { card: ProjectCard;
       </div>
     </div>
   )
-}
+})
 
 // ─── Sortable card ────────────────────────────────────────────────────────────
 
-export function SortableCard({
-  card, priorityLabel, canEdit, onClick, variant = 'board', showMovePrev, showMoveNext, onMovePrev, onMoveNext,
+// PERF-011: os handlers recebem o card (ou o id) em vez de serem lambdas criados
+// por card a cada render, então o memo segura os cards que não mudaram.
+export const SortableCard = memo(function SortableCard({
+  card, priorityLabel, canEdit, onOpen, variant = 'board', showMovePrev, showMoveNext, onMovePrev, onMoveNext,
 }: {
-  card: ProjectCard; priorityLabel: string; canEdit: boolean; onClick: () => void;
+  card: ProjectCard; priorityLabel: string; canEdit: boolean; onOpen: (card: ProjectCard) => void;
   variant?: 'board' | 'compact'; showMovePrev?: boolean; showMoveNext?: boolean;
-  onMovePrev?: () => void; onMoveNext?: () => void;
+  onMovePrev?: (cardId: string) => void; onMoveNext?: (cardId: string) => void;
 }) {
+  const onClick = () => onOpen(card)
   const { t } = useLanguage()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id, disabled: !canEdit })
   const style: React.CSSProperties = {
@@ -123,12 +128,12 @@ export function SortableCard({
           onClick={e => e.stopPropagation()}
         >
           {showMovePrev ? (
-            <button type="button" title={t('projects_compact_move_prev')} onClick={onMovePrev} style={moveBtnStyle}>
+            <button type="button" title={t('projects_compact_move_prev')} onClick={() => onMovePrev?.(card.id)} style={moveBtnStyle}>
               <ChevronLeft size={14} />
             </button>
           ) : <span style={{ width: 28 }} />}
           {showMoveNext ? (
-            <button type="button" title={t('projects_compact_move_next')} onClick={onMoveNext} style={moveBtnStyle}>
+            <button type="button" title={t('projects_compact_move_next')} onClick={() => onMoveNext?.(card.id)} style={moveBtnStyle}>
               <ChevronRight size={14} />
             </button>
           ) : <span style={{ width: 28 }} />}
@@ -137,4 +142,4 @@ export function SortableCard({
       <CardView card={card} priorityLabel={priorityLabel} />
     </div>
   )
-}
+})

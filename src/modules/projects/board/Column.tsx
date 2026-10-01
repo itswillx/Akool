@@ -11,20 +11,23 @@ Pencil,
 Plus,
 Trash2
 } from 'lucide-react'
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import type { ProjectCard, ProjectCardPriority, ProjectColumn } from '../../../types'
 import { SortableCard } from './Card'
 
 // ─── Column ───────────────────────────────────────────────────────────────────
 
-export function Column({
+// PERF-011: memo, e os handlers recebem a coluna (ou o id) em vez de lambdas
+// criados por coluna a cada render do painel.
+export const Column = memo(function Column({
   column, cards, canEdit, priorityLabel, onAddCard, onCardClick, onRename, onDelete,
   variant = 'board', columnIndex = 0, columnsCount = 1, onMovePrev, onMoveNext,
   dragHandleRef, dragHandleListeners, dragHandleAttributes,
 }: {
   column: ProjectColumn; cards: ProjectCard[]; canEdit: boolean; priorityLabel: (p: ProjectCardPriority) => string;
-  onAddCard: () => void; onCardClick: (c: ProjectCard) => void; onRename: () => void; onDelete: () => void;
+  onAddCard: (columnId: string) => void; onCardClick: (c: ProjectCard) => void;
+  onRename: (column: ProjectColumn) => void; onDelete: (column: ProjectColumn) => void;
   variant?: 'board' | 'compact'; columnIndex?: number; columnsCount?: number;
   onMovePrev?: (cardId: string) => void; onMoveNext?: (cardId: string) => void;
   dragHandleRef?: (node: HTMLElement | null) => void;
@@ -37,7 +40,10 @@ export function Column({
   const isCompact = variant === 'compact'
   const showMovePrev = isCompact && columnIndex > 0
   const showMoveNext = isCompact && columnIndex < columnsCount - 1
-  const sortableItems = useMemo(() => cards.map(c => c.id), [cards])
+  // PERF-011: a lista de ids só muda quando entram, saem ou trocam de ordem cards;
+  // editar um card não pode renovar o SortableContext (redesenharia todos).
+  const idsKey = cards.map(c => c.id).join('|')
+  const sortableItems = useMemo(() => (idsKey ? idsKey.split('|') : []), [idsKey])
   const showDragHandle = !isCompact && canEdit && !!dragHandleRef
   return (
     <div
@@ -76,9 +82,9 @@ export function Column({
         </span>
         {canEdit && (
           <>
-            <button onClick={onAddCard} title={t('projects_add_card')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2 }}><Plus size={13} /></button>
-            <button onClick={onRename} title={t('projects_rename_column')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2 }}><Pencil size={12} /></button>
-            <button onClick={onDelete} title={t('projects_delete_column')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2 }}><Trash2 size={12} /></button>
+            <button onClick={() => onAddCard(column.id)} title={t('projects_add_card')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2 }}><Plus size={13} /></button>
+            <button onClick={() => onRename(column)} title={t('projects_rename_column')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2 }}><Pencil size={12} /></button>
+            <button onClick={() => onDelete(column)} title={t('projects_delete_column')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2 }}><Trash2 size={12} /></button>
           </>
         )}
       </div>
@@ -105,28 +111,29 @@ export function Column({
                 variant={variant}
                 showMovePrev={showMovePrev}
                 showMoveNext={showMoveNext}
-                onMovePrev={showMovePrev && onMovePrev ? () => onMovePrev(c.id) : undefined}
-                onMoveNext={showMoveNext && onMoveNext ? () => onMoveNext(c.id) : undefined}
-                onClick={() => onCardClick(c)}
+                onMovePrev={showMovePrev ? onMovePrev : undefined}
+                onMoveNext={showMoveNext ? onMoveNext : undefined}
+                onOpen={onCardClick}
               />
             ))
           }
         </SortableContext>
         {canEdit && (
-          <button onClick={onAddCard} style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px dashed var(--color-border)', background: 'transparent', color: 'var(--color-text-muted)', fontSize: 12.5, cursor: 'pointer' }}>
+          <button onClick={() => onAddCard(column.id)} style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px dashed var(--color-border)', background: 'transparent', color: 'var(--color-text-muted)', fontSize: 12.5, cursor: 'pointer' }}>
             <Plus size={13} />{t('projects_add_card')}
           </button>
         )}
       </div>
     </div>
   )
-}
+})
 
 // ─── Sortable column (board reorder) ──────────────────────────────────────────
 
-export function SortableColumn({ column, canEdit, ...rest }: {
+export const SortableColumn = memo(function SortableColumn({ column, canEdit, ...rest }: {
   column: ProjectColumn; cards: ProjectCard[]; canEdit: boolean; priorityLabel: (p: ProjectCardPriority) => string;
-  onAddCard: () => void; onCardClick: (c: ProjectCard) => void; onRename: () => void; onDelete: () => void;
+  onAddCard: (columnId: string) => void; onCardClick: (c: ProjectCard) => void;
+  onRename: (column: ProjectColumn) => void; onDelete: (column: ProjectColumn) => void;
 }) {
   const { active } = useDndContext()
   const cardDragging = !!active && active.data.current?.type !== 'column'
@@ -152,4 +159,4 @@ export function SortableColumn({ column, canEdit, ...rest }: {
       />
     </div>
   )
-}
+})

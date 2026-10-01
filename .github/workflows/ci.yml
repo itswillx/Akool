@@ -78,6 +78,12 @@ jobs:
       - name: Build
         run: npx vite build
 
+      # PERF-012: o boot, a entrada e o maior chunk (gzip) não podem crescer mais
+      # que 5% sobre scripts/bundle-budget.json. Aumento intencional:
+      # `node scripts/bundle-budget.mjs --update` no mesmo PR.
+      - name: Orçamento do bundle
+        run: node scripts/bundle-budget.mjs
+
   # QA-003: E2E (Playwright) contra o STAGING (DEV-002). Só roda com os secrets
   # do staging e do usuário de teste; sem eles, avisa e segue. A config recusa
   # rodar se a URL for a da produção.
