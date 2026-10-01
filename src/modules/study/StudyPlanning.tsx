@@ -4,6 +4,7 @@ import type { StudyCard, StudyTopic } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { isTopicOverdue, topicProgress } from '../../lib/studyProgress'
 import { Avatar, ProgressBar, SectionLabel, StatusPill, TargetChip } from './StudyBits'
+import { activateProps } from '../../lib/a11y'
 
 // "Planejamento": the queue of topics waiting to start (status planned, with
 // a one-click start) and every topic with a target date, overdue ones first.
@@ -53,6 +54,7 @@ export default function StudyPlanning({ topics, cardsByTopic, onOpen, onStart, i
               return (
                 <div
                   key={topic.id}
+                  {...activateProps(() => onOpen(topic.id))}
                   onClick={() => onOpen(topic.id)}
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 12, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer' }}
                 >
@@ -96,6 +98,7 @@ export default function StudyPlanning({ topics, cardsByTopic, onOpen, onStart, i
               return (
                 <div
                   key={topic.id}
+                  {...activateProps(() => onOpen(topic.id))}
                   onClick={() => onOpen(topic.id)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 12,

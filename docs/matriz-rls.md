@@ -18,13 +18,14 @@ Convenção: `own` = linha pertence ao usuário (`user_id`/`owner_id` = `auth.ui
 | Tabela | Operação | Quem | Mecanismo | Observação |
 |---|---|---|---|---|
 | `pages` | SELECT | own, `page_is_readable()` | RLS direta + fn SECURITY DEFINER | fn percorre a árvore de páginas (recursiva) checando dono/compartilhamento em cada ancestral |
-| `pages` | INSERT | own | RLS direta | |
+| `pages` | INSERT | own; com pai, só onde escreve (`page_is_writable(parent_id)`) | RLS direta + fn SECURITY DEFINER | SEC-005: antes dava para pendurar página no ID de uma página alheia |
 | `pages` | UPDATE | own, `page_is_writable()` | RLS direta + fn SECURITY DEFINER | fn exige `role IN ('editor','co_owner')` na cadeia de ancestrais |
 | `pages` | DELETE | own | RLS direta | so' o dono apaga, mesmo co_owner nao pode |
 | `pages` | trigger | — | `prevent_page_ownership_transfer` | força `user_id` de volta ao valor antigo se a sessão tem `auth.uid()` — impede roubo de página via UPDATE |
+| `pages` | trigger | — | `guard_page_parent` (SEC-005) | mudança de `parent_id` pela API: o novo pai tem de ser do mesmo dono (comparado com o `user_id` antigo) e não pode ser a própria página nem uma subpágina dela; ir para a raiz é livre. Verificação: `supabase/checks/sec005-page-parent.sql` |
 | `page_shares` | SELECT | own (owner_id) ou share (shared_with_user_id) | RLS direta | |
-| `page_shares` | INSERT | own | RLS + `current_user_can_share_page()` | exige ser dono OU co_owner da página |
-| `page_shares` | UPDATE | own (owner_id) | RLS direta (`USING` e `WITH CHECK` = `owner_id`) | **verificado (checklist SEC-001): destinatário do compartilhamento NÃO pode alterar o próprio `role`** — só o dono edita a linha |
+| `page_shares` | INSERT | own | RLS + `current_user_can_share_page()` | exige ser dono OU co_owner (nomeado pelo dono) da página |
+| `page_shares` | UPDATE | own (owner_id), **só a coluna `role`** | grant `update (role)` + RLS (`WITH CHECK` também exige `current_user_can_share_page(page_id)`) + trigger `page_shares_freeze_target` | **SEC-002 (25/09/2026):** antes dava para trocar `page_id` e ganhar acesso à página de outra pessoa. Agora o alvo (`page_id`, `owner_id`, `shared_with_user_id`) é congelado. O destinatário continua sem poder mudar o próprio `role` |
 | `page_shares` | DELETE | own (owner_id) | RLS direta | |
 | `page_presence` | SELECT/INSERT | `page_is_readable()` | fn SECURITY DEFINER | |
 | `page_presence` | UPDATE/DELETE | own (user_id) | RLS direta | |
@@ -41,8 +42,7 @@ Convenção: `own` = linha pertence ao usuário (`user_id`/`owner_id` = `auth.ui
 | Tabela | Operação | Quem | Mecanismo | Observação |
 |---|---|---|---|---|
 | `profiles` | SELECT | própria linha, `is_admin()`, `profile_is_related()` | RLS + 2 fns SECURITY DEFINER | `profile_is_related` evita expor `profiles` inteira para busca de compartilhamento |
-| `profiles` | UPDATE (própria linha) | own | RLS (`profiles_update_own`) | **campos `role`/`is_active`/`invite_slots_remaining` são congelados pelo trigger `enforce_profile_privilege_bounds`** mesmo que a policy permita o UPDATE — auto-promoção bloqueada na camada de trigger, não na policy |
-| `profiles` | UPDATE (qualquer linha) | admin | RLS (`profiles_update_admin`) | |
+| `profiles` | UPDATE | own ou admin | RLS (`profiles_update`, uma policy com `id = auth.uid() OR is_admin()` desde o PERF-002) | **campos `role`/`is_active`/`invite_slots_remaining` são congelados pelo trigger `enforce_profile_privilege_bounds`** mesmo que a policy permita o UPDATE — auto-promoção bloqueada na camada de trigger, não na policy |
 | `profiles` | DELETE | admin | RLS | |
 | `profiles` | INSERT | — | sem policy de INSERT para authenticated/anon | linha só é criada pelo trigger `on_auth_user_created` → `handle_new_user()` (SECURITY DEFINER) no signup |
 | `invite_codes` | SELECT | criador ou admin | RLS direta | |
@@ -52,9 +52,13 @@ Convenção: `own` = linha pertence ao usuário (`user_id`/`owner_id` = `auth.ui
 
 ## Finance — base (contas, categorias, orçamentos, metas, recorrências, transações)
 
-Todas as 9 tabelas seguem o mesmo padrão: **owner_all** (dono tem ALL) + policies
-extras de leitura/escrita por `workspace_id` via `is_workspace_member()`, mais um
-trigger `finance_guard_workspace` em 6 delas.
+Desde o PERF-002 (25/09/2026), cada tabela tem **uma policy por comando**
+(`<tabela>_select|_insert|_update|_delete`, `TO authenticated`). Cada uma é o OR
+de "own" com os acessos extras da tabela abaixo (workspace via
+`is_workspace_member()`, compartilhamento). Antes eram `owner_all` (ALL) + policies
+extras separadas, todas `TO public`; o acesso resultante é o mesmo (conferido
+linha a linha na migration `20260925191300`). Há também um trigger
+`finance_guard_workspace` em 6 delas.
 
 | Tabela | SELECT extra | INSERT | UPDATE extra | DELETE extra | Trigger de integridade |
 |---|---|---|---|---|---|
@@ -63,7 +67,7 @@ trigger `finance_guard_workspace` em 6 delas.
 | `finance_budgets` | workspace, `shared_with_user_id` | own | workspace | workspace | `trg_finance_budgets_ws_guard` |
 | `finance_goals` | workspace, via `finance_goal_shares` | own | — | — | `trg_finance_goals_ws_guard` |
 | `finance_goal_shares` | invitee (`shared_with_user_id`) | own | — | — | nenhum (goal sharing é pessoa-a-pessoa, sem workspace) |
-| `finance_goal_contributions` | owner-da-meta vê tudo, invitee vê o próprio | own; **invitee também pode INSERT** (`shared_insert`, via `finance_goal_shares`) | — | — | nenhum |
+| `finance_goal_contributions` | owner-da-meta vê tudo, invitee vê o próprio | own; **invitee também pode INSERT** (via `finance_goal_shares`, no `finance_goal_contributions_insert`) | — | — | nenhum |
 | `finance_recurring` | workspace | own | — | — | `trg_finance_recurring_ws_guard` |
 | `finance_recurring_entries` | via `finance_recurring.workspace_id` (subquery) | own | — | — | nenhum próprio (herda da recorrência pai) |
 | `finance_transactions` | workspace, `shared_with_user_id` | own | workspace | workspace | `trg_finance_transactions_ws_guard` |
@@ -78,7 +82,7 @@ workspace do qual o usuário é membro — sem isso um usuário poderia gravar
 | Tabela | Operação | Quem | Observação |
 |---|---|---|---|
 | `finance_workspaces` | SELECT | owner ou membro (`is_workspace_member`) | |
-| `finance_workspaces` | ALL (insert/update/delete) | owner | |
+| `finance_workspaces` | INSERT/UPDATE/DELETE | owner | uma policy por comando desde o PERF-002; todas as policies desta seção são `TO authenticated` |
 | `finance_workspace_members` | SELECT | qualquer membro do workspace | |
 | `finance_workspace_members` | INSERT | só quem já é `role='owner'` do workspace | |
 | `finance_workspace_members` | DELETE | owner (remove qualquer um) ou o próprio membro (sai sozinho) | |
@@ -123,7 +127,7 @@ já versionadas (`finance_store_module.sql`/`finance_projects_module.sql`/
 | `project_cards` | INSERT/UPDATE/DELETE | editor do board | |
 | `project_shares` | SELECT | owner ou share (shared_with_user_id) | |
 | `project_shares` | INSERT | owner, e precisa ser dono do board também | |
-| `project_shares` | UPDATE | owner (`USING`/`WITH CHECK` = `owner_id`) | **verificado (checklist SEC-001): destinatário do compartilhamento NÃO pode alterar o próprio `role`**, mesmo padrão de `page_shares` |
+| `project_shares` | UPDATE | owner, **só a coluna `role`**, e precisa continuar dono do board | **SEC-002:** grant `update (role)` + trigger `project_shares_freeze_target` impedem re-apontar `board_id`. Destinatário não altera o próprio `role` |
 | `project_shares` | DELETE | owner | |
 
 Achado à parte (fora do escopo de RLS, registrado aqui por ter aparecido na
@@ -131,8 +135,8 @@ mesma auditoria): `project_boards`/`project_columns`/`project_cards`/`project_sh
 concedem grants de tabela amplos (INSERT/SELECT/UPDATE/REFERENCES) também para
 `anon`, não só `authenticated` — inofensivo na prática porque toda policy
 depende de `auth.uid()` (nulo para anon), mas destoa do padrão mais restritivo
-usado em `sec_rpc_grants.sql`/`finance_projects_visibility.sql`. Não corrigido
-aqui (fora do escopo do SEC-001); considerar card de hardening à parte.
+usado em `sec_rpc_grants.sql`/`finance_projects_visibility.sql`. **Corrigido no
+SEC-012 (28/09/2026):** `anon` ficou só com SELECT em todo o `public`.
 
 ## Storage (`storage.objects`)
 
@@ -168,8 +172,8 @@ Todas revisadas pelo advisor do Supabase como "callable by authenticated/anon"
 | Função | Motivo de ser SECURITY DEFINER |
 |---|---|
 | `is_admin()` | evita recursão de RLS (`profiles` policy chamando função que lê `profiles`) — corrigido em `sec_fix_is_admin_recursion.sql` |
-| `page_is_readable`/`page_is_writable`/`current_user_can_share_page` | precisam ler `pages`/`page_shares` **sem** aplicar a RLS dessas mesmas tabelas (senão a policy de `pages` dependeria de si mesma) |
-| `user_can_access_board` | mesmo racional para `project_boards`/`project_shares` |
+| `page_is_readable`/`page_is_writable`/`current_user_can_share_page` | precisam ler `pages`/`page_shares` **sem** aplicar a RLS dessas mesmas tabelas (senão a policy de `pages` dependeria de si mesma). Desde o SEC-002 só honram share emitido pelo dono da página ou por um co_owner que o próprio dono nomeou |
+| `user_can_access_board` | mesmo racional para `project_boards`/`project_shares`; desde o SEC-002 só honra share emitido pelo dono do board (`private.cq_board_role`, da fila de desenvolvimento, segue a mesma regra) |
 | `is_workspace_member` | mesmo racional para `finance_workspace_members` |
 | `profile_is_related` | permite que a policy de `profiles` saiba "esse usuário aparece nos meus compartilhamentos" sem expor a tabela inteira |
 | `search_users_for_share` | busca limitada (mín. 3 caracteres, limit 6) para o modal de compartilhamento, sem listar todos os perfis |
@@ -182,18 +186,53 @@ Todas revisadas pelo advisor do Supabase como "callable by authenticated/anon"
 `validate_invite_code` também é chamável por `anon` (tela de cadastro, antes do
 login) — único caso, intencional (validar o código antes de criar a conta).
 
+### Quem pode chamar o quê (SEC-012, 28/09/2026)
+
+Migration `20260928145254_sec012_grants_hardening.sql`. Verificação:
+`supabase/checks/sec012-grants.sql` (transação desfeita). Depois dela, o
+advisor lista **32** funções `SECURITY DEFINER` para `authenticated` (eram 54)
+e só a `validate_invite_code` para `anon`. As 32 são intencionais:
+
+| Grupo | Funções | Por que continuam com EXECUTE para `authenticated` |
+|---|---|---|
+| Helpers de RLS (10) | `page_is_readable`, `page_is_writable`, `current_user_can_share_page`, `user_can_access_board`, `is_admin`, `is_workspace_member`, `profile_is_related`, `loan_is_owner`, `loan_is_visible`, `loan_file_is_readable` | a política roda como quem consulta: sem o EXECUTE, o RLS quebra. Tirá-las da API exige movê-las para o schema `private` e refazer as políticas (card à parte) |
+| RPCs do frontend (22) | convites (`generate_invite_code`, `validate_invite_code`, `admin_add_invite_slots`, `admin_revoke_invite_code`), workspaces (`create_workspace`, `invite_member`, `accept_/decline_workspace_invite`, `remove_workspace_member`, `leave_workspace`, `bootstrap_*_categories`), `create_project_board`, `search_users_for_share`, tokens (`create_api_token`, `revoke_api_token`) e a fila no `QueueModal` (`cq_list`, `cq_enqueue`, `cq_move`, `cq_remove`, `cq_reprioritize`, `cq_validate`) | chamadas com o JWT do usuário; cada uma confere quem chama |
+
+**Só `service_role`** (sem EXECUTE para `anon`/`authenticated`):
+- `cq_block`, `cq_boards`, `cq_card`, `cq_cards`, `cq_check`, `cq_complete`, `cq_next`, `cq_note`, `cq_release`, `cq_setup_flow`, `cq_start`: só a `cards-api` usa;
+- `admin_revoke_user_sessions`: a `admin-ops`;
+- `loan_approve`, `loan_cancel_request`, `loan_confirm_payment`, `loan_link_borrower`, `loan_reject`, `loan_reject_payment`, `loan_report_payment`, `loan_request`: não há tela de empréstimos. Uma tela nova precisa devolver o grant na mesma migration;
+- `set_ai_credentials` (não há tela) e `check_auto_site_backup_due` (feita para o `pg_cron`, que roda como `postgres`);
+- já eram: `_notify`, `check_rate_limit`, `resolve_api_token`, `list_public_tables`, `restore_site_backup`, `study_lookup_cache_prune`.
+
+**Privilégios de tabela** em `public`:
+- `anon` só tem SELECT (o RLS decide as linhas); nenhuma escrita, TRUNCATE, TRIGGER, REFERENCES ou MAINTAIN;
+- `authenticated` escreve onde o RLS deixa, mas sem TRUNCATE (que ignora o RLS), TRIGGER, REFERENCES e MAINTAIN, e sem escrita no `audit_log` (só as edge functions gravam, com `service_role`);
+- tabelas novas criadas por `postgres` já nascem assim (privilégio padrão). Funções novas de `postgres` nascem sem EXECUTE para `anon`/`authenticated`. O padrão de `supabase_admin` continua aberto, e só ele muda.
+
+**RPCs `SECURITY INVOKER` do kanban (PERF-004, 28/09/2026):** `reorder_project_cards`, `reorder_project_columns` e `schedule_project_cards` gravam a ordem e as datas numa requisição, com um UPDATE só (tudo ou nada). Rodam como quem chama, então o RLS de edição do quadro (`user_can_access_board` editor) vale linha a linha. Recusam coluna de outro quadro e erram se alguma linha não foi gravada. EXECUTE só para `authenticated`. Não entram na conta do advisor, que só lista `SECURITY DEFINER`.
+
+**Função nova exposta pela API:** dê `grant execute … to authenticated` na própria migration, só se o frontend chamar com o JWT do usuário, e confira quem chama dentro dela com `coalesce(..., false)` ou `public.is_admin()`, nunca com `!= 'admin'` solto (vira NULL sem linha em `profiles`; era o caso da `generate_invite_code`, corrigida no SEC-012).
+
 ## Achados desta auditoria (SEC-001)
 
 - ✅ `page_shares`/`project_shares` UPDATE: auto-promoção de role **bloqueada**
-  pelo RLS (`owner_id = auth.uid()` em `USING` e `WITH CHECK`) — item do
-  checklist original, confirmado seguro, nenhuma mudança necessária.
+  pelo RLS (`owner_id = auth.uid()` em `USING` e `WITH CHECK`).
+- ❌→✅ **Corrigido no SEC-002 (25/09/2026):** a conclusão acima estava
+  incompleta. O emissor podia re-apontar a própria share (`page_id`/`board_id`)
+  para o recurso de outra pessoa, porque `authenticated` tinha UPDATE em todas
+  as colunas. Reproduzido no remoto e corrigido em
+  `supabase/migrations/*_sec002_shares_lock_target.sql`: UPDATE só de `role`,
+  trigger que congela o alvo, `anon` sem grants nessas tabelas e funções de
+  acesso que ignoram shares de emissor sem direito.
 - ✅ `profiles.invite_slots_remaining`: já congelado pelo trigger
   `enforce_profile_privilege_bounds` — comentário desatualizado no arquivo
   `20260708180000_sec_protect_invite_slots.sql` corrigido nesta mesma tarefa.
-- ⚠️ Grants de tabela amplos para `anon` em várias tabelas do módulo de
+- ⚠️→✅ Grants de tabela amplos para `anon` em várias tabelas do módulo de
   projetos (ver seção Projects acima) — inofensivo hoje (RLS cobre), mas fora
-  do padrão mais restritivo usado alhures. Candidato a card de hardening
-  separado, não tratado aqui.
+  do padrão mais restritivo usado alhures. **Resolvido no SEC-012
+  (28/09/2026):** `anon` perdeu toda escrita em `public`, e ninguém da API tem
+  mais TRUNCATE/TRIGGER/REFERENCES/MAINTAIN (ver "Quem pode chamar o quê").
 - ℹ️ `profile_secrets`/`site_backups`/`site_backup_settings` sem policies de
   escrita para `authenticated`/`anon` — intencional (só `service_role`), não é
   um gap.

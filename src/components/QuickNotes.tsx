@@ -4,6 +4,7 @@ import type { QuickNote, QuickNoteColor, QuickNoteLinkedItem } from '../types'
 import { useQuickNotes } from '../hooks/useQuickNotes'
 import { usePages } from '../contexts/PagesContext'
 import { setDocsSelection } from '../lib/docsNavigation'
+import { activateProps } from '../lib/a11y'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import ItemPicker, { type PickedItem } from './ItemPicker'
@@ -45,7 +46,8 @@ export default function QuickNotes({ isMobile = false }: { isMobile?: boolean })
     const content = draft.trim()
     if (!content) return
     setDraft('')
-    await createNote({ content, color: draftColor })
+    // REL-004: na falha, o texto volta para o campo (se nada novo foi digitado).
+    if (!(await createNote({ content, color: draftColor }))) setDraft(prev => prev || content)
   }
 
   return (
@@ -66,11 +68,11 @@ export default function QuickNotes({ isMobile = false }: { isMobile?: boolean })
           onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit() } }}
           placeholder={t('quick_notes_placeholder')}
           rows={2}
-          style={{ flex: 1, resize: 'none', border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', lineHeight: 1.45 }}
+          style={{ flex: 1, resize: 'none', border: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', lineHeight: 1.45 }}
         />
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {COLORS.map(c => (
-            <ColorDot key={c} color={c} selected={draftColor === c} onClick={() => setDraftColor(c)} title={t(`quick_notes_color_${c}` as 'quick_notes_color_yellow')} />
+            <ColorDot key={c} color={c} selected={draftColor === c} onClick={() => setDraftColor(c)} title={t(`quick_notes_color_${c}`)} />
           ))}
           <button
             onClick={submit} disabled={!draft.trim()} type="button"
@@ -199,7 +201,7 @@ function QuickNoteCard({ note, onUpdate, onRequestDelete }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
         <div style={{ display: 'flex', gap: 4, flex: 1, opacity: hov ? 1 : 0, transition: 'opacity 0.15s' }}>
           {COLORS.filter(c => c !== note.color).map(c => (
-            <ColorDot key={c} color={c} selected={false} onClick={() => onUpdate(note.id, { color: c })} title={t(`quick_notes_color_${c}` as 'quick_notes_color_yellow')} />
+            <ColorDot key={c} color={c} selected={false} onClick={() => onUpdate(note.id, { color: c })} title={t(`quick_notes_color_${c}`)} />
           ))}
         </div>
         <button
@@ -221,7 +223,7 @@ function QuickNoteCard({ note, onUpdate, onRequestDelete }: {
         onChange={e => scheduleSave(e.target.value)}
         onBlur={flush}
         rows={Math.min(Math.max(text.split('\n').length, 2), 8)}
-        style={{ resize: 'none', border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', lineHeight: 1.45, width: '100%' }}
+        style={{ resize: 'none', border: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', lineHeight: 1.45, width: '100%' }}
       />
 
       {pickerOpen && <ItemPicker onSelect={addLink} onClose={() => setPickerOpen(false)} />}
@@ -231,6 +233,7 @@ function QuickNoteCard({ note, onUpdate, onRequestDelete }: {
           {note.linked_items.map(item => (
             <span
               key={item.id}
+              {...activateProps(() => openLinked(item))}
               onClick={() => openLinked(item)}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%', padding: '2px 7px',
@@ -240,7 +243,7 @@ function QuickNoteCard({ note, onUpdate, onRequestDelete }: {
             >
               {item.type === 'page' ? <FileText size={10} style={{ flexShrink: 0 }} /> : <FolderKanban size={10} style={{ flexShrink: 0 }} />}
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{item.title}</span>
-              <button
+              <button aria-label={t('common_remove')}
                 onClick={e => { e.stopPropagation(); removeLink(item.id) }} type="button"
                 style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 0 }}
               >

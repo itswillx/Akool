@@ -9,7 +9,7 @@ importação bancária, conciliação, etc.).
 - **Entrada pública:** `index.ts` (barrel). Importe sempre por `../modules/finance`,
   nunca apontando direto para arquivos internos.
 - **Depende apenas de infraestrutura compartilhada** do app: `contexts/AuthContext`,
-  `i18n/LanguageContext`, `lib/supabase`, `hooks/useIsMobile`, `hooks/usePdfExport`,
+  `i18n/LanguageContext`, `lib/supabase`, `hooks/useIsMobile`, `lib/financePdf`,
   `components/board` e os tipos `Finance*` de `src/types`.
 - **Não importa nada do mundo de projetos** (páginas, ProjectsPanel, Kanban, etc.).
   Essa fronteira deve ser mantida.
@@ -67,7 +67,8 @@ do provider do `FinancePanel`.
 `finance_goal_contributions`, pela migration
 `20260807120000_finance_drop_works_investments`. Etapas, itens a comprar e
 cotações não sobreviveram — só o nome do fornecedor, colado na nota da
-contribuição. Backup em `supabase/backups/20260807_obras_investimentos.json`.
+contribuição. O backup (dados reais) fica fora do repositório desde 26/09/2026
+(SEC-008), com o dono do projeto.
 
 Duas coisas de Obras continuam vivas porque a Loja também as usa:
 `finance_suppliers` (restaurada em `20260807130000_finance_restore_suppliers`

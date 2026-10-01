@@ -1,0 +1,23 @@
+{
+  "src": 0,
+  "src/components": 16.47,
+  "src/contexts": 52.41,
+  "src/hooks": 71.43,
+  "src/i18n": 86.96,
+  "src/lib": 77.24,
+  "src/modules/audit": 0,
+  "src/modules/backup": 5.52,
+  "src/modules/docsnetwork": 0,
+  "src/modules/finance": 23.76,
+  "src/modules/projects": 37.94,
+  "src/modules/study": 16.02,
+  "src/pages": 62.91,
+  "supabase/functions/_shared": 98.21,
+  "supabase/functions/admin-ops": 12.87,
+  "supabase/functions/ai-chat": 0,
+  "supabase/functions/analyze-transaction-photo": 0,
+  "supabase/functions/cards-api": 0,
+  "supabase/functions/categorize-transactions": 0,
+  "supabase/functions/site-backup": 5.24,
+  "supabase/functions/study-lookup": 9.87
+}

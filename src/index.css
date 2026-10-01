@@ -10,7 +10,10 @@
   --color-border-hover: #ebebea;
   --color-border-active: #e3e2e0;
   --color-text: #37352f;
-  --color-text-muted: #9b9a97;
+  /* UX-005: #71706b dá 4,96:1 no branco e 4,59 no bg-secondary (era 2,81);
+     é o cinza mais claro que passa 4,5 em todos os fundos fixos, um degrau
+     abaixo do text-subtle. Conferido em src/theme.contrast.test.ts. */
+  --color-text-muted: #71706b;
   --color-text-subtle: #6b6b6b;
   --color-hover: #ebebea;
   --color-active: #e3e2e0;
@@ -22,7 +25,7 @@
   --color-btn-primary-text: #ffffff;
   --color-btn-disabled: #e9e9e7;
   --color-btn-disabled-text: #9b9a97;
-  --color-icon: #9b9a97;
+  --color-icon: #8a8985; /* 3,5:1 — ícone que carrega sentido pede 3:1 */
   --color-done: #10b981;
   --color-primary: #3b82f6;
   --color-error: #ef4444;
@@ -49,7 +52,7 @@ html.dark {
   --color-border-hover: #383838;
   --color-border-active: #454545;
   --color-text: #e8e8e6;
-  --color-text-muted: #7a7a77;
+  --color-text-muted: #8f8f8b; /* UX-005: 4,72:1 no surface (era 3,56) */
   --color-text-subtle: #a0a09d;
   --color-hover: #2d2d2d;
   --color-active: #383838;
@@ -105,6 +108,24 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* UX-005: placeholder no cinza secundário. O padrão do Tailwind (50% da cor
+   do texto) dava 2,81:1, e placeholder também conta como texto. */
+::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+/* UX-006: com o zoom liberado no viewport, o iOS dá zoom ao focar campo com
+   fonte abaixo de 16px. Só no iOS (-webkit-touch-callout não existe fora
+   dele), campos de texto ficam em 16px; !important porque os tamanhos estão
+   inline. Campo com fonte maior que 16px leva .keep-font-size. */
+@supports (-webkit-touch-callout: none) {
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+    select, textarea, .rich-editor):not(.keep-font-size) {
+    font-size: 16px !important;
+  }
 }
 
 .excalidraw-container {
@@ -244,9 +265,6 @@ html, body {
   color: var(--color-text-muted);
   pointer-events: none;
 }
-.rich-editor:focus {
-  border-color: var(--color-primary);
-}
 .rich-editor p { margin: 4px 0; }
 .rich-editor h1, .rich-editor h2, .rich-editor h3 { margin: 8px 0 4px; font-weight: 700; line-height: 1.3; }
 .rich-editor h1 { font-size: 1.3em; }
@@ -267,4 +285,54 @@ html, body {
   padding-left: 10px;
   border-left: 3px solid var(--color-border);
   color: var(--color-text-muted);
+}
+
+/* UX-004: foco do teclado sempre visível (WCAG 2.4.7), no lugar do anel
+   padrão do navegador (cor variável) e dos antigos outline:none inline — que
+   venciam qualquer regra daqui. :where() tem especificidade zero: árvore de
+   páginas, diálogos, BlockNote e Excalidraw mantêm as próprias regras.
+   Controles ganham anel afastado; campos, anel colado na borda (não some sob
+   overflow: hidden). Em campo de texto o navegador aplica :focus-visible
+   também no clique. Não use outline:none inline (src/focusStyles.test.ts). */
+:where(a[href], button, summary, [tabindex], [role="button"], [role="checkbox"],
+  input:is([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+  select, textarea, .rich-editor):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -1px;
+}
+/* Busca com ícone: o anel vai na caixa, não no campo sem borda de dentro. */
+.field-box:has(:is(input, select, textarea):focus-visible) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -1px;
+}
+.field-box :is(input, select, textarea):focus-visible {
+  outline: none;
+}
+/* Faixa dupla (.dualrange): o foco aparece no botão arrastável. Regras
+   separadas: um seletor desconhecido derrubaria a lista inteira. */
+.dualrange:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
+}
+.dualrange:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
+}
+
+/* UX-002: na árvore de páginas o anel vai na linha, não no item inteiro (que
+   contém os subitens). */
+.page-tree-item:focus-visible {
+  outline: none;
+}
+.page-tree-item:focus-visible > .page-tree-row {
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+
+/* UX-003: o painel do diálogo recebe foco por script ao abrir; o anel fica
+   para os controles de dentro. */
+[role="dialog"]:focus,
+[role="alertdialog"]:focus {
+  outline: none;
 }

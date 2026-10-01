@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { ProjectBoard, ProjectCard, ProjectCardPriority, ProjectColumn, ProjectShareRole } from '../types'
+import type { ProjectBoard, ProjectCard, ProjectCardPriority, ProjectColumn } from '../types'
 
 // Snapshot of a project card embedded inside a note's `projectCard` block. Kept
 // flat and JSON-serialisable so it can live in BlockNote's string-only prop
@@ -27,13 +27,11 @@ export async function fetchAccessibleBoards(userId: string): Promise<ProjectBoar
     supabase.from('project_boards').select('*').eq('user_id', userId).order('sort_order', { ascending: true }),
     supabase.from('project_shares').select('role, project_boards(*)').eq('shared_with_user_id', userId),
   ])
-  const ownBoards: ProjectBoard[] = (own as ProjectBoard[] ?? []).map(b => ({ ...b, share_role: 'owner' as const }))
+  const ownBoards: ProjectBoard[] = (own ?? []).map(b => ({ ...b, share_role: 'owner' as const }))
   const sharedBoards: ProjectBoard[] = []
   if (shared) {
-    for (const row of shared) {
-      const raw = (row as unknown as { project_boards: ProjectBoard | ProjectBoard[] }).project_boards
-      const b = Array.isArray(raw) ? raw[0] : raw
-      if (b) sharedBoards.push({ ...b, share_role: (row as { role: ProjectShareRole }).role, is_shared: true })
+    for (const { role, project_boards: b } of shared) {
+      if (b) sharedBoards.push({ ...b, share_role: role, is_shared: true })
     }
   }
   return [...ownBoards, ...sharedBoards]
@@ -46,9 +44,8 @@ export async function fetchBoardCards(boardId: string): Promise<{ columns: Proje
     supabase.from('project_columns').select('*').eq('board_id', boardId).order('sort_order', { ascending: true }),
     supabase.from('project_cards').select('*').eq('board_id', boardId).order('sort_order', { ascending: true }),
   ])
-  const columns = (cols as ProjectColumn[]) ?? []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cards: ProjectCard[] = ((cds as any[]) ?? []).map((r: any) => ({
+  const columns: ProjectColumn[] = cols ?? []
+  const cards: ProjectCard[] = (cds ?? []).map(r => ({
     ...r,
     labels: r.labels ?? [],
     checklist: r.checklist ?? [],

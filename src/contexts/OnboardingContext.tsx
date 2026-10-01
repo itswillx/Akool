@@ -1,7 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useAuth } from './AuthContext'
-import WelcomeTour from '../components/WelcomeTour'
+
+// PERF-009: o tour só baixa quando começa.
+const WelcomeTour = lazy(() => import('../components/WelcomeTour'))
 
 interface OnboardingContextType {
   showTour: boolean
@@ -42,10 +44,12 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     }
   }, [user?.id])
 
+  const value = useMemo(() => ({ showTour, startTour, finishTour }), [showTour, startTour, finishTour])
+
   return (
-    <OnboardingContext.Provider value={{ showTour, startTour, finishTour }}>
+    <OnboardingContext.Provider value={value}>
       {children}
-      {showTour && <WelcomeTour onClose={finishTour} />}
+      {showTour && <Suspense fallback={null}><WelcomeTour onClose={finishTour} /></Suspense>}
     </OnboardingContext.Provider>
   )
 }

@@ -197,7 +197,7 @@ export function GraphCanvas<N extends GraphNodeBase, E extends GraphEdgeBase>({
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (drag.current) return
     drag.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, vb: view, moved: false }
-    ;(e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId)
+    ;(e.currentTarget).setPointerCapture(e.pointerId)
   }
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const d = drag.current
@@ -287,7 +287,7 @@ export function GraphCanvas<N extends GraphNodeBase, E extends GraphEdgeBase>({
                 role="button"
                 tabIndex={0}
                 opacity={faded ? (node.dimmed && neighborIds == null ? 0.45 : 0.18) : 1}
-                style={{ cursor: 'pointer', transition: 'transform 0.35s ease, opacity 0.15s', outline: 'none' }}
+                style={{ cursor: 'pointer', transition: 'transform 0.35s ease, opacity 0.15s' }}
                 onClick={e => { e.stopPropagation(); onSelect(node.id) }}
                 onPointerDown={e => e.stopPropagation()}
                 onKeyDown={e => { if (e.key === 'Enter') onSelect(node.id) }}

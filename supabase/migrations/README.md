@@ -15,6 +15,19 @@ Consequência: para o `supabase db push`, praticamente nenhum arquivo deste dire
 consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese falharia em
 "already exists"; na pior, re-executaria transformações de dados. Não use.
 
+## Depois de cada migration (DEV-005)
+
+1. **Advisors** de segurança e performance (MCP `get_advisors`, ou `npm run drift`).
+2. **Retrato do schema:** rode `supabase/checks/schema-snapshot.sql` pelo MCP (`execute_sql`) e regrave `supabase/schema-snapshot.json` com o resultado (chaves ordenadas). O workflow **Supabase drift** compara o banco com esse arquivo e acusa mudança feita fora do repositório.
+3. **Tipos:** regenere `src/types/database.ts` (ARCH-004).
+4. **Staging:** `npm run staging:reset -- --migrations` aplica a migration nova no staging, pulando as já aplicadas.
+
+**Exceções do drift** (`supabase/drift-allowlist.json`):
+- `baseline_remote_schema` nunca é aplicada no remoto.
+- As 54 migrations remotas sem arquivo são todas até `20260627015918`, histórico consolidado na baseline.
+
+**Staging do zero:** o `staging:reset` aplica todos os arquivos daqui num projeto vazio, na ordem. Arquivo que não rodar do zero ganha uma correção idempotente, registrada aqui, que não muda o que já vale em produção.
+
 ## Casos especiais
 
 - `20260630130000_finance_amounts_to_cents.sql` — **neutralizada (no-op)** em
@@ -98,7 +111,9 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
     v4 publicada (idênticos) antes de subir a v5 com a revogação de sessões. A v6
     (SEC-007, mesmo dia) adicionou a action `set_role` e a gravação em `audit_log`;
     o arquivo daqui é o fonte da v6. Deploy a partir do repo é seguro para essa
-    função. `categorize-transactions` continua sem fonte no repo.
+    função. Desde 26/09/2026 (SEC-007), `categorize-transactions` (v5) e
+    `study-lookup` (v1) também têm fonte aqui, versionada a partir do código
+    publicado, e as functions do navegador usam o CORS de `_shared/cors.ts`.
   - `ai-chat` e `analyze-transaction-photo` **estão em dia desde 2026-08-12**: o
     arquivo daqui é o fonte da **v10** de cada uma (SEC-012 acrescentou o teto de
     60/hora e 30/hora por usuário via `check_rate_limit`). Deploy a partir do repo

@@ -19,8 +19,11 @@ export interface ToastItem {
   dedupeKey: string
 }
 
+// PERF-001: o contexto público só carrega as ações, que são estáveis. A fila
+// fica dentro do provider e vai direto para o ToastStack — antes, cada toast
+// exibido/fechado re-renderizava todo consumidor de useToast (inclusive o
+// PagesContext, que envolve a árvore inteira), e todos só usam showToast.
 interface ToastContextType {
-  toasts: ToastItem[]
   showToast: (variant: ToastVariant, message: string, options?: ToastOptions) => string
   dismissToast: (id: string) => void
 }
@@ -77,7 +80,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => () => { timers.current.forEach(clearTimeout); timers.current.clear() }, [])
 
-  const value = useMemo<ToastContextType>(() => ({ toasts: visible, showToast, dismissToast }), [visible, showToast, dismissToast])
+  const value = useMemo<ToastContextType>(() => ({ showToast, dismissToast }), [showToast, dismissToast])
 
   return (
     <ToastContext.Provider value={value}>

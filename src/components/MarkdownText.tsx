@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { safeHref } from '../lib/safeHref'
 
 // Lightweight Markdown → React renderer. Covers the subset that appears in card
 // descriptions and that the formatting toolbar produces: bold, italic, inline
@@ -15,13 +16,6 @@ const codeStyle: CSSProperties = {
   borderRadius: 4, wordBreak: 'break-word',
 }
 const linkStyle: CSSProperties = { color: 'var(--color-primary)', textDecoration: 'underline' }
-
-// Only navigable, safe schemes become anchors; relative file paths (common in
-// imported cards, e.g. [foo.ts](src/foo.ts)) render as plain label text.
-function safeHref(url: string): string | null {
-  const u = url.trim()
-  return /^(https?:\/\/|mailto:)/i.test(u) ? u : null
-}
 
 const INLINE_PATTERNS: { type: 'code' | 'link' | 'bold' | 'italic'; re: RegExp }[] = [
   { type: 'code', re: /`([^`]+)`/ },
@@ -51,6 +45,9 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
       case 'code':
         nodes.push(<code key={key} style={codeStyle}>{m[1]}</code>); break
       case 'link': {
+        // Only navigable, safe schemes become anchors; relative file paths
+        // (common in imported cards, e.g. [foo.ts](src/foo.ts)) render as
+        // plain label text.
         const href = safeHref(m[2])
         nodes.push(href
           ? <a key={key} href={href} target="_blank" rel="noopener noreferrer" style={linkStyle}>{renderInline(m[1], key)}</a>

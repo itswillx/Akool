@@ -88,7 +88,7 @@ export interface FinanceGoalShare {
   goal_id: string
   owner_id: string
   shared_with_user_id: string
-  created_at: string
+  created_at: string | null
   profile?: ProfileBadge
 }
 
@@ -322,7 +322,9 @@ export type NotificationType =
 export interface AppNotification {
   id: string
   user_id: string
-  type: NotificationType
+  // Texto livre no banco (sem CHECK; quem grava é a função _notify). Um tipo
+  // novo cai no visual padrão em vez de quebrar.
+  type: NotificationType | (string & {})
   title: string
   body: string
   data: Record<string, unknown>
@@ -366,8 +368,9 @@ export interface Todo {
   due_date: string | null
   priority: TodoPriority
   sort_order: number
-  created_at: string
-  updated_at: string
+  // Default now() no banco, mas a coluna aceita null (ARCH-004).
+  created_at: string | null
+  updated_at: string | null
 }
 
 export interface Page {
@@ -379,8 +382,9 @@ export interface Page {
   parent_id: string | null
   sort_order: number
   is_favorite: boolean
-  created_at: string
-  updated_at: string
+  // Default now() no banco, mas a coluna aceita null (ARCH-004).
+  created_at: string | null
+  updated_at: string | null
   children?: Page[]
   share_role?: PageShareRole
   is_shared?: boolean
@@ -420,6 +424,8 @@ export interface ProjectCardChecklistItem {
   id: string
   text: string
   completed: boolean
+  /** Item que só o usuário pode fazer (fila: card "Aguardando você"). */
+  owner?: 'user'
 }
 
 export interface ProjectCardAttachment {

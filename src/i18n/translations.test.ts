@@ -1,18 +1,52 @@
-import { describe, expect, it } from 'vitest'
-import { getT, translations } from './translations'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { getT, isLangLoaded, loadLang, subscribeLangs } from './translations'
+import type { Lang } from './translations'
+import { ptBR } from './translations.pt-BR'
+import en from './translations.en'
 
 describe('translations key parity', () => {
   it('pt-BR and en declare exactly the same keys', () => {
-    const pt = Object.keys(translations['pt-BR']).sort()
-    const en = Object.keys(translations['en']).sort()
-    const missingInEn = pt.filter(k => !en.includes(k))
-    const missingInPt = en.filter(k => !pt.includes(k))
+    const pt = Object.keys(ptBR).sort()
+    const enKeys = Object.keys(en).sort()
+    const missingInEn = pt.filter(k => !enKeys.includes(k))
+    const missingInPt = enKeys.filter(k => !pt.includes(k))
     expect(missingInEn, `keys missing in en: ${missingInEn.join(', ')}`).toEqual([])
     expect(missingInPt, `keys missing in pt-BR: ${missingInPt.join(', ')}`).toEqual([])
   })
 })
 
+// PERF-009: o inglês não vem no boot; estes testes rodam antes de qualquer
+// loadLang('en') do arquivo.
+describe('loadLang', () => {
+  it('answers in pt-BR until the English dictionary loads', () => {
+    expect(isLangLoaded('en')).toBe(false)
+    expect(getT('en')('app_loading')).toBe('Carregando...')
+  })
+
+  it('shares one download between simultaneous calls and notifies subscribers', async () => {
+    const tBefore = getT('en')
+    const onChange = vi.fn()
+    const unsubscribe = subscribeLangs(onChange)
+    const first = loadLang('en')
+    expect(loadLang('en')).toBe(first)
+    await first
+    unsubscribe()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(isLangLoaded('en')).toBe(true)
+    // Um t criado antes do download passa a responder em inglês.
+    expect(tBefore('app_loading')).toBe('Loading...')
+  })
+
+  it('resolves right away for pt-BR and for languages without a dictionary', async () => {
+    await expect(loadLang('pt-BR')).resolves.toBeUndefined()
+    await expect(loadLang('fr' as Lang)).resolves.toBeUndefined()
+    expect(isLangLoaded('fr' as Lang)).toBe(false)
+  })
+})
+
 describe('getT', () => {
+  beforeAll(() => loadLang('en'))
+
   it('returns Portuguese strings for pt-BR', () => {
     const t = getT('pt-BR')
     expect(t('app_loading')).toBe('Carregando...')

@@ -18,6 +18,9 @@ import {
   topCategories,
   pendingRecurringTotal,
   missingAutoBudgets,
+  balancesByAccount,
+  countByCategory,
+  sumByGoal,
 } from './financeCalc'
 
 // Minimal transaction factory (only the fields the calculations read).
@@ -370,5 +373,41 @@ describe('missingAutoBudgets', () => {
 
   it('dedupes two active recurrings that would produce the same category/scope candidate', () => {
     expect(missingAutoBudgets([rec(), rec({ amount: 7000 })], [], '2025-06')).toHaveLength(1)
+  })
+})
+
+// PERF-005: single-pass versions. They must match the per-item functions they
+// replaced in FinancePanel, on generated data.
+describe('single-pass helpers (PERF-005)', () => {
+  const types = ['income', 'expense', 'transfer'] as FinanceTransaction['type'][]
+  const txs = Array.from({ length: 500 }, (_, i) => tx(types[i % 3], 100 + ((i * 53) % 9_000), {
+    account_id: i % 7 === 0 ? null : `acc-${i % 5}`,
+    category_id: i % 11 === 0 ? null : `cat-${i % 13}`,
+  }))
+  const accounts = Array.from({ length: 6 }, (_, i) => ({ id: `acc-${i}`, initial_balance: 1_000 * i }))
+
+  it('balancesByAccount matches accountBalance for every account (including one with no movement)', () => {
+    const balances = balancesByAccount(accounts, txs)
+    for (const acc of accounts) expect(balances.get(acc.id)).toBe(accountBalance(acc, txs))
+    expect(balances.get('acc-5')).toBe(5_000)
+  })
+
+  it('countByCategory matches a per-category filter and skips uncategorized rows', () => {
+    const counts = countByCategory(txs)
+    for (let c = 0; c < 13; c++) {
+      const id = `cat-${c}`
+      expect(counts.get(id) ?? 0).toBe(txs.filter(t => t.category_id === id).length)
+    }
+    expect([...counts.values()].reduce((a, b) => a + b, 0)).toBe(txs.filter(t => t.category_id).length)
+  })
+
+  it('sumByGoal matches the per-goal sum of contributions', () => {
+    const contributions = Array.from({ length: 50 }, (_, i) => ({ goal_id: `g-${i % 4}`, amount: 10 * (i + 1) }))
+    const sums = sumByGoal(contributions)
+    for (let g = 0; g < 4; g++) {
+      const id = `g-${g}`
+      expect(sums.get(id)).toBe(contributions.filter(c => c.goal_id === id).reduce((s, c) => s + c.amount, 0))
+    }
+    expect(sums.get('g-9')).toBeUndefined()
   })
 })

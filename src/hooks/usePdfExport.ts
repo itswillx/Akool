@@ -1,15 +1,17 @@
 import { jsPDF } from 'jspdf'
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-import { exportToBlob as excalidrawExportToBlob } from '@excalidraw/excalidraw'
+import type { TFn } from '../lib/optimistic'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { formatBRL } from '../lib/money'
-import { accountBalance } from '../lib/financeCalc'
-import type { Page, FinanceTransaction, FinanceAccount, FinanceCategory, FinanceBudget, FinanceGoal, FinanceGoalContribution, FinanceRecurring } from '../types'
+import type { Page } from '../types'
+import type { ProjectCardSnapshot } from '../lib/projectImport'
+import type { AppState, BinaryFiles } from '@excalidraw/excalidraw/types'
+import type { NonDeletedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
+import { CONTENT_W, MARGIN, PAGE_H, PAGE_W } from '../lib/pdf/layout'
 
-const MARGIN = 15
-const PAGE_W = 210
-const PAGE_H = 297
-const CONTENT_W = PAGE_W - MARGIN * 2
+// PDF de páginas (notas, desenhos, tarefas). O do financeiro mora em
+// lib/financePdf.ts (PERF-006): juntos, exportar as finanças baixava o
+// Excalidraw e o chunk do editor. Aqui o Excalidraw só carrega quando alguma
+// página exportada tem desenho.
 
 // ─── Block text extraction ────────────────────────────────────────────────────
 
@@ -20,34 +22,48 @@ interface LineEntry {
   style: LineStyle
 }
 
-function inlineText(content: unknown): string {
-  if (!Array.isArray(content)) return ''
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (content as any[]).map(c => c.text ?? '').join('')
+/** Texto que a fonte padrão do jsPDF consegue desenhar: sem acentos e só ASCII. */
+export function pdfSafe(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x00-\x7F]/g, '')
 }
 
-const CARD_PRIORITY_LABELS: Record<string, string> = {
-  low: 'Baixa', medium: 'Média', high: 'Alta', urgent: 'Urgente',
+function inlineText(content: unknown): string {
+  if (!Array.isArray(content)) return ''
+  return content.map((c: { text?: unknown } | null) => (typeof c?.text === 'string' ? c.text : '')).join('')
+}
+
+// UX-011: os rótulos do PDF saem no idioma de quem exporta (`t` vem de quem
+// chama; o jsPDF roda fora dos componentes).
+const CARD_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent'])
+
+/** Bloco do BlockNote como fica guardado no jsonb (só o que o PDF lê). */
+interface StoredBlock {
+  type?: string
+  content?: unknown
+  props?: { level?: number; checked?: boolean; snapshot?: string }
+  children?: unknown[]
 }
 
 // Serialises a `projectCard` block's snapshot into printable lines: title,
 // board · column context, priority/due meta, description and checklist.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractProjectCard(b: any): LineEntry[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let snap: any = {}
+function extractProjectCard(b: StoredBlock, t: TFn): LineEntry[] {
+  // Snapshot gravado pelo próprio bloco (buildCardSnapshot); campos podem faltar em blocos antigos.
+  let snap: Partial<ProjectCardSnapshot> = {}
   try { snap = JSON.parse(b.props?.snapshot || '{}') } catch { snap = {} }
 
   const lines: LineEntry[] = []
-  lines.push({ text: snap.title || 'Card', style: 'h3' })
+  lines.push({ text: snap.title || t('projects_table_card'), style: 'h3' })
 
   const context = [snap.boardName, snap.columnName].filter(Boolean).join(' · ')
   if (context) lines.push({ text: context, style: 'p' })
 
   const meta: string[] = []
-  if (snap.priority) meta.push(`Prioridade: ${CARD_PRIORITY_LABELS[snap.priority] ?? snap.priority}`)
-  if (snap.dueDate) meta.push(`Prazo: ${snap.dueDate}`)
-  if (snap.completed) meta.push('Concluído')
+  if (snap.priority) {
+    const label = CARD_PRIORITIES.has(snap.priority) ? t(`projects_priority_${snap.priority}`) : snap.priority
+    meta.push(`${t('projects_priority')}: ${label}`)
+  }
+  if (snap.dueDate) meta.push(`${t('projects_due_date')}: ${snap.dueDate}`)
+  if (snap.completed) meta.push(t('pdf_card_completed'))
   if (meta.length) lines.push({ text: meta.join('  |  '), style: 'p' })
 
   if (snap.description) lines.push({ text: snap.description, style: 'p' })
@@ -62,16 +78,15 @@ function extractProjectCard(b: any): LineEntry[] {
   return lines
 }
 
-function extractBlocks(blocks: unknown[]): LineEntry[] {
+function extractBlocks(blocks: unknown[], t: TFn): LineEntry[] {
   const lines: LineEntry[] = []
   for (const block of blocks) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const b = block as any
+    const b = (block ?? {}) as StoredBlock
     const type: string = b.type ?? 'paragraph'
     const text = inlineText(b.content)
 
     if (type === 'heading') {
-      const level: number = b.props?.level ?? 1
+      const level = b.props?.level ?? 1
       lines.push({ text, style: (`h${Math.min(level, 3)}`) as LineStyle })
     } else if (type === 'bulletListItem' || type === 'numberedListItem') {
       lines.push({ text: `- ${text}`, style: 'li' })
@@ -81,7 +96,7 @@ function extractBlocks(blocks: unknown[]): LineEntry[] {
     } else if (type === 'codeBlock') {
       lines.push({ text, style: 'code' })
     } else if (type === 'projectCard') {
-      lines.push(...extractProjectCard(b))
+      lines.push(...extractProjectCard(b, t))
     } else if (type === 'image' || type === 'diagram') {
       // skip unsupported block types
     } else {
@@ -90,7 +105,7 @@ function extractBlocks(blocks: unknown[]): LineEntry[] {
     }
 
     if (Array.isArray(b.children) && b.children.length > 0) {
-      lines.push(...extractBlocks(b.children))
+      lines.push(...extractBlocks(b.children, t))
     }
   }
   return lines
@@ -143,7 +158,7 @@ function ensureLine(doc: jsPDF, entry: LineEntry, y: number): number {
     doc.addPage()
     ny = renderLine(doc, entry, MARGIN)
   }
-  return ny as number
+  return ny
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -210,10 +225,85 @@ function addImageAspectFit(
   return y + finalH + 6
 }
 
+// ─── Page contents (PERF-006: in batches, not queries per page) ───────────────
+
+interface NoteRow { page_id: string; content: unknown }
+interface DrawingRow { page_id: string; elements: unknown; app_state: unknown; files: unknown }
+interface TodoRow { page_id: string; text?: string | null; completed?: boolean | null; priority?: string | null }
+
+export interface PageContents {
+  notes: Map<string, NoteRow>
+  drawings: Map<string, DrawingRow>
+  todos: Map<string, TodoRow[]>
+}
+
+// Keeps the `page_id=in.(…)` query string well under proxy URL limits.
+const IDS_PER_QUERY = 100
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
+/** Rows grouped by page_id, keeping the order they came in. */
+export function groupByPage<T extends { page_id: string }>(rows: T[]): Map<string, T[]> {
+  const out = new Map<string, T[]>()
+  for (const row of rows) {
+    const list = out.get(row.page_id)
+    if (list) list.push(row)
+    else out.set(row.page_id, [row])
+  }
+  return out
+}
+
+/**
+ * Everything the export reads, with one query per table per 100 pages, all in
+ * parallel. It used to be one or two sequential queries per page. A failed
+ * query leaves that content empty, as before.
+ */
+export async function fetchPageContents(
+  client: SupabaseClient,
+  pages: Pick<Page, 'id' | 'type'>[],
+): Promise<PageContents> {
+  const idsOf = (types: Page['type'][]) => pages.filter(p => types.includes(p.type)).map(p => p.id)
+  const select = async <T>(ids: string[], run: (batch: string[]) => PromiseLike<{ data: unknown }>): Promise<T[]> => {
+    const results = await Promise.all(chunk(ids, IDS_PER_QUERY).map(run))
+    return results.flatMap(r => (r.data as T[] | null) ?? [])
+  }
+  const [notes, drawings, todos] = await Promise.all([
+    select<NoteRow>(idsOf(['note', 'both']), batch =>
+      client.from('note_contents').select('page_id, content').in('page_id', batch)),
+    select<DrawingRow>(idsOf(['drawing', 'both']), batch =>
+      client.from('drawing_contents').select('page_id, elements, app_state, files').in('page_id', batch)),
+    select<TodoRow>(idsOf(['todo']), batch =>
+      client.from('todos').select('*').in('page_id', batch)
+        .order('completed', { ascending: true })
+        .order('sort_order', { ascending: true })),
+  ])
+  return {
+    notes: new Map(notes.map(n => [n.page_id, n])),
+    drawings: new Map(drawings.map(d => [d.page_id, d])),
+    todos: groupByPage(todos),
+  }
+}
+
+type ExcalidrawExportToBlob = typeof import('@excalidraw/excalidraw').exportToBlob
+
+/** jsonb de objeto (app_state, files) ou vazio. */
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
 // ─── Main export function ─────────────────────────────────────────────────────
 
-export async function exportPagesToPdf(pages: Page[], filename: string): Promise<void> {
+export async function exportPagesToPdf(pages: Page[], filename: string, t: TFn): Promise<void> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const contents = await fetchPageContents(supabase, pages)
+  // The Excalidraw bundle only loads if some exported page has a drawing.
+  let excalidraw: Promise<ExcalidrawExportToBlob> | null = null
+  const loadExcalidraw = () =>
+    (excalidraw ??= import('@excalidraw/excalidraw').then(m => m.exportToBlob))
   let first = true
 
   for (const page of pages) {
@@ -226,8 +316,10 @@ export async function exportPagesToPdf(pages: Page[], filename: string): Promise
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(20)
     doc.setTextColor(0, 0, 0)
-    const safeTitle = (page.title || 'Untitled').replace(/[^\x00-\x7F]/g, '')
-    const titleLines = doc.splitTextToSize(safeTitle || 'Untitled', CONTENT_W)
+    // A fonte padrão do jsPDF não tem acentos: tira só os acentos
+    // ("Relatório" → "Relatorio"), em vez de apagar a letra inteira.
+    const safeTitle = pdfSafe(page.title || t('page_header_untitled'))
+    const titleLines = doc.splitTextToSize(safeTitle || pdfSafe(t('page_header_untitled')), CONTENT_W)
     doc.text(titleLines, MARGIN, y)
     y += titleLines.length * 9 + 2
 
@@ -235,10 +327,12 @@ export async function exportPagesToPdf(pages: Page[], filename: string): Promise
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
     doc.setTextColor(140, 140, 140)
-    try {
-      doc.text(new Date(page.updated_at).toLocaleDateString(), MARGIN, y)
-    } catch {
-      doc.text(page.updated_at ?? '', MARGIN, y)
+    if (page.updated_at) {
+      try {
+        doc.text(new Date(page.updated_at).toLocaleDateString(), MARGIN, y)
+      } catch {
+        doc.text(page.updated_at, MARGIN, y)
+      }
     }
     y += 5.5
     doc.setTextColor(0, 0, 0)
@@ -252,14 +346,10 @@ export async function exportPagesToPdf(pages: Page[], filename: string): Promise
 
     // ── Note content ──
     if (type === 'note' || type === 'both') {
-      const { data } = await supabase
-        .from('note_contents')
-        .select('content')
-        .eq('page_id', page.id)
-        .single()
+      const data = contents.notes.get(page.id)
 
       if (data?.content && Array.isArray(data.content) && data.content.length > 0) {
-        const entries = extractBlocks(data.content as unknown[])
+        const entries = extractBlocks(data.content as unknown[], t)
         for (const entry of entries) {
           y = ensureLine(doc, entry, y)
         }
@@ -270,26 +360,23 @@ export async function exportPagesToPdf(pages: Page[], filename: string): Promise
     if (type === 'drawing' || type === 'both') {
       if (type === 'both') y += 10
 
-      const { data } = await supabase
-        .from('drawing_contents')
-        .select('elements, app_state, files')
-        .eq('page_id', page.id)
-        .single()
+      const data = contents.drawings.get(page.id)
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const activeElements = Array.isArray(data?.elements) ? (data.elements as any[]).filter((el: any) => !el.isDeleted) : []
-      if (activeElements.length > 0) {
+      // O jsonb é gravado pelo DrawingCanvas, no formato do próprio Excalidraw.
+      const activeElements = data && Array.isArray(data.elements)
+        ? (data.elements as NonDeletedExcalidrawElement[]).filter(el => !el.isDeleted)
+        : []
+      if (data && activeElements.length > 0) {
         try {
-          const blob = await (excalidrawExportToBlob as Function)({
+          const exportToBlob = await loadExcalidraw()
+          const blob = await exportToBlob({
             elements: activeElements,
             appState: {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ...((data!.app_state as any) ?? {}),
+              ...(asRecord(data.app_state) as Partial<AppState>),
               exportWithDarkMode: false,
               exportBackground: true,
             },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            files: (data!.files as any) ?? {},
+            files: asRecord(data.files) as BinaryFiles,
             mimeType: 'image/png',
           })
 
@@ -310,24 +397,17 @@ export async function exportPagesToPdf(pages: Page[], filename: string): Promise
 
     // ── Todos ──
     if (type === 'todo') {
-      const { data } = await supabase
-        .from('todos')
-        .select('*')
-        .eq('page_id', page.id)
-        .order('completed', { ascending: true })
-        .order('sort_order', { ascending: true })
+      const data = contents.todos.get(page.id) ?? []
 
-      if (data && data.length > 0) {
+      if (data.length > 0) {
         doc.setFontSize(10)
         for (const todo of data) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const t = todo as any
-          const check = t.completed ? '[x]' : '[ ]'
-          const prio = t.priority === 'high' ? ' (!)' : t.priority === 'medium' ? ' (-)' : ''
-          const text = `${check} ${t.text ?? ''}${prio}`
+          const check = todo.completed ? '[x]' : '[ ]'
+          const prio = todo.priority === 'high' ? ' (!)' : todo.priority === 'medium' ? ' (-)' : ''
+          const text = `${check} ${todo.text ?? ''}${prio}`
 
-          doc.setFont('helvetica', t.completed ? 'italic' : 'normal')
-          doc.setTextColor(t.completed ? 150 : 0, t.completed ? 150 : 0, t.completed ? 150 : 0)
+          doc.setFont('helvetica', todo.completed ? 'italic' : 'normal')
+          doc.setTextColor(todo.completed ? 150 : 0, todo.completed ? 150 : 0, todo.completed ? 150 : 0)
 
           const wrapped = doc.splitTextToSize(text, CONTENT_W)
           const bH = wrapped.length * 5.5
@@ -342,623 +422,4 @@ export async function exportPagesToPdf(pages: Page[], filename: string): Promise
   }
 
   doc.save(filename)
-}
-
-// ─── Finance PDF export ───────────────────────────────────────────────────────
-
-export interface FinancePdfData {
-  transactions: FinanceTransaction[]
-  accounts: FinanceAccount[]
-  categories: FinanceCategory[]
-  budgets: FinanceBudget[]
-  goals: FinanceGoal[]
-  contributions: FinanceGoalContribution[]
-  recurring: FinanceRecurring[]
-  month: string
-  userName: string
-}
-
-function finSafe(s: string): string {
-  return s.replace(/[^\u0000-\u00FF]/g, '')
-}
-
-// Stored amounts are integer cents; format via the shared helper.
-function finBRL(cents: number): string {
-  return formatBRL(cents)
-}
-
-function finMonthLabel(ym: string): string {
-  const [y, m] = ym.split('-').map(Number)
-  return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-}
-
-function finCheckPage(doc: jsPDF, y: number, needed = 10): number {
-  if (y + needed > PAGE_H - MARGIN) {
-    doc.addPage()
-    return MARGIN
-  }
-  return y
-}
-
-function finSection(doc: jsPDF, title: string, y: number): number {
-  y = finCheckPage(doc, y, 18)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.setTextColor(99, 102, 241)
-  doc.text(finSafe(title), MARGIN, y)
-  y += 4
-  doc.setDrawColor(99, 102, 241)
-  doc.setLineWidth(0.5)
-  doc.line(MARGIN, y, PAGE_W - MARGIN, y)
-  doc.setLineWidth(0.2)
-  doc.setDrawColor(210, 210, 210)
-  doc.setTextColor(0, 0, 0)
-  return y + 7
-}
-
-type ColDef = { text: string; x: number; w: number; right?: boolean }
-
-function finRow(
-  doc: jsPDF,
-  cols: ColDef[],
-  y: number,
-  opts?: { bold?: boolean; color?: [number, number, number] }
-): number {
-  y = finCheckPage(doc, y, 7)
-  doc.setFont('helvetica', opts?.bold ? 'bold' : 'normal')
-  doc.setFontSize(9)
-  if (opts?.color) doc.setTextColor(opts.color[0], opts.color[1], opts.color[2])
-  else doc.setTextColor(0, 0, 0)
-  for (const col of cols) {
-    const clipped = doc.splitTextToSize(finSafe(col.text), col.w - 1)[0] ?? ''
-    if (col.right) {
-      const tw = doc.getTextWidth(clipped)
-      doc.text(clipped, col.x + col.w - 2 - tw, y)
-    } else {
-      doc.text(clipped, col.x, y)
-    }
-  }
-  doc.setTextColor(0, 0, 0)
-  return y + 5.5
-}
-
-function finHRule(doc: jsPDF, y: number): number {
-  doc.setDrawColor(235, 235, 235)
-  doc.setLineWidth(0.1)
-  doc.line(MARGIN, y - 1, PAGE_W - MARGIN, y - 1)
-  doc.setDrawColor(210, 210, 210)
-  return y
-}
-
-// ── Canvas chart helpers ───────────────────────────────────────────────────────
-
-function canvasToDataUrl(canvas: HTMLCanvasElement): string {
-  return canvas.toDataURL('image/png')
-}
-
-/** Draws a donut chart on a canvas and returns the data URL */
-function drawDonutChart(
-  slices: { label: string; value: number; color: string }[],
-  width: number,
-  height: number
-): string {
-  const DPI = 2
-  const canvas = document.createElement('canvas')
-  canvas.width = width * DPI
-  canvas.height = height * DPI
-  const ctx = canvas.getContext('2d')!
-  ctx.scale(DPI, DPI)
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, width, height)
-
-  const total = slices.reduce((s, sl) => s + sl.value, 0)
-  if (total === 0) return canvasToDataUrl(canvas)
-
-  // Donut on left half, legend on right half
-  const donutAreaW = width * 0.48
-  const cx = donutAreaW / 2
-  const cy = height / 2
-  const outerR = Math.min(cx, cy) - 12
-  const innerR = outerR * 0.52
-  let angle = -Math.PI / 2
-
-  for (const sl of slices) {
-    const sweep = (sl.value / total) * Math.PI * 2
-    ctx.beginPath()
-    ctx.moveTo(cx, cy)
-    ctx.arc(cx, cy, outerR, angle, angle + sweep)
-    ctx.closePath()
-    ctx.fillStyle = sl.color || '#999'
-    ctx.fill()
-    angle += sweep
-  }
-
-  // donut hole
-  ctx.beginPath()
-  ctx.arc(cx, cy, innerR, 0, Math.PI * 2)
-  ctx.fillStyle = '#ffffff'
-  ctx.fill()
-
-  // center label
-  ctx.fillStyle = '#374151'
-  ctx.font = `bold ${Math.round(outerR * 0.25)}px sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('Despesas', cx, cy - outerR * 0.15)
-  ctx.fillText('por categ.', cx, cy + outerR * 0.15)
-
-  // legend — right half
-  const legendX = donutAreaW + 18
-  const maxLegendH = height - 20
-  const itemH = Math.max(24, maxLegendH / Math.max(slices.length, 1))
-  let legendY = 20 + itemH / 2
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'middle'
-  for (const sl of slices) {
-    const pct = ((sl.value / total) * 100).toFixed(1)
-    ctx.fillStyle = sl.color || '#999'
-    ctx.beginPath()
-    ctx.arc(legendX, legendY, 7, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = '#374151'
-    ctx.font = `600 14px sans-serif`
-    ctx.fillText(finSafe(sl.label).slice(0, 18), legendX + 14, legendY - 6)
-    ctx.fillStyle = '#6b7280'
-    ctx.font = `12px sans-serif`
-    ctx.fillText(`${pct}%  ${finBRL(sl.value)}`, legendX + 14, legendY + 9)
-    legendY += itemH
-  }
-
-  return canvasToDataUrl(canvas)
-}
-
-/** Draws a horizontal bar chart for top categories */
-function drawTopCategoriesChart(
-  items: { label: string; value: number; color: string }[],
-  width: number
-): string {
-  const DPI = 2
-  const rowH = 38
-  const height = items.length * rowH + 40
-  const canvas = document.createElement('canvas')
-  canvas.width = width * DPI
-  canvas.height = height * DPI
-  const ctx = canvas.getContext('2d')!
-  ctx.scale(DPI, DPI)
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, width, height)
-
-  const maxVal = Math.max(...items.map(i => i.value), 1)
-  const labelW = 140
-  const amtW = 115
-  const barAreaW = width - labelW - amtW - 20
-
-  // title row
-  ctx.fillStyle = '#6b7280'
-  ctx.font = '600 13px sans-serif'
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('Categoria', 10, 18)
-  ctx.textAlign = 'right'
-  ctx.fillText('Total gasto', width - 10, 18)
-
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]
-    const y = 38 + i * rowH
-    const barW = Math.max(4, (item.value / maxVal) * barAreaW)
-
-    // alternating row bg
-    if (i % 2 === 0) {
-      ctx.fillStyle = '#f9fafb'
-      ctx.fillRect(0, y - 2, width, rowH)
-    }
-
-    // background track
-    ctx.fillStyle = '#e5e7eb'
-    ctx.beginPath()
-    ctx.roundRect(labelW + 5, y + 6, barAreaW, rowH - 16, 4)
-    ctx.fill()
-
-    // colored bar
-    ctx.fillStyle = item.color || '#6366f1'
-    ctx.globalAlpha = 0.9
-    ctx.beginPath()
-    ctx.roundRect(labelW + 5, y + 6, barW, rowH - 16, 4)
-    ctx.fill()
-    ctx.globalAlpha = 1
-
-    // label
-    ctx.fillStyle = '#374151'
-    ctx.font = '600 13px sans-serif'
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(finSafe(item.label).slice(0, 20), 10, y + rowH / 2)
-
-    // amount
-    ctx.fillStyle = '#111827'
-    ctx.font = 'bold 13px sans-serif'
-    ctx.textAlign = 'right'
-    ctx.fillText(finBRL(item.value), width - 10, y + rowH / 2)
-  }
-
-  return canvasToDataUrl(canvas)
-}
-
-/** Draws a grouped bar chart (income vs expense) for last N months */
-function drawMonthlyBarsChart(
-  months: { label: string; income: number; expense: number }[],
-  width: number,
-  height: number
-): string {
-  const DPI = 2
-  const canvas = document.createElement('canvas')
-  canvas.width = width * DPI
-  canvas.height = height * DPI
-  const ctx = canvas.getContext('2d')!
-  ctx.scale(DPI, DPI)
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, width, height)
-
-  const padT = 30, padB = 36, padL = 50, padR = 16
-  const chartH = height - padT - padB
-  const chartW = width - padL - padR
-  const n = months.length
-  const groupW = chartW / n
-  const barW = groupW * 0.32
-  const gap = groupW * 0.06
-
-  const maxVal = Math.max(...months.flatMap(m => [m.income, m.expense]), 1)
-
-  // y-axis labels
-  ctx.fillStyle = '#9ca3af'
-  ctx.font = '11px sans-serif'
-  ctx.textAlign = 'right'
-  ctx.textBaseline = 'middle'
-  for (let i = 0; i <= 4; i++) {
-    const val = (maxVal * i / 4)
-    const gy = padT + chartH - (i / 4) * chartH
-    const label = val >= 1000 ? `${(val/1000).toFixed(1)}k` : val.toFixed(0)
-    ctx.fillText(label, padL - 6, gy)
-    ctx.strokeStyle = '#f3f4f6'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(padL, gy)
-    ctx.lineTo(padL + chartW, gy)
-    ctx.stroke()
-  }
-
-  for (let i = 0; i < n; i++) {
-    const m = months[i]
-    const gx = padL + i * groupW + groupW / 2 - barW - gap / 2
-
-    // income bar
-    const incH = Math.max(2, (m.income / maxVal) * chartH)
-    ctx.fillStyle = '#22c55e'
-    ctx.globalAlpha = 0.88
-    ctx.beginPath()
-    ctx.roundRect(gx, padT + chartH - incH, barW, incH, [3, 3, 0, 0])
-    ctx.fill()
-
-    // expense bar
-    const expH = Math.max(2, (m.expense / maxVal) * chartH)
-    ctx.fillStyle = '#ef4444'
-    ctx.globalAlpha = 0.88
-    ctx.beginPath()
-    ctx.roundRect(gx + barW + gap, padT + chartH - expH, barW, expH, [3, 3, 0, 0])
-    ctx.fill()
-    ctx.globalAlpha = 1
-
-    // month label
-    ctx.fillStyle = '#6b7280'
-    ctx.font = '12px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'top'
-    ctx.fillText(m.label, padL + i * groupW + groupW / 2, padT + chartH + 7)
-  }
-
-  // legend top-right
-  const legX = padL + chartW - 120
-  const legY = 12
-  ctx.fillStyle = '#22c55e'
-  ctx.fillRect(legX, legY - 5, 12, 10)
-  ctx.fillStyle = '#374151'
-  ctx.font = '12px sans-serif'
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('Receitas', legX + 16, legY)
-  ctx.fillStyle = '#ef4444'
-  ctx.fillRect(legX + 72, legY - 5, 12, 10)
-  ctx.fillStyle = '#374151'
-  ctx.fillText('Despesas', legX + 88, legY)
-
-  return canvasToDataUrl(canvas)
-}
-
-export async function exportFinanceToPdf({
-  transactions,
-  accounts,
-  categories,
-  budgets,
-  goals,
-  contributions,
-  recurring,
-  month,
-  userName,
-}: FinancePdfData): Promise<void> {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  const catMap = new Map(categories.map(c => [c.id, c]))
-  let y = MARGIN
-
-  // ── Cover header ──────────────────────────────────────────────────────────
-  // Accent bar
-  doc.setFillColor(99, 102, 241)
-  doc.rect(0, 0, PAGE_W, 2, 'F')
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.setTextColor(30, 30, 50)
-  doc.text('Controle Financeiro - Akool', MARGIN, y + 4)
-  y += 12
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(140, 140, 140)
-  const mLabel = finMonthLabel(month)
-  const monthCap = `${mLabel.charAt(0).toUpperCase()}${mLabel.slice(1)}`
-  const genDate = new Date().toLocaleDateString('pt-BR')
-  const safeUser = finSafe(userName)
-  doc.text(`${monthCap}  |  Gerado em ${genDate}  |  Por: ${safeUser}`, MARGIN, y)
-  y += 5
-
-  doc.setDrawColor(200, 200, 200)
-  doc.setLineWidth(0.3)
-  doc.line(MARGIN, y, PAGE_W - MARGIN, y)
-  doc.setLineWidth(0.2)
-  y += 10
-
-  // ── 1. Resumo mensal ──────────────────────────────────────────────────────
-  const monthTxs = transactions.filter(tx => tx.date.startsWith(month))
-  const income = monthTxs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0)
-  const expense = monthTxs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0)
-  const balance = income - expense
-  const colW = CONTENT_W / 3
-
-  y = finSection(doc, 'Resumo Mensal', y)
-
-  // Colored summary cards
-  const cardH = 16
-  const cardPad = 3
-  const cards = [
-    { label: 'Receitas', value: income, bg: [220, 252, 231] as [number,number,number], fg: [22, 163, 74] as [number,number,number] },
-    { label: 'Despesas', value: expense, bg: [254, 226, 226] as [number,number,number], fg: [220, 38, 38] as [number,number,number] },
-    { label: 'Saldo', value: balance, bg: balance >= 0 ? [219, 234, 254] as [number,number,number] : [254, 226, 226] as [number,number,number], fg: balance >= 0 ? [37, 99, 235] as [number,number,number] : [220, 38, 38] as [number,number,number] },
-  ]
-  for (let i = 0; i < cards.length; i++) {
-    const cx = MARGIN + i * (colW + 2)
-    doc.setFillColor(cards[i].bg[0], cards[i].bg[1], cards[i].bg[2])
-    doc.roundedRect(cx, y, colW - 2, cardH, 2, 2, 'F')
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(100, 100, 100)
-    doc.text(finSafe(cards[i].label), cx + cardPad, y + 5)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(10)
-    doc.setTextColor(cards[i].fg[0], cards[i].fg[1], cards[i].fg[2])
-    doc.text(finBRL(cards[i].value), cx + cardPad, y + 12)
-  }
-  y += cardH + 8
-
-  // ── 2. Visao Geral — Charts ───────────────────────────────────────────────
-  const expenseTxs = monthTxs.filter(tx => tx.type === 'expense')
-
-  // Build category totals for donut + top bar chart
-  const catTotals = new Map<string, number>()
-  for (const tx of expenseTxs) {
-    const cid = tx.category_id ?? '__none__'
-    catTotals.set(cid, (catTotals.get(cid) ?? 0) + tx.amount)
-  }
-  const catSlices = [...catTotals.entries()]
-    .map(([cid, val]) => {
-      const cat = catMap.get(cid)
-      return { label: cat?.name ?? 'Outros', value: val, color: cat?.color ?? '#6366f1' }
-    })
-    .sort((a, b) => b.value - a.value)
-
-  if (catSlices.length > 0) {
-    y = finSection(doc, 'Visao Geral do Mes', y)
-
-    // Donut chart — square-ish canvas so the donut circle isn't distorted
-    const donutW = 550
-    const donutLegendItemH = Math.max(26, 20 / Math.max(catSlices.length, 1) + 20)
-    const donutH = Math.max(donutW * 0.55, catSlices.length * donutLegendItemH + 30)
-    const donutDataUrl = drawDonutChart(catSlices, donutW, donutH)
-    const donutMmW = CONTENT_W
-    const donutMmH = donutMmW * (donutH / donutW)
-    y = finCheckPage(doc, y, donutMmH + 6)
-    doc.addImage(donutDataUrl, 'PNG', MARGIN, y, donutMmW, donutMmH)
-    y += donutMmH + 6
-  }
-
-  // Top categories horizontal bar chart (top 8)
-  const topCats = catSlices.slice(0, 8)
-  if (topCats.length > 0) {
-    y = finSection(doc, 'Top Gastos por Categoria', y)
-    const barCanvasW = 550
-    const barRowH = 38
-    const barDataUrl = drawTopCategoriesChart(topCats, barCanvasW)
-    const barMmW = CONTENT_W
-    const barMmH = barMmW * ((topCats.length * barRowH + 40) / barCanvasW)
-    y = finCheckPage(doc, y, barMmH + 6)
-    doc.addImage(barDataUrl, 'PNG', MARGIN, y, barMmW, barMmH)
-    y += barMmH + 6
-  }
-
-  // Monthly evolution chart — last 6 months
-  {
-    const [my, mm] = month.split('-').map(Number)
-    const monthsData: { label: string; income: number; expense: number }[] = []
-    for (let i = 5; i >= 0; i--) {
-      let nm = mm - i
-      let ny = my
-      while (nm <= 0) { nm += 12; ny-- }
-      const ym = `${ny}-${String(nm).padStart(2, '0')}`
-      const txs = transactions.filter(tx => tx.date.startsWith(ym))
-      monthsData.push({
-        label: new Date(ny, nm - 1, 1).toLocaleDateString('pt-BR', { month: 'short' }),
-        income: txs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0),
-        expense: txs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0),
-      })
-    }
-    const hasData = monthsData.some(m => m.income > 0 || m.expense > 0)
-    if (hasData) {
-      y = finSection(doc, 'Evolucao Mensal (6 meses)', y)
-      const evCanvasW = 550
-      const evCanvasH = 260
-      const evDataUrl = drawMonthlyBarsChart(monthsData, evCanvasW, evCanvasH)
-      const evMmW = CONTENT_W
-      const evMmH = evMmW * (evCanvasH / evCanvasW)
-      y = finCheckPage(doc, y, evMmH + 6)
-      doc.addImage(evDataUrl, 'PNG', MARGIN, y, evMmW, evMmH)
-      y += evMmH + 8
-    }
-  }
-
-  // ── 3. Transacoes do mes ──────────────────────────────────────────────────
-  y = finSection(doc, 'Transacoes do Mes', y)
-
-  const TX = { date: { x: MARGIN, w: 24 }, desc: { x: MARGIN + 24, w: 68 }, cat: { x: MARGIN + 92, w: 42 }, tp: { x: MARGIN + 134, w: 16 }, amt: { x: MARGIN + 150, w: 30 } }
-
-  y = finRow(doc, [
-    { text: 'Data', ...TX.date },
-    { text: 'Descricao', ...TX.desc },
-    { text: 'Categoria', ...TX.cat },
-    { text: 'T', ...TX.tp },
-    { text: 'Valor', ...TX.amt, right: true },
-  ], y, { bold: true, color: [80, 80, 80] })
-
-  if (monthTxs.length === 0) {
-    doc.setFont('helvetica', 'italic')
-    doc.setFontSize(9)
-    doc.setTextColor(160, 160, 160)
-    doc.text('Nenhuma transacao neste periodo.', MARGIN, y)
-    doc.setTextColor(0, 0, 0)
-    y += 6
-  } else {
-    const sorted = [...monthTxs].sort((a, b) => a.date.localeCompare(b.date))
-    for (const tx of sorted) {
-      y = finHRule(doc, y)
-      const catName = catMap.get(tx.category_id ?? '')?.name ?? '-'
-      const dateLabel = tx.date.split('-').reverse().join('/')
-      const typeLabel = tx.type === 'income' ? 'R' : 'D'
-      y = finRow(doc, [
-        { text: dateLabel, ...TX.date },
-        { text: tx.description, ...TX.desc },
-        { text: catName, ...TX.cat },
-        { text: typeLabel, ...TX.tp },
-        { text: finBRL(tx.amount), ...TX.amt, right: true },
-      ], y, { color: tx.type === 'income' ? [22, 163, 74] : [220, 38, 38] })
-    }
-  }
-  y += 6
-
-  // ── 4. Orcamentos ─────────────────────────────────────────────────────────
-  const monthBudgets = budgets.filter(b => b.month === month)
-  if (monthBudgets.length > 0) {
-    y = finSection(doc, 'Orcamentos', y)
-    const BG = { cat: { x: MARGIN, w: 68 }, lim: { x: MARGIN + 68, w: 38 }, sp: { x: MARGIN + 106, w: 38 }, rem: { x: MARGIN + 144, w: 36 } }
-    y = finRow(doc, [
-      { text: 'Categoria', ...BG.cat },
-      { text: 'Limite', ...BG.lim, right: true },
-      { text: 'Gasto', ...BG.sp, right: true },
-      { text: 'Restante', ...BG.rem, right: true },
-    ], y, { bold: true, color: [80, 80, 80] })
-    for (const b of monthBudgets) {
-      y = finHRule(doc, y)
-      const catName = catMap.get(b.category_id)?.name ?? '-'
-      const spent = monthTxs.filter(tx => tx.type === 'expense' && tx.category_id === b.category_id).reduce((s, tx) => s + tx.amount, 0)
-      const remaining = b.amount_limit - spent
-      y = finRow(doc, [
-        { text: catName, ...BG.cat },
-        { text: finBRL(b.amount_limit), ...BG.lim, right: true },
-        { text: finBRL(spent), ...BG.sp, right: true },
-        { text: finBRL(remaining), ...BG.rem, right: true },
-      ], y, { color: remaining < 0 ? [220, 38, 38] : [0, 0, 0] })
-    }
-    y += 6
-  }
-
-  // ── 5. Contas ─────────────────────────────────────────────────────────────
-  if (accounts.length > 0) {
-    y = finSection(doc, 'Contas', y)
-    const AC = { name: { x: MARGIN, w: 82 }, tp: { x: MARGIN + 82, w: 52 }, bal: { x: MARGIN + 134, w: 46 } }
-    const typeLabels: Record<string, string> = { checking: 'Conta corrente', savings: 'Poupanca', credit: 'Cartao credito', cash: 'Dinheiro' }
-    y = finRow(doc, [
-      { text: 'Conta', ...AC.name },
-      { text: 'Tipo', ...AC.tp },
-      { text: 'Saldo', ...AC.bal, right: true },
-    ], y, { bold: true, color: [80, 80, 80] })
-    for (const acc of accounts) {
-      y = finHRule(doc, y)
-      const bal = accountBalance(acc, transactions)
-      y = finRow(doc, [
-        { text: `${acc.icon ? finSafe(acc.icon) + ' ' : ''}${acc.name}`, ...AC.name },
-        { text: typeLabels[acc.type] ?? acc.type, ...AC.tp },
-        { text: finBRL(bal), ...AC.bal, right: true },
-      ], y, { color: bal < 0 ? [220, 38, 38] : [0, 0, 0] })
-    }
-    y += 6
-  }
-
-  // ── 6. Metas ──────────────────────────────────────────────────────────────
-  if (goals.length > 0) {
-    y = finSection(doc, 'Metas', y)
-    const GL = { name: { x: MARGIN, w: 65 }, tgt: { x: MARGIN + 65, w: 36 }, acc: { x: MARGIN + 101, w: 36 }, pct: { x: MARGIN + 137, w: 22 }, st: { x: MARGIN + 159, w: 21 } }
-    y = finRow(doc, [
-      { text: 'Meta', ...GL.name },
-      { text: 'Alvo', ...GL.tgt, right: true },
-      { text: 'Acumulado', ...GL.acc, right: true },
-      { text: '%', ...GL.pct, right: true },
-      { text: 'Status', ...GL.st },
-    ], y, { bold: true, color: [80, 80, 80] })
-    for (const g of goals) {
-      y = finHRule(doc, y)
-      const accumulated = contributions.filter(c => c.goal_id === g.id).reduce((s, c) => s + c.amount, 0)
-      const pct = g.target_amount > 0 ? Math.round((accumulated / g.target_amount) * 100) : 0
-      const statusLabel = g.status === 'active' ? 'Ativa' : g.status === 'completed' ? 'Concluida' : 'Cancelada'
-      y = finRow(doc, [
-        { text: g.name, ...GL.name },
-        { text: finBRL(g.target_amount), ...GL.tgt, right: true },
-        { text: finBRL(accumulated), ...GL.acc, right: true },
-        { text: `${pct}%`, ...GL.pct, right: true },
-        { text: statusLabel, ...GL.st },
-      ], y)
-    }
-    y += 6
-  }
-
-  // ── 7. Recorrentes ────────────────────────────────────────────────────────
-  const activeRec = recurring.filter(r => r.active)
-  if (activeRec.length > 0) {
-    y = finSection(doc, 'Recorrentes Ativas', y)
-    const RC = { desc: { x: MARGIN, w: 90 }, tp: { x: MARGIN + 90, w: 28 }, amt: { x: MARGIN + 118, w: 36 }, day: { x: MARGIN + 154, w: 26 } }
-    y = finRow(doc, [
-      { text: 'Descricao', ...RC.desc },
-      { text: 'Tipo', ...RC.tp },
-      { text: 'Valor', ...RC.amt, right: true },
-      { text: 'Dia', ...RC.day, right: true },
-    ], y, { bold: true, color: [80, 80, 80] })
-    for (const rec of activeRec) {
-      y = finHRule(doc, y)
-      const typeLabel = rec.type === 'income' ? 'Receita' : 'Despesa'
-      const amtLabel = rec.is_variable ? 'Variavel' : (rec.amount != null ? finBRL(rec.amount) : '-')
-      y = finRow(doc, [
-        { text: rec.description, ...RC.desc },
-        { text: typeLabel, ...RC.tp },
-        { text: amtLabel, ...RC.amt, right: true },
-        { text: `Dia ${rec.day_of_month}`, ...RC.day, right: true },
-      ], y)
-    }
-  }
-
-  doc.save(`financas-${month}.pdf`)
 }

@@ -5,7 +5,7 @@ import { resolveSignedUrl } from '../lib/storageUrl'
 // <img> para buckets privados: recebe o valor armazenado (path novo ou URL
 // publica antiga) e resolve para uma signed URL antes de renderizar.
 export function SignedImage(
-  { bucket, stored, ...imgProps }: { bucket: string; stored: string } & Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'>,
+  { bucket, stored, alt, ...imgProps }: { bucket: string; stored: string; alt: string } & Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'alt'>,
 ) {
   const [src, setSrc] = useState<string>('')
   useEffect(() => {
@@ -14,5 +14,5 @@ export function SignedImage(
     return () => { active = false }
   }, [bucket, stored])
   if (!src) return null
-  return <img src={src} {...imgProps} />
+  return <img src={src} alt={alt} {...imgProps} />
 }

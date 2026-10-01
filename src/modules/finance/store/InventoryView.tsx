@@ -9,6 +9,7 @@ import {
   CONDITION_KEY, KIND_KEY, UNIQUE_STATE_KEY, badgeStyle, emptyStateStyle, rowStyle, uniqueStateColor,
 } from './storeUi'
 import type { FinanceStoreStore } from './useFinanceStore'
+import { activateProps } from '../../../lib/a11y'
 
 type Filter = 'active' | 'archived'
 
@@ -68,6 +69,7 @@ export function InventoryView({ store, onNew, onEdit, onRestock }: {
           return (
             <div key={product.id}
               style={{ ...rowStyle, cursor: 'pointer', borderBottom: index === visible.length - 1 ? 'none' : rowStyle.borderBottom }}
+              {...activateProps(() => onEdit(product))}
               onClick={() => onEdit(product)}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

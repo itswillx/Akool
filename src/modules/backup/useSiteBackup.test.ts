@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatBackupSize, mapBackupError } from './useSiteBackup'
-import { getT } from '../../i18n/translations'
+import { getT, loadLang } from '../../i18n/translations'
 
 describe('formatBackupSize', () => {
   it('formats bytes', () => {
@@ -43,7 +43,8 @@ describe('mapBackupError', () => {
     expect(msg).toBe('Falha na operação: Something broke')
   })
 
-  it('uses English translations when requested', () => {
+  it('uses English translations when requested', async () => {
+    await loadLang('en')
     const tEn = getT('en')
     expect(mapBackupError(new Error('Unauthorized'), tEn)).toBe(
       'Invalid or expired session — please sign in again.',

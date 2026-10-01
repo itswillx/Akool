@@ -25,7 +25,8 @@ interface StudySectionProps {
 interface DeleteRequest {
   title: string
   message: string
-  onConfirm: () => void
+  // As ações do store tratam o próprio erro (toast); aqui é só disparar.
+  onConfirm: () => void | Promise<void>
 }
 
 export default function StudySection({ isMobile = false }: StudySectionProps) {
@@ -42,7 +43,7 @@ export default function StudySection({ isMobile = false }: StudySectionProps) {
   const openTopic = openTopicId ? store.topics.find(topic => topic.id === openTopicId) ?? null : null
   const overdueCount = useMemo(() => store.topics.filter(topic => isTopicOverdue(topic)).length, [store.topics])
 
-  const requestDelete = (title: string, message: string, onConfirm: () => void) => {
+  const requestDelete = (title: string, message: string, onConfirm: DeleteRequest['onConfirm']) => {
     setDeleteConfirm({ title, message, onConfirm })
   }
 
@@ -144,7 +145,7 @@ export default function StudySection({ isMobile = false }: StudySectionProps) {
         title={deleteConfirm?.title ?? t('study_delete_topic_title')}
         message={deleteConfirm?.message ?? ''}
         onConfirm={() => {
-          deleteConfirm?.onConfirm()
+          void deleteConfirm?.onConfirm()
           setDeleteConfirm(null)
         }}
         onCancel={() => setDeleteConfirm(null)}

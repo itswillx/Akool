@@ -75,9 +75,9 @@ export default function CardFilterBar({
     onChange({ ...filters, labels: next })
   }
 
-  const pLabel = (p: ProjectCardPriority) => t(`projects_priority_${p}` as 'projects_priority_low')
+  const pLabel = (p: ProjectCardPriority) => t(`projects_priority_${p}`)
   const dueLabel = (preset: DueDatePreset) =>
-    preset === 'all' ? t('projects_filter_all') : t(`projects_filter_due_${preset}` as 'projects_filter_due_overdue')
+    preset === 'all' ? t('projects_filter_all') : t(`projects_filter_due_${preset}`)
 
   const labelsSection = availableLabels.length > 0 && (
     <div style={{ width: isMobile ? '100%' : undefined, flex: isMobile ? '1 1 100%' : undefined }}>
@@ -124,7 +124,7 @@ export default function CardFilterBar({
               marginTop: 6,
               maxHeight: isMobile ? 120 : undefined,
               overflowY: isMobile ? 'auto' : undefined,
-              WebkitOverflowScrolling: isMobile ? 'touch' as React.CSSProperties['WebkitOverflowScrolling'] : undefined,
+              WebkitOverflowScrolling: isMobile ? 'touch' : undefined,
             }}>
               {availableLabels.map(label => (
                 <button
@@ -187,7 +187,6 @@ export default function CardFilterBar({
             fontSize: 12,
             color: 'var(--color-text)',
             backgroundColor: 'var(--color-bg)',
-            outline: 'none',
             boxSizing: 'border-box',
           }}
         />
@@ -205,7 +204,7 @@ export default function CardFilterBar({
 
       <select
         value={filters.assigneeId}
-        onChange={e => onChange({ ...filters, assigneeId: e.target.value as ProjectCardFilters['assigneeId'] })}
+        onChange={e => onChange({ ...filters, assigneeId: e.target.value })}
         style={{ ...selectStyle, flex: '0 1 auto', maxWidth: 180 }}
       >
         <option value="">{t('projects_assignee')}: {t('projects_filter_all')}</option>
@@ -234,7 +233,7 @@ export default function CardFilterBar({
             onClick={() => onChange({ ...filters, completion: c })}
             style={chipStyle(filters.completion === c)}
           >
-            {t(`projects_completion_${c}` as 'projects_completion_all')}
+            {t(`projects_completion_${c}`)}
           </button>
         ))}
       </div>

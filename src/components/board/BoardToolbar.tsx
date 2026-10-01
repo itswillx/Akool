@@ -67,7 +67,7 @@ export function BoardToolbar({
             style={{
               width: '100%', padding: '8px 10px 8px 30px', border: '1px solid var(--color-border)',
               borderRadius: 8, fontSize: 13, backgroundColor: 'var(--color-bg)',
-              color: 'var(--color-text)', outline: 'none', boxSizing: 'border-box',
+              color: 'var(--color-text)', boxSizing: 'border-box',
             }}
           />
         </div>
@@ -80,7 +80,7 @@ export function BoardToolbar({
               onChange={e => onSortId(e.target.value)}
               style={{
                 padding: '7px 9px', border: '1px solid var(--color-border)', borderRadius: 8,
-                fontSize: 12.5, background: 'var(--color-bg)', color: 'var(--color-text)', outline: 'none',
+                fontSize: 12.5, background: 'var(--color-bg)', color: 'var(--color-text)',
               }}
             >
               {sortOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}

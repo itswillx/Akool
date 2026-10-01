@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import {
   BarChart3, GanttChartSquare, LayoutGrid, List as ListIcon, Pencil, Plus,
-  Share2, Smartphone, Trash2, Upload,
+  ListOrdered, Share2, Smartphone, Trash2, Upload,
 } from 'lucide-react'
 import type { ProjectBoard } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
@@ -36,6 +36,10 @@ interface ProjectsNavProps {
   onNewBoard: () => void
   onSelectView: (v: ViewMode) => void
   onImport: () => void
+  /** Editor ou dono: pode montar e ver a fila de desenvolvimento. */
+  canQueue: boolean
+  queueCount: number
+  onQueue: () => void
   onShare: () => void
   onEditBoard: () => void
   onDeleteBoard: () => void
@@ -78,7 +82,7 @@ function GroupTitle({ children }: { children: ReactNode }) {
 
 export default function ProjectsNav({
   boards, activeBoardId, view, isOwner, isMobile = false,
-  onSelectBoard, onNewBoard, onSelectView, onImport, onShare, onEditBoard, onDeleteBoard,
+  onSelectBoard, onNewBoard, onSelectView, onImport, canQueue, queueCount, onQueue, onShare, onEditBoard, onDeleteBoard,
 }: ProjectsNavProps) {
   const { t } = useLanguage()
   const hasBoard = activeBoardId !== null && boards.some(b => b.id === activeBoardId)
@@ -145,13 +149,25 @@ export default function ProjectsNav({
           ))}
         </div>
       )}
-      {hasBoard && isOwner && (
+      {hasBoard && (isOwner || canQueue) && (
         <div>
           <GroupTitle>{t('projects_nav_group_board')}</GroupTitle>
-          <RailButton icon={<Upload size={15} />} label={t('projects_import')} onClick={onImport} />
-          <RailButton icon={<Share2 size={15} />} label={t('projects_share')} onClick={onShare} />
-          <RailButton icon={<Pencil size={15} />} label={t('projects_edit')} onClick={onEditBoard} />
-          <RailButton icon={<Trash2 size={15} />} label={t('projects_delete')} danger onClick={onDeleteBoard} />
+          {canQueue && (
+            <RailButton
+              icon={<ListOrdered size={15} />}
+              label={t('projects_queue')}
+              trailing={queueCount > 0 ? <span style={{ fontSize: 11, fontWeight: 700, color: '#6366f1' }}>{queueCount}</span> : undefined}
+              onClick={onQueue}
+            />
+          )}
+          {isOwner && (
+            <>
+              <RailButton icon={<Upload size={15} />} label={t('projects_import')} onClick={onImport} />
+              <RailButton icon={<Share2 size={15} />} label={t('projects_share')} onClick={onShare} />
+              <RailButton icon={<Pencil size={15} />} label={t('projects_edit')} onClick={onEditBoard} />
+              <RailButton icon={<Trash2 size={15} />} label={t('projects_delete')} danger onClick={onDeleteBoard} />
+            </>
+          )}
         </div>
       )}
     </nav>

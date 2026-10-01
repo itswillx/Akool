@@ -16,7 +16,7 @@ function tx(partial: Partial<FinanceTransaction>): FinanceTransaction {
     id: 't1', user_id: 'u1', account_id: 'a1', category_id: 'c1', type: 'income',
     amount: 0, description: '', date: '2026-06-24', shared_with_user_id: null, created_at: '',
     ...partial,
-  } as FinanceTransaction
+  }
 }
 
 describe('transactionsToCsv', () => {

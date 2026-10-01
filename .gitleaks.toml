@@ -1,0 +1,14 @@
+# SEC-001: varredura de segredos (gitleaks) no CI e no pre-commit (.githooks/).
+# Regras padrão do gitleaks + o token pessoal da API de cards do app.
+# Credencial literal nos testes TestSprite (senha só de dígitos, que o gitleaks
+# não pega) fica com scripts/testsprite-credentials.test.ts.
+title = "Akool"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "akool-api-token"
+description = "Token pessoal da API de cards (Configurações → API; formato de public.create_api_token)"
+regex = '''akool_pat_[0-9a-f]{64}'''
+keywords = ["akool_pat_"]

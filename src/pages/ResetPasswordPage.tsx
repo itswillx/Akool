@@ -2,15 +2,18 @@ import { useState } from 'react'
 import { Lock } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { PasswordInput, PasswordStrengthMeter } from '../components/PasswordFields'
-import { getT } from '../i18n/translations'
-import type { Lang } from '../i18n/translations'
+import { Field } from '../components/Field'
+import { isPasswordValid } from '../lib/passwordPolicy'
+import { getT, toLang } from '../i18n/translations'
 
 // Shown when the app is opened from a password-recovery email link
 // (recoveryMode in AuthContext). Rendered outside the LanguageProvider,
 // so language comes from the same localStorage key AuthPage uses.
+const RESET_LABEL_STYLE = { display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 } as const
+
 export default function ResetPasswordPage() {
   const { user, completePasswordReset, cancelPasswordReset } = useAuth()
-  const storedLang = (localStorage.getItem('excalinotion_auth_lang') ?? 'pt-BR') as Lang
+  const storedLang = toLang(localStorage.getItem('excalinotion_auth_lang'))
   const t = getT(storedLang)
   const [newPwd, setNewPwd] = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
@@ -22,7 +25,7 @@ export default function ResetPasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (newPwd.length < 6) { setError(t('settings_pwd_short')); return }
+    if (!isPasswordValid(newPwd)) { setError(t('settings_pwd_short')); return }
     if (newPwd !== confirmPwd) { setError(t('settings_pwd_mismatch')); return }
     setLoading(true)
     const { error } = await completePasswordReset(newPwd)
@@ -78,30 +81,38 @@ export default function ResetPasswordPage() {
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 }}>{t('settings_new_password')}</label>
-                <PasswordInput
-                  value={newPwd}
-                  onChange={setNewPwd}
-                  show={showNew}
-                  onToggleShow={() => setShowNew(v => !v)}
-                  placeholder={t('settings_password_min')}
-                />
+                <Field label={t('settings_new_password')} labelStyle={RESET_LABEL_STYLE}>{control => (
+                  <PasswordInput
+                    control={control}
+                    autoComplete="new-password"
+                    t={t}
+                    value={newPwd}
+                    onChange={setNewPwd}
+                    show={showNew}
+                    onToggleShow={() => setShowNew(v => !v)}
+                    placeholder={t('settings_password_min')}
+                  />
+                )}</Field>
               </div>
 
               {newPwd.length > 0 && <PasswordStrengthMeter password={newPwd} t={t} />}
 
               <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 }}>{t('settings_confirm_password')}</label>
-                <PasswordInput
-                  value={confirmPwd}
-                  onChange={setConfirmPwd}
-                  show={showConfirm}
-                  onToggleShow={() => setShowConfirm(v => !v)}
-                  placeholder={t('settings_password_repeat')}
-                />
+                <Field label={t('settings_confirm_password')} labelStyle={RESET_LABEL_STYLE}>{control => (
+                  <PasswordInput
+                    control={control}
+                    autoComplete="new-password"
+                    t={t}
+                    value={confirmPwd}
+                    onChange={setConfirmPwd}
+                    show={showConfirm}
+                    onToggleShow={() => setShowConfirm(v => !v)}
+                    placeholder={t('settings_password_repeat')}
+                  />
+                )}</Field>
               </div>
 
-              {error && <p style={{ color: '#ef4444', fontSize: 13, margin: 0 }}>{error}</p>}
+              {error && <p role="alert" style={{ color: '#ef4444', fontSize: 13, margin: 0 }}>{error}</p>}
 
               <button
                 type="submit"

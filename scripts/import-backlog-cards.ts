@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createClient } from '@supabase/supabase-js'
 import { parseBacklogMarkdown } from '../src/lib/backlogMarkdownParser.ts'
-import { importParsedCards } from '../src/lib/importProjectCards.ts'
+import { ensureTopicColumns, importParsedCards, planTopicColumns } from '../src/lib/importProjectCards.ts'
 
 function loadEnvFile(path: string) {
   if (!existsSync(path)) return
@@ -25,7 +25,9 @@ loadEnvFile(resolve(process.cwd(), '.env.local'))
 loadEnvFile(resolve(process.cwd(), '.env'))
 
 function usage() {
-  console.log(`Usage: npm run import:cards -- <file.md> [--board-id=<uuid>] [--dry-run] [--no-skip-duplicates]
+  console.log(`Usage: npm run import:cards -- <file.md> [--board-id=<uuid>] [--by-topic] [--dry-run] [--no-skip-duplicates]
+
+  --by-topic  cria uma coluna por "## Tópico:" (reaproveita colunas de mesmo nome)
 
 Environment (.env.local):
   VITE_SUPABASE_URL
@@ -43,11 +45,13 @@ function parseArgs(argv: string[]) {
   let boardId: string | null = null
   let dryRun = false
   let skipDuplicates = true
+  let byTopic = false
   let userId: string | null = null
 
   for (const arg of argv) {
     if (arg === '--dry-run') dryRun = true
     else if (arg === '--no-skip-duplicates') skipDuplicates = false
+    else if (arg === '--by-topic') byTopic = true
     else if (arg.startsWith('--board-id=')) boardId = arg.slice('--board-id='.length)
     else if (arg.startsWith('--user-id=')) userId = arg.slice('--user-id='.length)
     else if (arg === '--help' || arg === '-h') {
@@ -58,11 +62,11 @@ function parseArgs(argv: string[]) {
     }
   }
 
-  return { filePath, boardId, dryRun, skipDuplicates, userId }
+  return { filePath, boardId, dryRun, skipDuplicates, byTopic, userId }
 }
 
 async function main() {
-  const { filePath, boardId, dryRun, skipDuplicates, userId } = parseArgs(process.argv.slice(2))
+  const { filePath, boardId, dryRun, skipDuplicates, byTopic, userId } = parseArgs(process.argv.slice(2))
 
   if (!filePath) {
     usage()
@@ -80,6 +84,15 @@ async function main() {
   }
 
   if (dryRun) {
+    if (byTopic) {
+      console.log('\nColumns by topic (new columns go after the board\'s current ones):')
+      for (const topic of parsed.topics) {
+        const count = parsed.cards.filter(c => c.topic === topic).length
+        console.log(`  ${topic}: ${count} cards`)
+      }
+      const untopiced = parsed.cards.filter(c => !c.topic).length
+      if (untopiced > 0) console.log(`  (no topic → first column): ${untopiced} cards`)
+    }
     console.log('\nDry run — preview:')
     console.log(JSON.stringify(parsed.cards.slice(0, 3), null, 2))
     if (parsed.cards.length > 3) console.log(`  ... and ${parsed.cards.length - 3} more`)
@@ -136,17 +149,33 @@ async function main() {
     .select('id, name, sort_order')
     .eq('board_id', resolvedBoardId)
     .order('sort_order', { ascending: true })
-    .limit(1)
 
-  if (colError || !columns?.[0]) {
-    console.error('Could not resolve first column:', colError?.message ?? 'no columns')
+  if (colError) {
+    console.error('Could not list columns:', colError.message)
     process.exit(1)
   }
 
-  const columnId = columns[0].id
-  console.log(`Importing into column "${columns[0].name}" (${columnId})`)
+  const firstColumn = columns?.[0] ?? null
+  let columnByTopic: Record<string, string> | undefined
 
-  const result = await importParsedCards(supabase, resolvedBoardId, columnId, parsed.cards, { skipDuplicates })
+  if (byTopic) {
+    const plan = planTopicColumns(parsed.topics, columns ?? [])
+    const ensured = await ensureTopicColumns(supabase, resolvedBoardId, plan)
+    if (ensured.error) {
+      console.error('Could not create topic columns:', ensured.error)
+      process.exit(1)
+    }
+    columnByTopic = ensured.columnByTopic
+    console.log(`Importing by topic into ${plan.length} columns (${ensured.created} created)`)
+  } else {
+    if (!firstColumn) {
+      console.error('Could not resolve first column: no columns (use --by-topic to create them)')
+      process.exit(1)
+    }
+    console.log(`Importing into column "${firstColumn.name}" (${firstColumn.id})`)
+  }
+
+  const result = await importParsedCards(supabase, resolvedBoardId, firstColumn?.id ?? null, parsed.cards, { skipDuplicates, columnByTopic })
 
   if (result.errors.length > 0) {
     console.error('Import errors:', result.errors.join('; '))

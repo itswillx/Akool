@@ -1,12 +1,14 @@
 import type React from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import {
-  DndContext, DragOverlay, MouseSensor, TouchSensor,
+  DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor,
   pointerWithin, rectIntersection,
   useSensor, useSensors,
   type CollisionDetection, type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core'
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useLanguage } from '../../i18n/LanguageContext'
+import { KANBAN_KEYBOARD_CODES, dndAccessibility } from '../../lib/dndAccessibility'
 import { formatBRL } from '../../lib/money'
 import { BoardCardShell } from './BoardCard'
 import { BoardColumn } from './BoardColumn'
@@ -54,6 +56,8 @@ export interface KanbanBoardProps<T> {
   /** Centavos. Alimenta a soma do cabeçalho e a ordenação por valor. */
   getAmount?: (item: T) => number
   getSearchText?: (item: T) => string
+  /** Nome do item para o leitor de tela ao arrastar pelo teclado. Default: getSearchText. */
+  getItemLabel?: (item: T) => string
   renderCard: (item: T, ctx: { dragging: boolean }) => React.ReactNode
   /** Default: formatBRL. Um board de contagem passa `n => String(n)`. */
   formatAmount?: (value: number) => string
@@ -76,7 +80,7 @@ export interface KanbanBoardProps<T> {
 }
 
 export function KanbanBoard<T>({
-  columns, items, getId, getColumnId, getAmount, getSearchText, renderCard,
+  columns, items, getId, getColumnId, getAmount, getSearchText, getItemLabel, renderCard,
   formatAmount = formatBRL, renderColumnHeaderExtra, onCardClick, onMove, canMove,
   sortOptions = [], storageKey, defaultHiddenColumns = [], readOnly = false,
   isMobile = false, toolbarExtra,
@@ -89,10 +93,12 @@ export function KanbanBoard<T>({
   const [rejected, setRejected] = useState(false)
 
   // MouseSensor ignora eventos de toque — deslizar o dedo continua rolando a
-  // página. Mesma configuração do ProjectsPanel.tsx:1995.
+  // página. Mesma configuração do ProjectsPanel. No teclado, Espaço pega e
+  // solta e as setas movem (UX-002); os botões ‹ › continuam valendo.
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates, keyboardCodes: KANBAN_KEYBOARD_CODES }),
   )
 
   const canDrag = !isMobile && !readOnly && !!onMove
@@ -197,6 +203,17 @@ export function KanbanBoard<T>({
   }
 
   const draggingItem = dragId ? sorted.find(i => getId(i) === dragId) ?? null : null
+  const itemLabel = getItemLabel ?? getSearchText
+  const dndA11y = dndAccessibility(t, {
+    title: id => {
+      const item = sorted.find(i => getId(i) === String(id))
+      return item && itemLabel ? itemLabel(item) : ''
+    },
+    target: id => {
+      const colId = resolveDropColumnId(String(id), sorted, getId, columnIdOf)
+      return columns.find(c => c.id === colId)?.label ?? ''
+    },
+  })
   const noResults = query.trim().length > 0 && sorted.length === 0
 
   const toolbar = (
@@ -269,6 +286,7 @@ export function KanbanBoard<T>({
       <DndContext
         sensors={canDrag ? sensors : EMPTY_SENSORS}
         collisionDetection={collisionDetection}
+        accessibility={dndA11y}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         onDragCancel={() => setDragId(null)}

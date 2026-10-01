@@ -5,8 +5,8 @@
 -- linhas em `finance_store_purchases.supplier_id` e as cria pelo
 -- `createSupplier` do `useFinanceStore`. Nenhuma compra apontava para um
 -- fornecedor na hora do DROP, então o CASCADE só levou a FK — nenhum dado da
--- Loja se perdeu, e as 3 linhas voltam do backup em
--- `supabase/backups/20260807_obras_investimentos.json`.
+-- Loja se perdeu, e as 3 linhas voltaram do backup (dados reais, guardado
+-- fora do repositório desde 26/09/2026 — SEC-008).
 --
 -- Estrutura, RLS e trigger idênticos ao original em
 -- 20260727120000_finance_projects_module.sql.
@@ -62,17 +62,7 @@ ALTER TABLE finance_store_purchases
   ADD CONSTRAINT finance_store_purchases_supplier_id_fkey
   FOREIGN KEY (supplier_id) REFERENCES finance_suppliers(id) ON DELETE SET NULL;
 
--- Linhas do backup. O trigger fica de fora porque `auth.uid()` é nulo aqui.
-ALTER TABLE finance_suppliers DISABLE TRIGGER trg_finance_suppliers_ws_guard;
-
-INSERT INTO finance_suppliers (id, user_id, workspace_id, name, phone, website, notes, created_at, updated_at)
-VALUES
-  ('bf632e33-49fc-4ee5-8b84-75a3c61700aa', '95b82987-b479-424d-85b2-89900bfd76e7', '04478694-e6ca-4e3e-960c-acce0bcc42f3',
-   'Super Lajes', '', '', '', '2026-07-27T19:30:22.103103+00', '2026-07-27T19:30:22.103103+00'),
-  ('4ba25ce9-2879-4bee-a484-89626df74cf1', '95b82987-b479-424d-85b2-89900bfd76e7', '04478694-e6ca-4e3e-960c-acce0bcc42f3',
-   'Madeireira Rondonia', '', '', '', '2026-08-01T22:04:14.264365+00', '2026-08-01T22:04:25.228+00'),
-  ('bb366e1a-8806-43bf-a07f-3983ca5e14b8', '95b82987-b479-424d-85b2-89900bfd76e7', '04478694-e6ca-4e3e-960c-acce0bcc42f3',
-   'Deposito Três Estrelas', '', '', 'Deposito Beth', '2026-08-01T22:04:38.991812+00', '2026-08-01T22:05:01.622+00')
-ON CONFLICT (id) DO NOTHING;
-
-ALTER TABLE finance_suppliers ENABLE TRIGGER trg_finance_suppliers_ws_guard;
+-- As 3 linhas foram restauradas em produção a partir do backup (dados reais).
+-- SEC-008 (26/09/2026): o INSERT com os dados saiu do repositório; a cópia
+-- original desta migration fica com o dono do projeto, fora do repo. Num banco
+-- novo a tabela nasce vazia, como deve ser fora de produção.

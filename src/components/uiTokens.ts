@@ -19,14 +19,13 @@ export const inputStyle: CSSProperties = {
   fontSize: 14,
   backgroundColor: 'var(--color-bg)',
   color: 'var(--color-text)',
-  outline: 'none',
   boxSizing: 'border-box',
 }
 
 export const labelStyle: CSSProperties = {
   fontSize: 12,
   fontWeight: 600,
-  color: 'var(--color-text-muted)',
+  color: 'var(--color-text-subtle)',
   marginBottom: 4,
   display: 'block',
 }

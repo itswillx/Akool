@@ -3,6 +3,7 @@ import { CalendarClock, X } from 'lucide-react'
 import type { StudyTopic, StudyTopicStatus } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { isTopicOverdue } from '../../lib/studyProgress'
+import { useDialog } from '../../hooks/useDialog'
 import { avatarBg, formatDateISO, initialsOf, STATUS_COLOR, STATUS_LABEL_KEY } from './studyUi'
 
 // Shared presentational pieces of the study module. Pure helpers/constants
@@ -74,24 +75,27 @@ export function SectionLabel({ children }: { children: ReactNode }) {
 
 // Deliberately does NOT close on backdrop click or Escape: these modals hold
 // form state and pasted markdown, so only the explicit X (or Cancelar in the
-// footer) dismisses them.
+// footer) dismisses them. Tab stays trapped inside (UX-003).
 export function ModalShell({ title, onClose, children, isMobile }: {
   title: string
   onClose: () => void
   children: ReactNode
   isMobile?: boolean
 }) {
+  const { t } = useLanguage()
+  const { titleId, dialogProps } = useDialog({ onClose, closeOnEsc: false })
   if (isMobile) {
     return (
       <div
         style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
       >
         <div
+          {...dialogProps}
           style={{ backgroundColor: 'var(--color-bg)', borderTop: '1px solid var(--color-border)', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: '16px 20px 24px', maxHeight: '95vh', overflowY: 'auto' }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--color-text)' }}>{title}</h3>
-            <button onClick={onClose} type="button" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 4 }}>
+            <h3 id={titleId} style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--color-text)' }}>{title}</h3>
+            <button onClick={onClose} type="button" aria-label={t('dialog_close')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 4 }}>
               <X size={18} />
             </button>
           </div>
@@ -106,11 +110,12 @@ export function ModalShell({ title, onClose, children, isMobile }: {
       style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 16 }}
     >
       <div
+        {...dialogProps}
         style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 24, width: 680, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>{title}</h3>
-          <button onClick={onClose} type="button" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 4 }}>
+          <h3 id={titleId} style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>{title}</h3>
+          <button onClick={onClose} type="button" aria-label={t('dialog_close')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 4 }}>
             <X size={16} />
           </button>
         </div>

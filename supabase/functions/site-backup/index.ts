@@ -1,73 +1,18 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { allowedOrigins, corsHeaders } from "../_shared/cors.ts";
+import { captureException } from "../_shared/sentry.ts";
+import { cronSecretMatches, decideAuth } from "./auth.ts";
+import { BACKUP_TABLES, EXCLUDED_TABLES, STORAGE_BUCKETS } from "./tables.ts";
 
-const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
-  "https://www.slinkysalsichinha.com.br,https://akool.netlify.app,http://localhost:5173,http://localhost:4173,http://localhost:3000")
-  .split(",")
-  .map((o: string) => o.trim())
-  .filter(Boolean);
+// SEC-007: CORS em _shared/cors.ts; sem ALLOWED_ORIGINS, só produção.
+const ALLOWED_ORIGINS = allowedOrigins(Deno.env.get("ALLOWED_ORIGINS"));
 
-// Every public-schema table the backup captures, in FK dependency order:
-// restore inserts in this order and clears in reverse, so referenced tables
-// (e.g. study_topics) must come before their dependents (study_cards/logs).
-// Tables that exist in the database but are deliberately NOT listed:
-// - site_backups / site_backup_settings: the backup system's own registry and
-//   config — clearing/rewriting them mid-restore would corrupt the very
-//   backup being restored.
-// - profile_secrets: plaintext AI credentials (see migration 20260708100000).
-//   Copying secrets into backup archives would leak them; the table is locked
-//   to service role and users can re-enter keys after a restore.
-// - page_presence: ephemeral realtime presence rows; stale by definition,
-//   nothing to restore.
-// - mindmap_contents / finance_statements: legacy tables with zero references
-//   in the app code — the current app can neither read nor write them, so
-//   their data is dead weight and their exact schema is unmanaged here.
-//   Decide to drop or re-integrate them before adding to this list.
-const BACKUP_TABLES = [
-  "profiles",
-  "invite_codes",
-  "pages",
-  "page_shares",
-  "note_contents",
-  "drawing_contents",
-  "todos",
-  "project_boards",
-  "project_columns",
-  "project_cards",
-  "project_shares",
-  "finance_workspaces",
-  "finance_workspace_members",
-  "finance_accounts",
-  "finance_categories",
-  "finance_budgets",
-  "finance_goals",
-  "finance_goal_shares",
-  "finance_recurring",
-  "finance_transactions",
-  "finance_goal_contributions",
-  "finance_recurring_entries",
-  "finance_workspace_invites",
-  "finance_projects",
-  "finance_project_stages",
-  "finance_suppliers",
-  "finance_project_items",
-  "finance_project_quotes",
-  "finance_project_expenses",
-  "notifications",
-  "quick_notes",
-  "study_topics",
-  "study_cards",
-  "study_logs",
-] as const;
-
-// All buckets the app writes to (verified against src usages and the bucket
-// migrations). The site-backups bucket itself is the backup destination and
-// is intentionally not copied into itself.
-const STORAGE_BUCKETS = ["note-images", "project-card-images", "transaction-photos", "project-expense-files", "avatars"] as const;
 const BACKUP_BUCKET = "site-backups";
 const MAX_BACKUPS = 10;
 const STORAGE_PAGE_SIZE = 1000;
 const STORAGE_REMOVE_BATCH = 100;
+const DUMP_PAGE_SIZE = 1000;
 
 interface BackupPayload {
   version: 1;
@@ -78,14 +23,7 @@ interface BackupPayload {
 }
 
 function corsHeadersFor(req: Request): Record<string, string> {
-  const origin = req.headers.get("origin") ?? "";
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Vary": "Origin",
-  };
+  return corsHeaders(req, ALLOWED_ORIGINS, { allowHeaders: ["x-cron-secret"] });
 }
 
 function jsonResponse(req: Request, body: unknown, status = 200): Response {
@@ -105,16 +43,12 @@ async function gunzipToString(data: Uint8Array): Promise<string> {
   return await new Response(stream).text();
 }
 
+// JWT de admin. O segredo do cron não passa mais por aqui (SEC-003): ele só é
+// aceito em run_auto_backup, decidido por decideAuth() antes desta chamada.
 async function verifyAdmin(
   req: Request,
   serviceClient: SupabaseClient,
-): Promise<{ userId: string | null; isCron: boolean }> {
-  const cronSecret = Deno.env.get("BACKUP_CRON_SECRET");
-  const cronHeader = req.headers.get("x-cron-secret");
-  if (cronSecret && cronHeader === cronSecret) {
-    return { userId: null, isCron: true };
-  }
-
+): Promise<{ userId: string }> {
   const authHeader = req.headers.get("authorization");
   if (!authHeader) throw new Error("Missing authorization");
 
@@ -131,7 +65,46 @@ async function verifyAdmin(
     .single();
 
   if (profile?.role !== "admin") throw new Error("Forbidden");
-  return { userId: user.id, isCron: false };
+  return { userId: user.id };
+}
+
+// Fails the backup when the public schema no longer matches BACKUP_TABLES +
+// EXCLUDED_TABLES, in either direction.
+//
+// Why this is worth failing over: between 2026-08-07 and 2026-08-16 every
+// single backup died on `Failed to dump finance_projects` — migration
+// 20260807120000 dropped the finance_project* tables and nothing updated this
+// file. In the same window the finance_store_* module (migration 20260728120000)
+// was never added, so even a passing backup would have silently omitted it.
+// A backup that quietly misses a table is worse than one that refuses to run,
+// so drift is a hard error and the message says exactly what to edit.
+async function assertNoTableDrift(serviceClient: SupabaseClient): Promise<void> {
+  const { data, error } = await serviceClient.rpc("list_public_tables");
+  if (error) {
+    throw new Error(
+      `Table drift check failed (${error.message}). ` +
+        "public.list_public_tables() comes from migration 20260816120000 — apply it before deploying this function.",
+    );
+  }
+
+  const actual = new Set((data as string[] | null) ?? []);
+  const known = new Set<string>([...BACKUP_TABLES, ...EXCLUDED_TABLES]);
+
+  const missing = [...known].filter((t) => !actual.has(t)).sort();
+  const unclassified = [...actual].filter((t) => !known.has(t)).sort();
+  if (missing.length === 0 && unclassified.length === 0) return;
+
+  const parts: string[] = [];
+  if (missing.length > 0) {
+    parts.push(`listed but no longer in the database: ${missing.join(", ")}`);
+  }
+  if (unclassified.length > 0) {
+    parts.push(`in the database but unclassified: ${unclassified.join(", ")}`);
+  }
+  throw new Error(
+    `Backup table list is out of sync with the schema — ${parts.join("; ")}. ` +
+      "Update BACKUP_TABLES (and restore_order in the restore_site_backup migration) or EXCLUDED_TABLES.",
+  );
 }
 
 async function dumpTables(serviceClient: SupabaseClient): Promise<{
@@ -141,11 +114,28 @@ async function dumpTables(serviceClient: SupabaseClient): Promise<{
   const tables: Record<string, unknown[]> = {};
   const summary: Record<string, number> = {};
 
+  // REL-001: paginated. A bare select("*") is capped at PostgREST max_rows
+  // (1000), and since restore is DELETE + INSERT, anything past the cap would
+  // be wiped for good on restore. Every table in BACKUP_TABLES has an `id`.
   for (const table of BACKUP_TABLES) {
-    const { data, error } = await serviceClient.from(table).select("*");
-    if (error) throw new Error(`Failed to dump ${table}: ${error.message}`);
-    tables[table] = data ?? [];
-    summary[table] = (data ?? []).length;
+    const rows: unknown[] = [];
+    let total: number | null = null;
+    for (let from = 0; ; from += DUMP_PAGE_SIZE) {
+      const { data, error, count } = await serviceClient
+        .from(table)
+        .select("*", { count: "exact" })
+        .order("id", { ascending: true })
+        .range(from, from + DUMP_PAGE_SIZE - 1);
+      if (error) throw new Error(`Failed to dump ${table}: ${error.message}`);
+      if (total === null) total = count ?? 0;
+      rows.push(...(data ?? []));
+      if (!data || data.length < DUMP_PAGE_SIZE || rows.length >= total) break;
+    }
+    if (rows.length !== total) {
+      throw new Error(`Dump incompleto de ${table}: ${rows.length} de ${total} linhas`);
+    }
+    tables[table] = rows;
+    summary[table] = rows.length;
   }
 
   return { tables, summary };
@@ -293,9 +283,31 @@ async function createBackup(
   serviceClient: SupabaseClient,
   type: "manual" | "automatic" | "pre_restore",
   userId: string | null,
+  actorLabel?: string,
 ): Promise<unknown> {
   const backupId = crypto.randomUUID();
   const storagePath = `${backupId}.json.gz`;
+
+  // Checked before the site_backups row exists: a drifted list would otherwise
+  // insert one `failed` row per cron run forever (enforceRetention only prunes
+  // `completed` ones). The overdue banner and the red cron job are the signal.
+  try {
+    await assertNoTableDrift(serviceClient);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await logAudit(serviceClient, {
+      actorId: userId,
+      actorLabel,
+      action: "create_backup",
+      targetType: "site_backup",
+      details: { type, stage: "table_drift_check" },
+      success: false,
+      errorMessage: msg,
+    });
+    // REL-011: tag para a regra de alerta de backup no Sentry.
+    await captureException(err, { fn: "site-backup", tags: { alert: "backup_failed", stage: "table_drift_check", type } });
+    throw err;
+  }
 
   const { error: insertErr } = await serviceClient.from("site_backups").insert({
     id: backupId,
@@ -349,6 +361,19 @@ async function createBackup(
       status: "failed",
       error_message: msg,
     }).eq("id", backupId);
+    // Durable record of the failure: audit_log is outside BACKUP_TABLES, so
+    // unlike the site_backups row it survives a restore.
+    await logAudit(serviceClient, {
+      actorId: userId,
+      actorLabel,
+      action: "create_backup",
+      targetType: "site_backup",
+      targetId: backupId,
+      details: { type },
+      success: false,
+      errorMessage: msg,
+    });
+    await captureException(err, { fn: "site-backup", tags: { alert: "backup_failed", type } });
     throw err;
   }
 }
@@ -454,11 +479,8 @@ async function releaseRestoreLock(serviceClient: SupabaseClient): Promise<void> 
 async function restoreBackup(
   serviceClient: SupabaseClient,
   backupId: string,
-  userId: string | null,
-  isCron: boolean,
+  userId: string,
 ): Promise<void> {
-  const actorLabel = isCron ? "cron" : undefined;
-
   // 1. Validate the archive before touching anything else.
   const { payload } = await downloadAndValidateBackup(serviceClient, backupId);
 
@@ -474,7 +496,6 @@ async function restoreBackup(
 
     await logAudit(serviceClient, {
       actorId: userId,
-      actorLabel,
       action: "restore_backup",
       targetType: "site_backup",
       targetId: backupId,
@@ -503,7 +524,6 @@ async function restoreBackup(
 
     await logAudit(serviceClient, {
       actorId: userId,
-      actorLabel,
       action: "restore_backup",
       targetType: "site_backup",
       targetId: backupId,
@@ -514,7 +534,6 @@ async function restoreBackup(
     const msg = err instanceof Error ? err.message : String(err);
     await logAudit(serviceClient, {
       actorId: userId,
-      actorLabel,
       action: "restore_backup",
       targetType: "site_backup",
       targetId: backupId,
@@ -531,11 +550,8 @@ async function restoreBackup(
 async function deleteBackup(
   serviceClient: SupabaseClient,
   backupId: string,
-  userId: string | null,
-  isCron: boolean,
+  userId: string,
 ): Promise<void> {
-  const actorLabel = isCron ? "cron" : undefined;
-
   // Read the metadata BEFORE destroying anything: once the archive and the row
   // are gone there is nothing left to describe what was lost, and an audit entry
   // that only carries the id says nothing useful months later.
@@ -572,7 +588,6 @@ async function deleteBackup(
 
     await logAudit(serviceClient, {
       actorId: userId,
-      actorLabel,
       action: "delete_backup",
       targetType: "site_backup",
       targetId: backupId,
@@ -583,7 +598,6 @@ async function deleteBackup(
     const msg = err instanceof Error ? err.message : String(err);
     await logAudit(serviceClient, {
       actorId: userId,
-      actorLabel,
       action: "delete_backup",
       targetType: "site_backup",
       targetId: backupId,
@@ -595,7 +609,13 @@ async function deleteBackup(
   }
 }
 
-async function runAutoIfDue(serviceClient: SupabaseClient): Promise<unknown> {
+// A backup that outlives the function's wall-clock limit leaves its row stuck
+// on `running` forever. Without an age cut-off that one row would block every
+// later run, and with the browser trigger gone nobody would be looking at the
+// panel to notice.
+const STALE_RUNNING_MS = 3600000;
+
+async function runAutoIfDue(serviceClient: SupabaseClient, actorLabel?: string): Promise<unknown> {
   const { data: settings } = await serviceClient.from("site_backup_settings").select("*").eq("id", 1).single();
   if (!settings?.auto_enabled) return { skipped: true, reason: "auto_disabled" };
 
@@ -607,10 +627,11 @@ async function runAutoIfDue(serviceClient: SupabaseClient): Promise<unknown> {
     .from("site_backups")
     .select("id")
     .eq("status", "running")
+    .gte("created_at", new Date(Date.now() - STALE_RUNNING_MS).toISOString())
     .limit(1);
   if (running && running.length > 0) return { skipped: true, reason: "already_running" };
 
-  return await createBackup(serviceClient, "automatic", null);
+  return await createBackup(serviceClient, "automatic", null, actorLabel);
 }
 
 Deno.serve(async (req: Request) => {
@@ -628,17 +649,44 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const action = body.action as string;
 
-    if (action === "run_auto_backup") {
-      await verifyAdmin(req, serviceClient);
-      const result = await runAutoIfDue(serviceClient);
-      return jsonResponse(req, result);
+    // SEC-003: o segredo do agendador só autoriza run_auto_backup. Em qualquer
+    // outra ação ele vira 403 (e fica registrado), e o resto exige JWT de admin.
+    const cronSecretOk = await cronSecretMatches(
+      req.headers.get("x-cron-secret"),
+      Deno.env.get("BACKUP_CRON_SECRET"),
+    );
+    const decision = decideAuth(action, cronSecretOk);
+
+    if (decision === "forbidden") {
+      await logAudit(serviceClient, {
+        actorId: null,
+        actorLabel: "cron",
+        action: String(action ?? "unknown"),
+        targetType: "site_backup",
+        details: { reason: "cron_secret_outside_run_auto_backup" },
+        success: false,
+        errorMessage: "Forbidden",
+      });
+      throw new Error("Forbidden");
     }
 
-    const { userId, isCron } = await verifyAdmin(req, serviceClient);
+    if (action === "run_auto_backup") {
+      if (decision === "cron") {
+        return jsonResponse(req, await runAutoIfDue(serviceClient, "cron"));
+      }
+      await verifyAdmin(req, serviceClient);
+      return jsonResponse(req, await runAutoIfDue(serviceClient));
+    }
+
+    const { userId } = await verifyAdmin(req, serviceClient);
 
     switch (action) {
       case "create_backup": {
-        const result = await createBackup(serviceClient, body.type === "automatic" ? "automatic" : "manual", userId);
+        const result = await createBackup(
+          serviceClient,
+          body.type === "automatic" ? "automatic" : "manual",
+          userId,
+        );
         return jsonResponse(req, result);
       }
       case "list_backups": {
@@ -661,7 +709,7 @@ Deno.serve(async (req: Request) => {
       }
       case "restore_backup": {
         if (!body.backup_id) throw new Error("backup_id required");
-        await restoreBackup(serviceClient, body.backup_id, userId, isCron);
+        await restoreBackup(serviceClient, body.backup_id, userId);
         return jsonResponse(req, { success: true });
       }
       case "validate_backup": {
@@ -671,7 +719,7 @@ Deno.serve(async (req: Request) => {
       }
       case "delete_backup": {
         if (!body.backup_id) throw new Error("backup_id required");
-        await deleteBackup(serviceClient, body.backup_id, userId, isCron);
+        await deleteBackup(serviceClient, body.backup_id, userId);
         return jsonResponse(req, { success: true });
       }
       case "get_settings": {
@@ -698,6 +746,8 @@ Deno.serve(async (req: Request) => {
     const msg = err instanceof Error ? err.message : String(err);
     const status = msg === "Unauthorized" ? 401 : msg === "Forbidden" ? 403 : 500;
     console.error("[site-backup]", msg);
+    // Falha de backup já foi reportada com a tag de alerta (o reporter deduplica).
+    if (status === 500) await captureException(err, { fn: "site-backup" });
     return jsonResponse(req, { error: msg }, status);
   }
 });

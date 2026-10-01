@@ -24,6 +24,8 @@ function ShortcutChip({ label }: { label: string }) {
 }
 
 function MockVisual({ name, color }: { name: HelpMock; color: string }) {
+  // UX-011: os exemplos da ajuda saem no idioma de quem lê.
+  const { t } = useLanguage()
   const box: React.CSSProperties = {
     marginTop: 14, padding: 12, borderRadius: 12, border: '1px solid var(--color-border)',
     backgroundColor: 'var(--color-bg-tertiary)',
@@ -44,10 +46,10 @@ function MockVisual({ name, color }: { name: HelpMock; color: string }) {
         <div style={box}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {[
-              { i: <FilePlus2 size={14} />, t: 'Nova nota / New note' },
-              { i: <Pencil size={14} />, t: 'Novo desenho / New drawing' },
-              { i: <FileDown size={14} />, t: 'Nota + desenho' },
-              { i: <Square size={14} />, t: 'Lista de tarefas / To-do' },
+              { i: <FilePlus2 size={14} />, t: t('sidebar_new_note') },
+              { i: <Pencil size={14} />, t: t('sidebar_new_drawing') },
+              { i: <FileDown size={14} />, t: t('sidebar_new_both') },
+              { i: <Square size={14} />, t: t('sidebar_new_todo') },
             ].map((it, i) => (
               <div key={i} style={row}><span style={{ color }}>{it.i}</span>{it.t}</div>
             ))}
@@ -58,7 +60,7 @@ function MockVisual({ name, color }: { name: HelpMock; color: string }) {
       return (
         <div style={box}>
           <div style={{ ...row, marginBottom: 6, color: 'var(--color-text-muted)' }}>
-            <span style={{ color, fontWeight: 700 }}>/</span> heading, list, code, image...
+            <span style={{ color, fontWeight: 700 }}>/</span> {t('help_mock_slash_hint')}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {['# Heading', '• List', '☑ To-do', '</> Code'].map((t) => (
@@ -101,13 +103,13 @@ function MockVisual({ name, color }: { name: HelpMock; color: string }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={row}>
               <span style={{ width: 15, height: 15, borderRadius: 4, border: `2px solid ${color}` }} />
-              <span style={{ flex: 1 }}>Finalizar proposta</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#ef4444', fontSize: 11 }}><Calendar size={12} /> atrasada</span>
+              <span style={{ flex: 1 }}>{t('help_mock_task_overdue_title')}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#ef4444', fontSize: 11 }}><Calendar size={12} /> {t('help_mock_overdue')}</span>
               <Flag size={13} style={{ color }} />
             </div>
             <div style={{ ...row, opacity: 0.6 }}>
               <span style={{ width: 15, height: 15, borderRadius: 4, backgroundColor: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10 }}>✓</span>
-              <span style={{ flex: 1, textDecoration: 'line-through' }}>Revisar design</span>
+              <span style={{ flex: 1, textDecoration: 'line-through' }}>{t('help_mock_task_done_title')}</span>
             </div>
           </div>
         </div>
@@ -117,9 +119,9 @@ function MockVisual({ name, color }: { name: HelpMock; color: string }) {
         <div style={box}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {[
-              { i: <Eye size={13} />, t: 'Visualizador / Viewer' },
-              { i: <Pencil size={13} />, t: 'Editor' },
-              { i: <Crown size={13} />, t: 'Co-proprietário / Co-owner' },
+              { i: <Eye size={13} />, t: t('share_role_viewer') },
+              { i: <Pencil size={13} />, t: t('share_role_editor') },
+              { i: <Crown size={13} />, t: t('share_role_co_owner') },
             ].map((it, i) => (
               <div key={i} style={row}><span style={{ color }}>{it.i}</span>{it.t}</div>
             ))}
@@ -162,7 +164,7 @@ function MockVisual({ name, color }: { name: HelpMock; color: string }) {
       return (
         <div style={box}>
           <div style={{ ...row, justifyContent: 'center', gap: 8, color }}>
-            <FileDown size={16} /> <span style={{ color: 'var(--color-text)' }}>Exportar PDF / Export PDF</span>
+            <FileDown size={16} /> <span style={{ color: 'var(--color-text)' }}>{t('help_mock_export_pdf')}</span>
           </div>
         </div>
       )
@@ -246,7 +248,7 @@ function CategorySection({ category, stepLabel, tipLabel }: {
 }
 
 export default function HelpPanel() {
-  const { lang } = useLanguage()
+  const { lang, t } = useLanguage()
   const { startTour } = useOnboarding()
   const c = helpContent[lang]
 
@@ -333,13 +335,13 @@ export default function HelpPanel() {
             style={{
               width: '100%', boxSizing: 'border-box', padding: '12px 40px', borderRadius: 12,
               border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)',
-              color: 'var(--color-text)', fontSize: 14, outline: 'none',
+              color: 'var(--color-text)', fontSize: 14,
             }}
           />
           {query && (
             <button
               onClick={() => setQuery('')}
-              aria-label="clear"
+              aria-label={t('common_clear')}
               style={{
                 position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
                 width: 26, height: 26, borderRadius: 7, border: 'none', cursor: 'pointer',

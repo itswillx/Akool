@@ -175,8 +175,8 @@
       }
     ],
     "test_credentials": {
-      "email": "williamzenf5@gmail.com",
-      "password": "123123123"
+      "email": "{{LOGIN_USER}}",
+      "password": "{{LOGIN_PASSWORD}}"
     },
     "local_endpoint": "http://localhost:4173",
     "features_to_test": [

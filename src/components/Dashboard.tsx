@@ -5,17 +5,19 @@ import {
 } from 'lucide-react'
 import QuickNotes from './QuickNotes'
 import DashboardProjects, { useDashboardProjects } from './DashboardProjects'
-import type { Page, PageType, Todo, FinanceAccount, FinanceTransaction, FinanceCategory } from '../types'
+import type { Page, PageType, Todo, FinanceAccount, FinanceCategory } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { supabase } from '../lib/supabase'
 import { setDocsSelection } from '../lib/docsNavigation'
+import { activateProps } from '../lib/a11y'
 import { useLanguage } from '../i18n/LanguageContext'
 import ErrorBoundary from './ErrorBoundary'
 import { formatBRL } from '../lib/money'
-import { accountBalance } from '../lib/financeCalc'
+import { accountBalance, FINANCE_TX_AGG_COLUMNS, type FinanceTxAgg } from '../lib/financeCalc'
+import { fetchAllRows } from '../lib/fetchAllRows'
 
 interface DashboardProps {
   isMobile?: boolean
@@ -81,12 +83,18 @@ function useDashboardFinance(userId: string | undefined, enabled: boolean): Fina
 
     Promise.all([
       supabase.from('finance_accounts').select('*').eq('user_id', userId),
-      supabase.from('finance_transactions').select('*').eq('user_id', userId),
+      // REL-003: o histórico inteiro, paginado (o PostgREST corta em 1000 sem
+      // erro), e só as colunas que o saldo e os totais usam.
+      fetchAllRows<FinanceTxAgg>((from, to) => supabase.from('finance_transactions')
+        .select(FINANCE_TX_AGG_COLUMNS).eq('user_id', userId)
+        .order('id').range(from, to).overrideTypes<FinanceTxAgg[], { merge: false }>()),
       supabase.from('finance_categories').select('*').eq('user_id', userId),
     ]).then(([accRes, txRes, catRes]) => {
-      const accounts: FinanceAccount[] = (accRes.data ?? []) as FinanceAccount[]
-      const transactions: FinanceTransaction[] = (txRes.data ?? []) as FinanceTransaction[]
-      const categories: FinanceCategory[] = (catRes.data ?? []) as FinanceCategory[]
+      const error = accRes.error ?? txRes.error ?? catRes.error
+      if (error) { console.error('dashboard finance:', error); return }
+      const accounts: FinanceAccount[] = (accRes.data ?? [])
+      const transactions = txRes.data ?? []
+      const categories: FinanceCategory[] = (catRes.data ?? [])
 
       // Via the shared helper, para não divergir do saldo mostrado no painel.
       const totalBalance = accounts.reduce(
@@ -117,7 +125,7 @@ function useDashboardFinance(userId: string | undefined, enabled: boolean): Fina
       })
 
       setStats({ totalBalance, monthIncome, monthExpense, topCategories, monthlyData, savingsRate, loaded: true })
-    })
+    }, err => console.error('dashboard finance:', err))
   }, [userId, enabled])
 
   return stats
@@ -152,11 +160,18 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
   useEffect(() => {
     const userId = user?.id
     if (!userId) return
-    supabase
+    // REL-003: todas as tarefas do usuário, paginadas (o total e o % de
+    // conclusão saem daqui).
+    fetchAllRows((from, to) => supabase
       .from('todos').select('*').eq('user_id', userId)
       .order('completed', { ascending: true })
       .order('due_date', { ascending: true, nullsFirst: false })
-      .then(({ data }) => setTodos((data as Todo[]) ?? []))
+      .order('id')
+      .range(from, to))
+      .then(({ data, error }) => {
+        if (error) console.error('dashboard todos:', error)
+        else setTodos(data)
+      }, err => console.error('dashboard todos:', err))
   // Dashboard remounts when reopened, so fetching once per user is enough;
   // depending on `pages` caused a full todos refetch on every page edit.
   }, [user?.id])
@@ -174,7 +189,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
     return { note, drawing, both, todo }
   }, [flat])
 
-  const recent = useMemo(() => [...flat].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5), [flat])
+  const recent = useMemo(() => [...flat].sort((a, b) => new Date(b.updated_at ?? 0).getTime() - new Date(a.updated_at ?? 0).getTime()).slice(0, 5), [flat])
   const favorites = useMemo(() => flat.filter(p => p.is_favorite).slice(0, 4), [flat])
 
   const todoStats = useMemo(() => {
@@ -388,7 +403,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
             )}
           </Panel>
 
-          <Panel title="Próximas Tarefas" icon={<CheckSquare size={13} />}>
+          <Panel title={t('dashboard_upcoming')} icon={<CheckSquare size={13} />}>
             {upcoming.length === 0 ? (
               <Empty text={t('dashboard_empty_upcoming')} />
             ) : (
@@ -400,6 +415,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
                   return (
                     <li
                       key={todo.id}
+                      {...(parent ? activateProps(() => setActivePage(parent)) : {})}
                       onClick={() => parent && setActivePage(parent)}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 7, cursor: 'pointer', transition: 'background-color 0.1s' }}
                       onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-hover)')}
@@ -439,10 +455,11 @@ function NotificationItem({ notification: n, onRead, onClose }: {
   onRead: (id: string) => Promise<void>
   onClose: () => void
 }) {
+  const { t } = useLanguage()
   const [hov, setHov] = useState(false)
   const [acting, setActing] = useState(false)
   const [acted, setActed] = useState(false)
-  const inviteId = (n.data as Record<string, string>)?.invite_id
+  const inviteId = typeof n.data?.invite_id === 'string' ? n.data.invite_id : undefined
   const showInviteActions = n.type === 'workspace_invite' && !!inviteId && !acted
 
   const handleAction = async (action: 'accept' | 'decline') => {
@@ -484,6 +501,8 @@ function NotificationItem({ notification: n, onRead, onClose }: {
 
   return (
     <div
+      // Linha "clicável" só enquanto não lida e sem botões de convite: marca como lida.
+      {...(!n.read && !showInviteActions ? activateProps(handleRowClick) : {})}
       onClick={handleRowClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
@@ -500,11 +519,11 @@ function NotificationItem({ notification: n, onRead, onClose }: {
           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
             <button disabled={acting} onClick={(e) => { e.stopPropagation(); handleAction('accept') }}
               style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 6, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: acting ? 'not-allowed' : 'pointer', opacity: acting ? 0.6 : 1 }}>
-              <Check size={12} /> Aceitar
+              <Check size={12} /> {t('finance_workspace_invite_accept')}
             </button>
             <button disabled={acting} onClick={(e) => { e.stopPropagation(); handleAction('decline') }}
               style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text-muted)', fontSize: 12, fontWeight: 500, cursor: acting ? 'not-allowed' : 'pointer', opacity: acting ? 0.6 : 1 }}>
-              <X size={12} /> Recusar
+              <X size={12} /> {t('finance_workspace_invite_decline')}
             </button>
           </div>
         )}
@@ -546,6 +565,7 @@ function StatCard({ icon, iconColor, label, sub, value, valueColor, secondaryVal
   const [hov, setHov] = useState(false)
   return (
     <div
+      {...(onClick ? activateProps(onClick) : {})}
       onClick={onClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
@@ -563,7 +583,7 @@ function StatCard({ icon, iconColor, label, sub, value, valueColor, secondaryVal
         {secondaryValue && <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{secondaryValue}</span>}
       </div>
       {sparkline && sparklineKey && (
-        <MiniSparkline data={sparkline.map(d => d[sparklineKey!])} color={sparklineKey === 'income' ? '#10b981' : '#ef4444'} />
+        <MiniSparkline data={sparkline.map(d => d[sparklineKey])} color={sparklineKey === 'income' ? '#10b981' : '#ef4444'} />
       )}
     </div>
   )
@@ -654,6 +674,7 @@ function TopCategoriesBar({ categories }: { categories: { name: string; amount: 
 }
 
 function DonutSection({ categories }: { categories: { name: string; amount: number; color: string; emoji: string }[] }) {
+  const { t } = useLanguage()
   const total = categories.reduce((s, c) => s + c.amount, 0)
   if (total === 0) return null
 
@@ -672,7 +693,7 @@ function DonutSection({ categories }: { categories: { name: string; amount: numb
       <div style={{ position: 'relative', width: 70, height: 70, flexShrink: 0 }}>
         <div style={{ width: 70, height: 70, borderRadius: '50%', background: `conic-gradient(${gradient})` }} />
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 42, height: 42, borderRadius: '50%', backgroundColor: 'var(--color-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize: 9, color: 'var(--color-text-muted)', fontWeight: 600 }}>Total</span>
+          <span style={{ fontSize: 9, color: 'var(--color-text-muted)', fontWeight: 600 }}>{t('finance_chart_total')}</span>
         </div>
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -689,12 +710,13 @@ function DonutSection({ categories }: { categories: { name: string; amount: numb
 }
 
 function SavingsRateBar({ rate }: { rate: number }) {
+  const { t } = useLanguage()
   const pct = Math.min(Math.abs(rate), 100)
   const color = rate >= 0 ? '#10b981' : '#ef4444'
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>% de receita</span>
+        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('dashboard_income_share')}</span>
         <span style={{ fontSize: 14, fontWeight: 700, color }}>{rate > 0 ? '+' : ''}{rate}%</span>
       </div>
       <div style={{ height: 12, backgroundColor: 'var(--color-border)', borderRadius: 999, overflow: 'hidden' }}>
@@ -718,10 +740,12 @@ export function Empty({ text }: { text: string }) {
 }
 
 function PageRow({ page, onClick, badge }: { page: Page; onClick: () => void; badge?: string }) {
+  const { t } = useLanguage()
   const [hov, setHov] = useState(false)
   const typeIcon = page.type === 'drawing' ? '🎨' : page.type === 'both' ? '⚡' : page.type === 'todo' ? '✅' : '📄'
   return (
     <li
+      {...activateProps(onClick)}
       onClick={onClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
@@ -729,7 +753,7 @@ function PageRow({ page, onClick, badge }: { page: Page; onClick: () => void; ba
     >
       <span style={{ fontSize: 15, flexShrink: 0 }}>{page.icon || typeIcon}</span>
       <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {page.title || 'Untitled'}
+        {page.title || t('page_header_untitled')}
       </span>
       {badge && (
         <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, backgroundColor: 'var(--color-border)', color: 'var(--color-text-muted)', flexShrink: 0 }}>{badge}</span>

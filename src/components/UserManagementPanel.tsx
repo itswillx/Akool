@@ -3,28 +3,35 @@ import { Users, Shield, User, Trash2, MailCheck, Power, PowerOff, Search, Refres
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import type { TranslationKey } from '../i18n/translations'
+import { toLang, type TranslationKey } from '../i18n/translations'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { UserProfile } from '../contexts/AuthContext'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
 import { UserAvatar } from './UserAvatar'
+import { localDateKey, localDaysBetween } from '../lib/localDate'
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../lib/env'
 
-interface UserRow extends UserProfile {
+// As colunas que a lista pede (fetchUsers), mais o último login do Auth.
+type UserRow = Pick<UserProfile,
+  | 'id' | 'email' | 'display_name' | 'role' | 'is_active' | 'language' | 'invite_slots_remaining'
+  | 'last_login_date' | 'avatar_emoji' | 'avatar_color' | 'avatar_url'> & {
+  created_at: string
   last_sign_in?: string | null
 }
 
 function LoginBadge({ lastLoginDate }: { lastLoginDate: string | null }) {
+  const { t } = useLanguage()
   if (!lastLoginDate) return <span style={{ fontSize: 11, color: '#9ca3af' }}>—</span>
-  const today = new Date().toISOString().split('T')[0]
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
-  if (lastLoginDate === today) {
-    return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, backgroundColor: '#dcfce7', color: '#15803d' }}>Hoje</span>
+  // REL-007: dias de calendário no fuso local (o login grava a data local).
+  // Datas à frente vêm de gravações em UTC anteriores ao REL-007: contam como hoje.
+  const days = localDaysBetween(lastLoginDate, localDateKey()) ?? 0
+  if (days <= 0) {
+    return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, backgroundColor: '#dcfce7', color: '#15803d' }}>{t('users_login_today')}</span>
   }
-  if (lastLoginDate === yesterday) {
-    return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, backgroundColor: '#fef9c3', color: '#854d0e' }}>Ontem</span>
+  if (days === 1) {
+    return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, backgroundColor: '#fef9c3', color: '#854d0e' }}>{t('users_login_yesterday')}</span>
   }
-  const days = Math.floor((Date.now() - new Date(lastLoginDate).getTime()) / 86400000)
-  return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, backgroundColor: '#fee2e2', color: '#dc2626' }}>{days}d atrás</span>
+  return <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, backgroundColor: '#fee2e2', color: '#dc2626' }}>{t('users_login_days_ago', { n: days })}</span>
 }
 
 interface AdminInviteCode {
@@ -39,8 +46,8 @@ interface AdminInviteCode {
   used_at: string | null
 }
 
-const EDGE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-ops`
-const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const EDGE_FN = `${SUPABASE_URL}/functions/v1/admin-ops`
+const ANON_KEY = SUPABASE_ANON_KEY
 
 interface AdminOpsResult {
   error?: string
@@ -52,6 +59,13 @@ interface AdminOpsResult {
 // returned res.json() bare: a dead backend or a non-JSON body (502, timeout)
 // rejected the promise, and since no call site catches, actionLoading stayed
 // stuck with no feedback at all.
+// PERF-001: o token é lido na hora da chamada — a sessão não fica mais no
+// contexto de Auth (ela mudava a cada foco da aba e re-renderizava o app todo).
+async function currentAccessToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession()
+  return data.session?.access_token ?? null
+}
+
 async function callAdminOps(session: string, body: Record<string, unknown>): Promise<AdminOpsResult> {
   let res: Response
   try {
@@ -89,7 +103,7 @@ const ADMIN_OPS_ERROR_KEYS: Record<string, TranslationKey> = {
 }
 
 export default function UserManagementPanel() {
-  const { session, user: currentUser, refreshProfile } = useAuth()
+  const { user: currentUser, refreshProfile } = useAuth()
   const { t } = useLanguage()
   const isMobile = useIsMobile()
   const [users, setUsers] = useState<UserRow[]>([])
@@ -108,7 +122,7 @@ export default function UserManagementPanel() {
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [inviteSubTab, setInviteSubTab] = useState<'codes' | 'quotas'>('codes')
   const [confirmDelete, setConfirmDelete] = useState<AdminInviteCode | null>(null)
-  const [confirmDeleteUser, setConfirmDeleteUser] = useState<{ message: string; onConfirm: () => void } | null>(null)
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<{ message: string; onConfirm: () => void | Promise<void> } | null>(null)
 
   const showFeedback = (type: 'success' | 'error', msg: string) => {
     setFeedback({ type, msg })
@@ -130,8 +144,9 @@ export default function UserManagementPanel() {
     if (error) { showFeedback('error', error.message); setLoading(false); return }  
 
     let authUsers: Record<string, { last_sign_in_at?: string | null }> = {}
-    if (session?.access_token) {
-      const res = await callAdminOps(session.access_token, { action: 'list_users' })
+    const listToken = await currentAccessToken()
+    if (listToken) {
+      const res = await callAdminOps(listToken, { action: 'list_users' })
       if (res.users) {
         res.users.forEach(u => {
           authUsers[u.id] = { last_sign_in_at: u.last_sign_in_at }
@@ -140,8 +155,9 @@ export default function UserManagementPanel() {
     }
 
     setUsers(
-      (profiles as unknown as UserProfile[]).map(p => ({
+      profiles.map(p => ({
         ...p,
+        language: toLang(p.language),
         last_sign_in: authUsers[p.id]?.last_sign_in_at ?? null,
       }))
     )
@@ -154,7 +170,7 @@ export default function UserManagementPanel() {
       .from('invite_codes')
       .select('id, code, created_by, used_by, created_at, expires_at, used_at')
       .order('created_at', { ascending: false })
-    const codes = (data ?? []) as AdminInviteCode[]
+    const codes: AdminInviteCode[] = data ?? []
     const allIds = [
       ...codes.map(c => c.created_by),
       ...codes.map(c => c.used_by).filter(Boolean) as string[],
@@ -211,7 +227,7 @@ export default function UserManagementPanel() {
     setActionLoading(null)
   }
 
-  const handleDeleteCode = async (c: AdminInviteCode) => {
+  const handleDeleteCode = (c: AdminInviteCode) => {
     setConfirmDelete(c)
   }
 
@@ -249,10 +265,11 @@ export default function UserManagementPanel() {
   // service role, barra o rebaixamento do último admin e grava em audit_log.
   // O caminho direto está fechado no banco (sec_lock_profile_role).
   const toggleRole = async (u: UserRow) => {
-    if (!session?.access_token) { showFeedback('error', t('admin_err_no_session')); return }
+    const token = await currentAccessToken()
+    if (!token) { showFeedback('error', t('admin_err_no_session')); return }
     setActionLoading(u.id + '_role')
     const newRole = u.role === 'admin' ? 'standard' : 'admin'
-    const res = await callAdminOps(session.access_token, { action: 'set_role', user_id: u.id, role: newRole })
+    const res = await callAdminOps(token, { action: 'set_role', user_id: u.id, role: newRole })
     if (res.error) { showOpsError(res.error) }
     else {
       showFeedback('success', t('admin_feedback_role', { email: u.email, role: newRole === 'admin' ? t('admin_role_name_admin') : t('admin_role_name_standard') }))
@@ -263,10 +280,11 @@ export default function UserManagementPanel() {
   }
 
   const toggleActive = async (u: UserRow) => {
-    if (!session?.access_token) { showFeedback('error', t('admin_err_no_session')); return }
+    const token = await currentAccessToken()
+    if (!token) { showFeedback('error', t('admin_err_no_session')); return }
     setActionLoading(u.id + '_active')
     const action = u.is_active ? 'ban_user' : 'unban_user'
-    const res = await callAdminOps(session.access_token, { action, user_id: u.id })
+    const res = await callAdminOps(token, { action, user_id: u.id })
     if (res.error) { showOpsError(res.error) }
     else {
       showFeedback('success', u.is_active ? t('admin_feedback_deactivated', { email: u.email }) : t('admin_feedback_reactivated', { email: u.email }))
@@ -289,12 +307,13 @@ export default function UserManagementPanel() {
   }
 
   const deleteUser = async (u: UserRow) => {
-    if (!session?.access_token) { showFeedback('error', t('admin_err_no_session')); return }
+    const token = await currentAccessToken()
+    if (!token) { showFeedback('error', t('admin_err_no_session')); return }
     setConfirmDeleteUser({
       message: t('admin_confirm_delete', { email: u.email }),
       onConfirm: async () => {
         setActionLoading(u.id + '_delete')
-        const res = await callAdminOps(session.access_token, { action: 'delete_user', user_id: u.id })
+        const res = await callAdminOps(token, { action: 'delete_user', user_id: u.id })
         if (res.error) { showOpsError(res.error) }
         else {
           showFeedback('success', t('admin_feedback_deleted', { email: u.email }))
@@ -360,13 +379,13 @@ export default function UserManagementPanel() {
               {users.length !== 1 ? t('admin_users_count_plural', { n: users.length }) : t('admin_users_count', { n: users.length })}
             </p>
             {/* Search */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', backgroundColor: 'var(--color-surface)', border: '1.5px solid var(--color-border)', borderRadius: 8, marginBottom: 16 }}>
-              <Search size={14} color="#9b9a97" />
+            <div className="field-box" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', backgroundColor: 'var(--color-surface)', border: '1.5px solid var(--color-border)', borderRadius: 8, marginBottom: 16 }}>
+              <Search size={14} color="var(--color-icon)" />
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder={t('admin_search_placeholder')}
-                style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, backgroundColor: 'transparent', color: 'var(--color-text)' }}
+                style={{ flex: 1, border: 'none', fontSize: 14, backgroundColor: 'transparent', color: 'var(--color-text)' }}
               />
             </div>
 
@@ -481,7 +500,7 @@ export default function UserManagementPanel() {
                           {status === 'pending' && (
                             <div style={{ display: 'flex', gap: 6 }}>
                               <button onClick={() => { navigator.clipboard.writeText(c.code); setCopiedCode(c.id); setTimeout(() => setCopiedCode(null), 2000) }} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', fontSize: 12, color: copiedCode === c.id ? '#16a34a' : 'var(--color-text-muted)' }}>
-                                {copiedCode === c.id ? <><CheckCheck size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+                                {copiedCode === c.id ? <><CheckCheck size={12} /> {t('settings_api_copied')}</> : <><Copy size={12} /> {t('settings_api_copy')}</>}
                               </button>
                               <button onClick={() => handleRevokeCode(c)} disabled={!!actionLoading} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid #fecaca', backgroundColor: '#fef2f2', cursor: !!actionLoading ? 'not-allowed' : 'pointer', fontSize: 12, color: '#dc2626', opacity: !!actionLoading ? 0.5 : 1 }}>
                                 {t('admin_invites_revoke')}
@@ -509,7 +528,7 @@ export default function UserManagementPanel() {
                         <div style={{ display: 'flex', gap: 4 }}>
                           {status === 'pending' && (
                             <>
-                              <button onClick={() => { navigator.clipboard.writeText(c.code); setCopiedCode(c.id); setTimeout(() => setCopiedCode(null), 2000) }} title="Copiar" style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: copiedCode === c.id ? '#16a34a' : 'var(--color-text-muted)' }}>
+                              <button onClick={() => { navigator.clipboard.writeText(c.code); setCopiedCode(c.id); setTimeout(() => setCopiedCode(null), 2000) }} title={t('settings_api_copy')} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: copiedCode === c.id ? '#16a34a' : 'var(--color-text-muted)' }}>
                                 {copiedCode === c.id ? <CheckCheck size={12} /> : <Copy size={12} />}
                               </button>
                               <ActionBtn title={t('admin_invites_revoke')} disabled={!!actionLoading} loading={actionLoading === c.id + '_revoke'} onClick={() => handleRevokeCode(c)} color="#ef4444">
@@ -578,42 +597,15 @@ export default function UserManagementPanel() {
         )}
       </div>
 
-      {/* Confirm delete modal */}
-      {confirmDelete && (
-        <div
-          onClick={() => setConfirmDelete(null)}
-          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ backgroundColor: 'var(--color-surface)', borderRadius: 14, padding: '24px 28px', maxWidth: 360, width: '100%', boxShadow: '0 8px 40px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', gap: 16 }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Trash2 size={18} color="#dc2626" />
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: 'var(--color-text)' }}>{t('admin_invites_delete_confirm')}</p>
-                <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-muted)', fontFamily: 'monospace', letterSpacing: '0.05em' }}>{confirmDelete.code}</p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setConfirmDelete(null)}
-                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
-              >
-                {t('confirm_delete_cancel')}
-              </button>
-              <button
-                onClick={confirmDeleteCode}
-                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: '#dc2626', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-              >
-                {t('admin_invites_delete')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Confirm delete modal (mesma confirmação acessível do resto do app) */}
+      <ConfirmDeleteModal
+        open={!!confirmDelete}
+        title={t('admin_invites_delete_confirm')}
+        message={confirmDelete?.code}
+        confirmLabel={t('admin_invites_delete')}
+        onConfirm={confirmDeleteCode}
+        onCancel={() => setConfirmDelete(null)}
+      />
 
       <ConfirmDeleteModal
         open={!!confirmDeleteUser}
@@ -779,7 +771,7 @@ const UserTableRow = memo(function UserTableRow({
       </div>
 
       {/* Last sign in */}
-      <span style={{ fontSize: 12, color: '#9b9a97' }}>{lastSeen}</span>
+      <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{lastSeen}</span>
 
       {/* Daily login badge */}
       <div><LoginBadge lastLoginDate={u.last_login_date ?? null} /></div>

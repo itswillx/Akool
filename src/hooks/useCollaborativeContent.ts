@@ -1,10 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-
-type ContentTable = 'note_contents' | 'drawing_contents'
+import { fetchPageContent, type ContentTable } from '../lib/data/pages'
 
 interface UseCollaborativeContentResult {
-  remoteContent: unknown | null
+  remoteContent: unknown
   remoteUpdatedAt: string | null
 }
 
@@ -13,23 +12,18 @@ export function useCollaborativeContent(
   table: ContentTable,
   enabled: boolean
 ): UseCollaborativeContentResult {
-  const [remoteContent, setRemoteContent] = useState<unknown | null>(null)
+  const [remoteContent, setRemoteContent] = useState<unknown>(null)
   const [remoteUpdatedAt, setRemoteUpdatedAt] = useState<string | null>(null)
 
   const contentField = table === 'note_contents' ? 'content' : 'elements'
 
   const fetchInitial = useCallback(async () => {
-    const { data } = await supabase
-      .from(table)
-      .select(`${contentField}, updated_at`)
-      .eq('page_id', pageId)
-      .single()
-
+    const { data } = await fetchPageContent(table, pageId)
     if (data) {
-      setRemoteContent((data as Record<string, unknown>)[contentField])
-      setRemoteUpdatedAt(data.updated_at as string)
+      setRemoteContent(data.value)
+      setRemoteUpdatedAt(data.updatedAt)
     }
-  }, [pageId, table, contentField])
+  }, [pageId, table])
 
   useEffect(() => {
     if (!enabled) return

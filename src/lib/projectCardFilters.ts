@@ -8,7 +8,7 @@ export type ProjectCardFilters = {
   priorities: ProjectCardPriority[]
   duePreset: DueDatePreset
   labels: string[]
-  assigneeId: '' | 'unassigned' | string
+  assigneeId: '' | 'unassigned' | (string & {})
   columnId: string
   completion: CompletionFilter
 }

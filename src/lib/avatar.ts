@@ -18,3 +18,12 @@ export function avatarColor(seed: string): string {
   const code = (s.charCodeAt(0) || 0) + (s.charCodeAt(s.length - 1) || 0)
   return AVATAR_COLORS[code % AVATAR_COLORS.length]
 }
+
+/**
+ * SEC-014: a cor vai para o CSS `background`, que aceita `url(...)`; uma cor
+ * fora de `#rrggbb` (gravada direto no banco) viraria um pixel de rastreio.
+ * Só passa a hex; o resto cai na cor padrão.
+ */
+export function safeHexColor(value: string | null | undefined): string | null {
+  return value && /^#[0-9a-f]{6}$/i.test(value) ? value : null
+}

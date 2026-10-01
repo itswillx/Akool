@@ -3,6 +3,7 @@ import Cropper from 'react-easy-crop'
 import type { Area, Point } from 'react-easy-crop'
 import { X, ZoomIn } from 'lucide-react'
 import { useLanguage } from '../i18n/LanguageContext'
+import { useDialog } from '../hooks/useDialog'
 import { cropImageToBlob } from '../lib/imageCrop'
 
 // Round, 1:1 crop step shown between picking/opening a photo and uploading
@@ -14,6 +15,8 @@ export default function AvatarCropModal({ imageSrc, onClose, onSave }: {
   onSave: (blob: Blob) => Promise<void>
 }) {
   const { t } = useLanguage()
+  // Aberto de dentro das Configurações: a pilha do useDialog faz o Esc fechar só este.
+  const { titleId, dialogProps } = useDialog({ onClose, closeOnEsc: true })
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
   const [croppedArea, setCroppedArea] = useState<Area | null>(null)
@@ -34,13 +37,13 @@ export default function AvatarCropModal({ imageSrc, onClose, onSave }: {
   }
 
   return (
-    <div
+    <div role="presentation"
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 14, padding: 20, width: '100%', maxWidth: 360, boxShadow: '0 24px 60px -20px rgba(0,0,0,0.45)' }}>
+      <div {...dialogProps} style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 14, padding: 20, width: '100%', maxWidth: 360, boxShadow: '0 24px 60px -20px rgba(0,0,0,0.45)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text)' }}>{t('settings_avatar_crop_title')}</h3>
+          <h3 id={titleId} style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text)' }}>{t('settings_avatar_crop_title')}</h3>
           <button onClick={onClose} aria-label={t('settings_avatar_crop_cancel')}
             style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 4, borderRadius: 6 }}>
             <X size={16} />

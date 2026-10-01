@@ -218,7 +218,7 @@ export function nodeMonthlySeries(
     return monthlySeries(
       contributions
         .filter(c => c.goal_id === node.refId)
-        .map(c => ({ type: 'income' as FinanceTxType, amount: c.amount, date: c.date })),
+        .map(c => ({ type: 'income', amount: c.amount, date: c.date })),
       months,
     )
   }
@@ -245,7 +245,7 @@ export function nodeTransactions(
   const rows: NodeTxRow[] = node.kind === 'goal'
     ? contributions
         .filter(c => c.goal_id === node.refId)
-        .map(c => ({ id: c.id, date: c.date, description: c.note, amount: c.amount, type: 'income' as FinanceTxType }))
+        .map(c => ({ id: c.id, date: c.date, description: c.note, amount: c.amount, type: 'income' }))
     : transactions
         .filter(tx => (node.kind === 'account' ? tx.account_id : tx.category_id) === node.refId)
         .map(tx => ({ id: tx.id, date: tx.date, description: tx.description, amount: tx.amount, type: tx.type }))

@@ -1,7 +1,15 @@
 import asyncio
+import os
 import re
 from playwright import async_api
 from playwright.async_api import expect
+
+# SEC-001: credenciais e alvos do teste vêm do ambiente, nunca do código
+# (ver testsprite_tests/README.md).
+LOGIN_USER = os.environ["LOGIN_USER"]
+LOGIN_PASSWORD = os.environ["LOGIN_PASSWORD"]
+TARGET_PROMOTE_EMAIL = os.environ["TARGET_PROMOTE_EMAIL"]
+TARGET_DEMOTE_EMAIL = os.environ["TARGET_DEMOTE_EMAIL"]
 
 async def run_test():
     pw = None
@@ -40,19 +48,19 @@ async def run_test():
         except Exception:
             pass
         
-        # -> Fill the email field with williamzenf5@gmail.com, fill the password field with 123123123, and click the 'Entrar' button to sign in.
+        # -> Fill the email field with {{LOGIN_USER}}, fill the password field with {{LOGIN_PASSWORD}}, and click the 'Entrar' button to sign in.
         # you@example.com email field
         elem = page.get_by_placeholder('you@example.com', exact=True)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("williamzenf5@gmail.com")
+        await elem.fill(LOGIN_USER)
         
-        # -> Fill the email field with williamzenf5@gmail.com, fill the password field with 123123123, and click the 'Entrar' button to sign in.
+        # -> Fill the email field with {{LOGIN_USER}}, fill the password field with {{LOGIN_PASSWORD}}, and click the 'Entrar' button to sign in.
         # •••••••• password field
         elem = page.get_by_placeholder('••••••••', exact=True)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("123123123")
+        await elem.fill(LOGIN_PASSWORD)
         
-        # -> Fill the email field with williamzenf5@gmail.com, fill the password field with 123123123, and click the 'Entrar' button to sign in.
+        # -> Fill the email field with {{LOGIN_USER}}, fill the password field with {{LOGIN_PASSWORD}}, and click the 'Entrar' button to sign in.
         # Entrar button
         elem = page.get_by_role('button', name='Entrar', exact=True)
         await elem.click(timeout=10000)
@@ -79,7 +87,7 @@ async def run_test():
         
         # -> Click the 'Promover para Admin' button for user 'leo02.toledo' to change their role to Admin, then observe the page for the role update or any confirmation modal.
         # Promover para Admin button
-        elem = page.get_by_text('leo02.toledoleo02.toledo@hotmail.com', exact=True).locator("xpath=ancestor-or-self::*[.//button][1]").get_by_role('button', name='Promover para Admin', exact=True)
+        elem = page.get_by_text(TARGET_PROMOTE_EMAIL, exact=True).locator("xpath=ancestor-or-self::*[.//button][1]").get_by_role('button', name='Promover para Admin', exact=True)
         await elem.click(timeout=10000)
         
         # -> click
@@ -94,7 +102,7 @@ async def run_test():
         
         # -> Click the 'Rebaixar para Padrão' (Demote to Standard) button for the user 'bruno.fodase2' and then verify the user's role badge updates to 'Padrão' and that admin controls remain available afterward.
         # Rebaixar para Padrão button
-        elem = page.get_by_text('bruno.fodase2bruno.fodase2@gmail.com', exact=True).locator("xpath=ancestor-or-self::*[.//button][1]").get_by_role('button', name='Rebaixar para Padrão', exact=True)
+        elem = page.get_by_text(TARGET_DEMOTE_EMAIL, exact=True).locator("xpath=ancestor-or-self::*[.//button][1]").get_by_role('button', name='Rebaixar para Padrão', exact=True)
         await elem.click(timeout=10000)
         
         # -> Click the 'Promover para Admin' button for user 'bruno.fodase2', wait for the UI to update, then click 'Atualizar' (Refresh) to verify the role change persists and admin controls remain available.
@@ -109,7 +117,7 @@ async def run_test():
         
         # -> Click the 'Rebaixar para Padrão' (Demote to Standard) button for the user 'bruno.fodase2', then refresh the users list by clicking the 'Atualizar' button to confirm the change persists.
         # Rebaixar para Padrão button
-        elem = page.get_by_text('bruno.fodase2bruno.fodase2@gmail.com', exact=True).locator("xpath=ancestor-or-self::*[.//button][1]").get_by_role('button', name='Rebaixar para Padrão', exact=True)
+        elem = page.get_by_text(TARGET_DEMOTE_EMAIL, exact=True).locator("xpath=ancestor-or-self::*[.//button][1]").get_by_role('button', name='Rebaixar para Padrão', exact=True)
         await elem.click(timeout=10000)
         
         # -> Click the 'Rebaixar para Padrão' (Demote to Standard) button for the user 'bruno.fodase2', then refresh the users list by clicking the 'Atualizar' button to confirm the change persists.

@@ -157,7 +157,7 @@ export function RichTextEditor({ markdown, onChange, onBlur, autoFocus, minHeigh
           border: '1px solid var(--color-border)', borderRadius: '0 0 6px 6px',
           padding: '10px 12px', minHeight, maxHeight: 600, overflowY: 'auto',
           fontSize: 14, lineHeight: 1.5, color: 'var(--color-text)', backgroundColor: 'var(--color-bg)',
-          outline: 'none', boxSizing: 'border-box', wordBreak: 'break-word',
+          boxSizing: 'border-box', wordBreak: 'break-word',
         }}
       />
     </div>

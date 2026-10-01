@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { SUPABASE_URL } from './env'
 
 // Buckets migrados para privados (SEC): a leitura passa a exigir signed URLs.
 // O que fica persistido no banco pode ser tanto o path novo (ex.: "uid/123.jpg")
@@ -24,15 +25,43 @@ export function extractStoragePath(bucket: string, stored: string): string | nul
 
 const cache = new Map<string, { url: string; exp: number }>()
 
+/**
+ * SEC-014: o que não é objeto do bucket só passa se não sair do navegador nem
+ * do projeto: prévia local (`data:`/`blob:`) ou URL do próprio Supabase. URL
+ * de terceiros vira vazio — senão, uma imagem externa num avatar, nota ou
+ * anexo entregaria IP, navegador e horário de quem abre a quem a hospeda.
+ */
+export function passThrough(stored: string): string {
+  if (/^(data|blob):/i.test(stored)) return stored
+  try {
+    if (SUPABASE_URL && new URL(stored).host === new URL(SUPABASE_URL).host) return stored
+  } catch { /* não é URL: um path de outro bucket, por exemplo */ return stored }
+  return /^https?:\/\//i.test(stored) ? '' : stored
+}
+
+// SEC-017: arquivos financeiros (comprovantes, extratos, Loja, empréstimos,
+// despesas de projeto) valem 5 min; o resto, 1 h. Um link vazado ou deixado
+// numa aba aberta deixa de funcionar logo.
+export const SHORT_LIVED_BUCKETS = new Set(['transaction-photos', 'store-files', 'bank-statements', 'loan-files', 'project-expense-files'])
+
+export function defaultExpiresIn(bucket: string): number {
+  return SHORT_LIVED_BUCKETS.has(bucket) ? 300 : 3600
+}
+
+/** SEC-017: no logout, nenhuma signed URL do usuário anterior fica em memória. */
+export function clearSignedUrlCache(): void {
+  cache.clear()
+}
+
 // Resolve um valor armazenado para uma signed URL utilizavel (com cache em
 // memoria enquanto valida). expiresIn em segundos.
 export async function resolveSignedUrl(
   bucket: string,
   stored: string,
-  expiresIn = 3600,
+  expiresIn = defaultExpiresIn(bucket),
 ): Promise<string> {
   const path = extractStoragePath(bucket, stored)
-  if (!path) return stored // fallback: devolve o valor original
+  if (!path) return passThrough(stored)
   const key = `${bucket}/${path}`
   const now = Date.now()
   const hit = cache.get(key)

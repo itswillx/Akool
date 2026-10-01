@@ -11,6 +11,7 @@ import { SalesBoard } from './SalesBoard'
 import { StatusConfirmModal } from './StatusConfirmModal'
 import { NEXT_LABEL, NEXT_STATUS, PREV_STATUS, confirmActionFor, type ConfirmAction } from './saleTransitions'
 import type { FinanceStoreStore } from './useFinanceStore'
+import { activateProps } from '../../../lib/a11y'
 
 // Pipeline de vendas em duas leituras: quadro (kanban de etapas, o padrão) e
 // lista filtrável. As transições de status são as mesmas nos dois — moram em
@@ -121,6 +122,7 @@ export function SalesView({ store, categories, onNew, onEdit }: {
           return (
             <div key={sale.id}
               style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '11px 14px', cursor: 'pointer', opacity: busy ? 0.6 : 1, borderBottom: index === visible.length - 1 ? 'none' : '1px solid var(--color-border)' }}
+              {...activateProps(() => onEdit(sale))}
               onClick={() => onEdit(sale)}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>

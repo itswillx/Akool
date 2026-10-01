@@ -21,7 +21,7 @@ interface StudyTopicDetailProps {
   cards: StudyCard[]
   logs: StudyLog[]
   store: StudyStore
-  requestDelete: (title: string, message: string, onConfirm: () => void) => void
+  requestDelete: (title: string, message: string, onConfirm: () => void | Promise<void>) => void
   onBack: () => void
   isMobile?: boolean
 }
@@ -29,7 +29,7 @@ interface StudyTopicDetailProps {
 const fieldInput = {
   width: '100%', boxSizing: 'border-box' as const, padding: '8px 10px', borderRadius: 8,
   border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)',
-  color: 'var(--color-text)', fontSize: 13, outline: 'none', fontFamily: 'inherit',
+  color: 'var(--color-text)', fontSize: 13, fontFamily: 'inherit',
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -93,7 +93,8 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
         defaultValue={topic.title}
         placeholder={t('study_title_placeholder')}
         onBlur={e => commitText('title')(e.target.value)}
-        style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', background: 'transparent', fontSize: isMobile ? 20 : 24, fontWeight: 800, color: 'var(--color-text)', fontFamily: 'inherit', padding: 0, marginBottom: 4 }}
+        className="keep-font-size"
+        style={{ width: '100%', boxSizing: 'border-box', border: 'none', background: 'transparent', fontSize: isMobile ? 20 : 24, fontWeight: 800, color: 'var(--color-text)', fontFamily: 'inherit', padding: 0, marginBottom: 4 }}
       />
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <StatusPill status={topic.status} />

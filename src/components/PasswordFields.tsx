@@ -1,5 +1,7 @@
 import { Eye, EyeOff } from 'lucide-react'
 import type { TranslationKey } from '../i18n/translations'
+import { MIN_PASSWORD_LENGTH, isPasswordValid } from '../lib/passwordPolicy'
+import type { FieldControlProps } from './Field'
 
 // Shared between UserSettingsModal (password tab) and ResetPasswordPage.
 // `t` comes in as a prop because ResetPasswordPage renders outside the
@@ -11,23 +13,30 @@ export const passwordInputStyle: React.CSSProperties = {
   border: '1.5px solid var(--color-border)',
   borderRadius: 8,
   fontSize: 14,
-  outline: 'none',
   color: 'var(--color-text)',
   boxSizing: 'border-box',
   transition: 'border-color 0.15s',
   backgroundColor: 'var(--color-surface)',
 }
 
-export function PasswordInput({ value, onChange, show, onToggleShow, placeholder }: {
+export function PasswordInput({ value, onChange, show, onToggleShow, placeholder, control, autoComplete, t }: {
   value: string
   onChange: (v: string) => void
   show: boolean
   onToggleShow: () => void
   placeholder?: string
+  /** UX-007: ids do <Field> (label, dica e erro ligados ao campo). */
+  control?: FieldControlProps
+  /** `current-password` para a senha atual; `new-password` para a nova. */
+  autoComplete?: 'current-password' | 'new-password'
+  /** Para o nome do botão de mostrar/ocultar (ver o comentário do topo sobre o `t`). */
+  t: (key: TranslationKey) => string
 }) {
   return (
     <div style={{ position: 'relative' }}>
       <input
+        {...control}
+        autoComplete={autoComplete}
         type={show ? 'text' : 'password'}
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -39,6 +48,8 @@ export function PasswordInput({ value, onChange, show, onToggleShow, placeholder
       <button
         type="button"
         onClick={onToggleShow}
+        aria-label={show ? t('password_hide') : t('password_show')}
+        aria-pressed={show}
         style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: 0, display: 'flex', alignItems: 'center' }}
       >
         {show ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -68,14 +79,19 @@ export function PasswordStrengthMeter({ password, t }: {
         ))}
       </div>
       <span style={{ fontSize: 11, color: colors[score] }}>{labels[score]}</span>
+      {!isPasswordValid(password) && (
+        <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+          {t('password_requirements_hint').replace('{min}', String(MIN_PASSWORD_LENGTH))}
+        </span>
+      )}
     </div>
   )
 }
 
 export function getPasswordStrength(pwd: string): number {
   let score = 0
-  if (pwd.length >= 6) score++
-  if (pwd.length >= 10) score++
+  if (pwd.length >= MIN_PASSWORD_LENGTH) score++
+  if (pwd.length >= MIN_PASSWORD_LENGTH + 4) score++
   if (/[A-Z]/.test(pwd)) score++
   if (/[0-9]/.test(pwd)) score++
   if (/[^A-Za-z0-9]/.test(pwd)) score++
