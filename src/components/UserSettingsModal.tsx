@@ -16,7 +16,7 @@ import AvatarCropModal from './AvatarCropModal'
 import ApiTokensSection from './ApiTokensSection'
 import MfaSection from './MfaSection'
 import { isPasswordValid } from '../lib/passwordPolicy'
-import type { Lang } from '../i18n/translations'
+import { localeOf, type Lang } from '../i18n/translations'
 
 // Curated picks that read well at avatar sizes (faces, people, symbols).
 const AVATAR_EMOJIS = [
@@ -48,7 +48,7 @@ interface InviteCode {
 
 export default function UserSettingsModal({ open, onClose }: Props) {
   const { user, profile, isAdmin, changePassword, updateProfile, refreshProfile, signOut } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   // O fundo fecha (clique fora), então o Esc também (UX-003).
   const { titleId, dialogProps } = useDialog({ open, onClose, closeOnEsc: true })
   const { theme, setTheme } = useTheme()
@@ -604,7 +604,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
                           <p style={{ margin: '3px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
                             {status === 'used'
                               ? t('settings_invites_used_by', { email: inv.used_by_email ?? inv.used_by ?? '?' })
-                              : t('settings_invites_expires', { date: new Date(inv.expires_at).toLocaleDateString() })}
+                              : t('settings_invites_expires', { date: new Date(inv.expires_at).toLocaleDateString(localeOf(lang)) })}
                           </p>
                         </div>
                         {status === 'pending' && (

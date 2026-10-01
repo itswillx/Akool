@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -175,5 +176,28 @@ describe('index.html (UX-014)', () => {
   it('o favicon fica branco em aba escura', () => {
     const svg = readFileSync(join(ROOT, 'public/favicon.svg'), 'utf8')
     expect(svg).toMatch(/@media \(prefers-color-scheme: dark\)\s*\{\s*path\s*\{\s*fill:\s*#fff/)
+  })
+})
+
+// REL-007 e UX-011 (auditoria da validação): a data "de hoje" vem do relógio
+// local (localDateKey), nunca da data UTC (que vira amanhã às 21h em
+// Brasília); e toda data formatada leva o locale do perfil (localeOf(lang)),
+// nunca o do navegador. Os dois resíduos voltaram depois dos cards; esta trava
+// impede o terceiro.
+describe('datas: relógio local e locale do perfil (REL-007, UX-011)', () => {
+  const files = execSync('git ls-files src', { cwd: ROOT, encoding: 'utf8' }).split('\n')
+    .filter(f => /\.(ts|tsx)$/.test(f) && !/\.(test|bench)\.|\/test\//.test(f) && f !== 'src/lib/localDate.ts')
+
+  const offenders = (re: RegExp) => files.flatMap(f => {
+    const text = readFileSync(join(ROOT, f), 'utf8')
+    return text.split('\n').flatMap((line, i) => (re.test(line) ? [`${f}:${i + 1}`] : []))
+  })
+
+  it('nenhuma data UTC como "hoje" fora do localDate.ts', () => {
+    expect(offenders(/toISOString\(\)\.(slice\(0, 10\)|split\('T'\)\[0\])/)).toEqual([])
+  })
+
+  it('nenhuma data formatada sem locale', () => {
+    expect(offenders(/toLocale(Date|Time)?String\(\)/)).toEqual([])
   })
 })

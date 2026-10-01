@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { localeOf } from '../i18n/translations'
 import { ShieldCheck, ShieldOff } from 'lucide-react'
 import type { Factor } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
@@ -17,7 +18,7 @@ interface Enrollment {
 }
 
 export default function MfaSection() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [factors, setFactors] = useState<Factor[]>([])
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null)
   const [code, setCode] = useState('')
@@ -123,7 +124,7 @@ export default function MfaSection() {
       {factors.map(f => (
         <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--color-border)' }}>
           <span style={{ flex: 1, fontSize: 12.5, color: 'var(--color-text-muted)' }}>
-            {t('mfa_factor_added').replace('{date}', new Date(f.created_at).toLocaleDateString())}
+            {t('mfa_factor_added').replace('{date}', new Date(f.created_at).toLocaleDateString(localeOf(lang)))}
           </span>
           <button
             type="button"

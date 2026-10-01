@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import { localeOf, type Lang } from '../i18n/translations'
 import type { TFn } from '../lib/optimistic'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
@@ -297,7 +298,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 // ─── Main export function ─────────────────────────────────────────────────────
 
-export async function exportPagesToPdf(pages: Page[], filename: string, t: TFn): Promise<void> {
+export async function exportPagesToPdf(pages: Page[], filename: string, t: TFn, lang: Lang = 'pt-BR'): Promise<void> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const contents = await fetchPageContents(supabase, pages)
   // The Excalidraw bundle only loads if some exported page has a drawing.
@@ -329,7 +330,7 @@ export async function exportPagesToPdf(pages: Page[], filename: string, t: TFn):
     doc.setTextColor(140, 140, 140)
     if (page.updated_at) {
       try {
-        doc.text(new Date(page.updated_at).toLocaleDateString(), MARGIN, y)
+        doc.text(new Date(page.updated_at).toLocaleDateString(localeOf(lang)), MARGIN, y)
       } catch {
         doc.text(page.updated_at, MARGIN, y)
       }

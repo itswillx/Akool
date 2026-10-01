@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
+import { localDateKey } from '../lib/localDate'
 import {
   FileText, Pencil, Layers, CheckSquare, Star, ArrowRight,
   TrendingUp, Wallet, Bell, Check, X, Users, FolderKanban,
@@ -198,7 +199,7 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
   const todoStats = useMemo(() => {
     const open = todos.filter(t => !t.completed)
     const done = todos.length - open.length
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateKey()
     const completion = todos.length === 0 ? 0 : Math.round((done / todos.length) * 100)
     return { open: open.length, done, total: todos.length, completion,
       overdue: open.filter(t => t.due_date && t.due_date < today).length }
@@ -413,7 +414,7 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
               <ul style={listStyle}>
                 {upcoming.map(todo => {
                   const parent = flat.find(p => p.id === todo.page_id)
-                  const today = new Date().toISOString().slice(0, 10)
+                  const today = localDateKey()
                   const overdue = todo.due_date && todo.due_date < today
                   return (
                     <li

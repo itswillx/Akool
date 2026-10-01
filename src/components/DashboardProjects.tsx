@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { localDateKey } from '../lib/localDate'
 import { FolderKanban, CalendarClock } from 'lucide-react'
 import { loadDashboardProjects, type DashboardBoardRow, type DashboardCardRow } from '../lib/data/dashboard'
 import { dashboardKeys } from '../lib/queryClient'
@@ -43,8 +44,9 @@ function summarizeDashboardProjects(
   now: number,
 ): DashboardProjectsData {
   const boardName = new Map(allBoards.map(b => [b.id, b.name]))
-  const today = new Date(now).toISOString().slice(0, 10)
-  const horizon = new Date(now + 7 * 86400000).toISOString().slice(0, 10)
+  // REL-007: dias pelo relógio local, não pela data UTC.
+  const today = localDateKey(new Date(now))
+  const horizon = localDateKey(new Date(now + 7 * 86400000))
 
   const boards: DashboardBoard[] = allBoards.map(b => {
     const list = cards.filter(c => c.board_id === b.id)
