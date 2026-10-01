@@ -136,8 +136,9 @@ export default function UserManagementPanel() {
 
   const fetchUsers = async () => {
     setLoading(true)
+    // SEC-013: as colunas de privilégio de outros perfis só saem pela RPC de admin.
     const { data: profiles, error } = await supabase
-      .from('profiles')
+      .rpc('admin_list_profiles')
       .select('id, email, display_name, role, is_active, language, created_at, invite_slots_remaining, last_login_date, avatar_emoji, avatar_color, avatar_url')
       .order('created_at', { ascending: true })
 

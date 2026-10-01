@@ -13,12 +13,8 @@ on:
         type: choice
         options:
           - admin-ops
-          - ai-chat
-          - analyze-transaction-photo
           - cards-api
-          - categorize-transactions
           - site-backup
-          - study-lookup
       target:
         description: 'Destino'
         required: true

@@ -2458,6 +2458,32 @@ export type Database = {
         Args: { p_slots: number; p_user_id: string }
         Returns: undefined
       }
+      admin_list_profiles: {
+        Args: never
+        Returns: {
+          ai_has_key: boolean
+          avatar_color: string | null
+          avatar_emoji: string | null
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          email: string
+          finance_dashboard_view: string
+          id: string
+          invite_slots_remaining: number
+          is_active: boolean
+          language: string
+          last_login_date: string | null
+          role: string
+          theme: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "profiles"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       admin_revoke_invite_code: {
         Args: { p_code_id: string }
         Returns: undefined
@@ -2618,6 +2644,32 @@ export type Database = {
         Returns: undefined
       }
       generate_invite_code: { Args: never; Returns: Json }
+      get_my_profile: {
+        Args: never
+        Returns: {
+          ai_has_key: boolean
+          avatar_color: string | null
+          avatar_emoji: string | null
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          email: string
+          finance_dashboard_view: string
+          id: string
+          invite_slots_remaining: number
+          is_active: boolean
+          language: string
+          last_login_date: string | null
+          role: string
+          theme: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "profiles"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       invite_member: {
         Args: { p_email: string; p_workspace_id: string }
         Returns: string

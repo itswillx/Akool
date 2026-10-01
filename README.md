@@ -102,10 +102,8 @@ Outros workflows: **Supabase drift** (push na `main` em `supabase/`, toda segund
 | `admin-ops` | Operações de administrador sobre contas, registradas no `audit_log` |
 | `site-backup` | Backups do banco: manual, com JWT de admin, e automático, pelo cron |
 | `cards-api` | API da fila de desenvolvimento, autenticada por token pessoal (`akool_pat_…`) |
-| `ai-chat` | Assistente de IA (Gemini), com limite de uso por usuário |
-| `analyze-transaction-photo` | Lê a foto de um comprovante ou produto e sugere a transação (descrição, valor e categoria) |
-| `categorize-transactions` | Sugere categorias para transações importadas de extrato, com a chave de IA do próprio usuário |
-| `study-lookup` | Busca referências em APIs públicas sem chave (Wikipedia, Wikcionário e outras) |
+
+As edges de IA (`ai-chat`, `analyze-transaction-photo`, `categorize-transactions` e `study-lookup`) saíram em 01/10/2026 (SEC-015): nenhuma tela as usava.
 
 ## Ambientes
 

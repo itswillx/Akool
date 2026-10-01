@@ -559,6 +559,9 @@ export const ptBR = {
   audit_action_ban_user: 'Desativar usuário',
   audit_action_unban_user: 'Reativar usuário',
   audit_action_delete_user: 'Excluir usuário',
+  audit_action_add_invite_slots: 'Alterar slots de convite',
+  audit_action_revoke_invite_code: 'Revogar convite',
+  audit_action_profile_privilege_change: 'Privilégio alterado fora do painel',
   audit_action_restore_backup: 'Restaurar backup',
   audit_action_delete_backup: 'Excluir backup',
 

@@ -561,6 +561,9 @@ const en: Record<TranslationKey, string> = {
   audit_action_ban_user: 'Deactivate user',
   audit_action_unban_user: 'Reactivate user',
   audit_action_delete_user: 'Delete user',
+  audit_action_add_invite_slots: 'Change invite slots',
+  audit_action_revoke_invite_code: 'Revoke invite',
+  audit_action_profile_privilege_change: 'Privilege changed outside the panel',
   audit_action_restore_backup: 'Restore backup',
   audit_action_delete_backup: 'Delete backup',
 
