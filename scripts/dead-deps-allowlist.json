@@ -1,0 +1,9 @@
+[
+  { "name": "@mantine/core", "motivo": "Peer dependency do @blocknote/mantine (o editor de notas); ninguém importa direto." },
+  { "name": "@mantine/hooks", "motivo": "Peer dependency do @blocknote/mantine; ninguém importa direto." },
+  { "name": "@types/node", "motivo": "Tipos do Node para scripts e configs; o TypeScript carrega sem import." },
+  { "name": "@types/react", "motivo": "Tipos do React; o TypeScript carrega sem import." },
+  { "name": "@types/react-dom", "motivo": "Tipos do react-dom; o TypeScript carrega sem import." },
+  { "name": "@vitest/coverage-v8", "motivo": "Plugin que o `vitest --coverage` carrega sozinho (test:coverage)." },
+  { "name": "@testing-library/dom", "motivo": "Peer dependency do @testing-library/react; os testes importam só o /react." }
+]

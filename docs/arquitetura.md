@@ -4,7 +4,7 @@ Como o app sobe, em que ordem os providers se montam e por quê, como o `MainCon
 
 ## Boot (`src/main.tsx`)
 
-1. **Variáveis de ambiente:** sem `VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY` o app mostra a `ConfigErrorScreen` em vez de quebrar em silêncio.
+1. **Variáveis de ambiente:** sem `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` o app mostra a `ConfigErrorScreen` em vez de quebrar em silêncio.
 2. **Sentry** (REL-011): só com `VITE_SENTRY_DSN` no build; sem ele, no-op, e o SDK fica num chunk assíncrono fora do boot.
 3. **Idioma salvo:** o dicionário pt-BR vai no boot; com `en` salvo no aparelho, o inglês é baixado antes do primeiro render (limite de 3 s). O `<html lang>` acompanha.
 4. `createRoot` → `StrictMode` → `ErrorBoundary` (com `RootFallback`) → `App`.

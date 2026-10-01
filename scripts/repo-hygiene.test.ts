@@ -221,3 +221,45 @@ describe('chaves de storage só no inventário (QA-006)', () => {
     expect(lines(/['"`](excalinotion_|akool_(workspace_mode|onboarding_seen|recovery_pending))/)).toEqual([])
   })
 })
+
+// DEV-011: o dev server fica em localhost; expor na rede é opt-in (dev:lan).
+describe('dev server (DEV-011)', () => {
+  it('vite.config.ts não liga host: true; dev:lan existe com --host', () => {
+    const vite = readFileSync(join(ROOT, 'vite.config.ts'), 'utf8')
+    expect(vite).not.toMatch(/host:\s*true/)
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+    expect(pkg.scripts['dev:lan']).toBe('vite --host')
+    expect(pkg.scripts.dev).toBe('vite')
+  })
+})
+
+// DEV-012: docs e configs apontando para o que existe.
+describe('docs e configs em dia (DEV-012)', () => {
+  it('toda migration citada no README de migrations existe', () => {
+    const readme = readFileSync(join(ROOT, 'supabase/migrations/README.md'), 'utf8')
+    const cited = [...new Set(readme.match(/2026\d{10}_[a-z0-9_]+\.sql/g) ?? [])]
+    expect(cited.length).toBeGreaterThan(3)
+    expect(cited.filter(f => !existsSync(join(ROOT, 'supabase/migrations', f)))).toEqual([])
+  })
+
+  it('.gitignore sem barra invertida', () => {
+    const lines = readFileSync(join(ROOT, '.gitignore'), 'utf8').split('\n')
+    expect(lines.filter(l => l.includes('\\'))).toEqual([])
+  })
+
+  it('toda variável que as functions leem está documentada ou é injetada pelo Supabase', () => {
+    const injected = new Set(['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'])
+    const example = readFileSync(join(ROOT, 'supabase/functions/.env.example'), 'utf8')
+    const deploy = readFileSync(join(ROOT, 'docs/deploy-coolify.md'), 'utf8')
+    const files = execSync('git ls-files supabase/functions', { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(f => f.endsWith('.ts') && !f.includes('.test.'))
+    const read = new Set(files.flatMap(f => [...readFileSync(join(ROOT, f), 'utf8').matchAll(/Deno\.env\.get\(["']([A-Z_]+)["']\)/g)].map(m => m[1])))
+    expect(read.size).toBeGreaterThan(2)
+    const missing = [...read].filter(v => !injected.has(v) && !(example.includes(`${v}=`) && deploy.includes(v)))
+    expect(missing).toEqual([])
+  })
+
+  it('o README tem a seção Portas com 5173 e 4173', () => {
+    const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+    expect(readme).toMatch(/### Portas[\s\S]*\| 5173 \|[\s\S]*\| 4173 \|/)
+  })
+})

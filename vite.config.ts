@@ -85,7 +85,9 @@ export default defineConfig(({ mode }) => {
       __EXCALIDRAW_ASSET_PATH__: JSON.stringify(EXCALIDRAW_ASSET_PATH),
     },
     server: {
-      host: true, // escuta em 0.0.0.0 — acessível pelo celular na mesma rede
+      // DEV-011: só localhost por padrão (em Wi-Fi público, 0.0.0.0 expunha o
+      // dev server a qualquer aparelho da rede). Para testar no celular:
+      // `npm run dev:lan` (vite --host), que mostra a URL da rede.
       port: 5173,
     },
     test: {

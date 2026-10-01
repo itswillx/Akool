@@ -82,11 +82,18 @@ ALLOWED_ORIGINS=https://SUA-URL-COOLIFY,https://www.slinkysalsichinha.com.br
 Localhost só em desenvolvimento (no `.env` do `supabase functions serve`), nunca
 no secret de produção.
 
-Secrets já usadas pelas functions (configure se ainda não existirem):
+Secrets que as functions leem (`Deno.env.get`); configure se ainda não existirem:
 
 ```env
-BACKUP_CRON_SECRET=<string aleatória longa>
+ALLOWED_ORIGINS=https://www.slinkysalsichinha.com.br   # CORS (acima)
+BACKUP_CRON_SECRET=<string aleatória longa>            # site-backup, disparo automático
+SENTRY_DSN=                                             # opcional, seção 7
+SENTRY_RELEASE=                                         # opcional, seção 7
 ```
+
+`SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` o Supabase
+injeta sozinho. A lista completa, com os valores locais, está em
+[`supabase/functions/.env.example`](../supabase/functions/.env.example).
 
 `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` podem ser **removidas** dos secrets
 do projeto: nada mais as lê depois da aposentadoria da `google-calendar`.
@@ -113,7 +120,6 @@ http://localhost:5173/**
 - [ ] `index.html` com `Cache-Control: no-cache`; asset em `/assets/` com
   `immutable`; `X-Frame-Options: DENY` e `X-Content-Type-Options: nosniff` em tudo
 - [ ] Backup admin (`site-backup`) sem erro CORS
-- [ ] Google Calendar OAuth (se usado) com redirect na URL do Coolify
 
 ## 5. Manutenção / novos deploys
 
