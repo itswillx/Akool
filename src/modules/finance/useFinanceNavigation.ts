@@ -50,18 +50,5 @@ export function useFinanceNavigation() {
     localStorage.removeItem('finance_view_mode')
   }, [])
 
-  // Listen for tab change events dispatched by sidebar. Aceita 'myprojects',
-  // 'myprojects:store' (deep-link para a sub-aba) e os ids antigos.
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const target = resolveTabRequest((e as CustomEvent<string>).detail)
-      if (!target) return
-      if (target.section) setProjSection(target.section)
-      setTab(target.tab)
-    }
-    window.addEventListener('finance_tab_change', handler)
-    return () => window.removeEventListener('finance_tab_change', handler)
-  }, [])
-
   return { tab, setTab, projSection, setProjSection, navigateTo, direction, setDirection }
 }

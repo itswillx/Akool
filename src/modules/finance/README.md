@@ -87,10 +87,12 @@ não virar despesa fantasma na importação de extrato.
 
 ### Abas
 
-`TAB_IDS` no topo do `FinancePanel.tsx` é a fonte única das abas — o union
-`TabId`, o validador do `localStorage` e o whitelist do `CustomEvent`
-`finance_tab_change` derivam todos dele. Adicionar uma aba é acrescentar uma
-entrada ali e outra em `FINANCE_NAV`.
+`TAB_IDS` em `financeFormat.ts` é a fonte única das abas — o union `TabId` e o
+validador do `localStorage` derivam dele. Adicionar uma aba é acrescentar uma
+entrada ali e outra em `FINANCE_NAV`. A navegação entre abas é por `navigateTo`
+e `localStorage`; o `CustomEvent` `finance_tab_change` saiu (ARCH-007). O único
+evento entre módulos é `finance_transactions_changed`, tipado em
+`src/lib/appEvents.ts`.
 
 Loja e Metas **não são abas**: são sub-abas de `'myprojects'`. Os ids antigos
 continuam sendo aceitos por `resolveTabRequest` (a única função que os conhece),

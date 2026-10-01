@@ -42,7 +42,7 @@ vi.mock('../../../lib/supabase', () => ({
   },
 }))
 
-import { TRANSACTIONS_CHANGED_EVENT, useFinanceStore } from './useFinanceStore'
+import { useFinanceStore } from './useFinanceStore'
 
 const product = (id: string, attachments: unknown = []): FinanceStoreProduct => ({
   id, user_id: 'u1', workspace_id: null, kind: 'unique', name: id, category: 'GPU', condition: 'used',
@@ -84,7 +84,7 @@ beforeEach(() => {
   for (const key of Object.keys(db.results)) delete db.results[key]
   db.calls = []
   txEvents = 0
-  window.addEventListener(TRANSACTIONS_CHANGED_EVENT, onTxChanged)
+  window.addEventListener('finance_transactions_changed', onTxChanged)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -93,7 +93,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   container.remove()
-  window.removeEventListener(TRANSACTIONS_CHANGED_EVENT, onTxChanged)
+  window.removeEventListener('finance_transactions_changed', onTxChanged)
 })
 
 describe('useFinanceStore: carga', () => {

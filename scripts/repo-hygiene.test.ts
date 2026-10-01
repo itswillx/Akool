@@ -149,3 +149,31 @@ describe('leituras paginadas (REL-003)', () => {
     expect(maxRows).toBeGreaterThanOrEqual(FETCH_PAGE_SIZE)
   })
 })
+
+// UX-014: o index.html referencia o manifest, os ícones e a fonte local; cada
+// arquivo referenciado tem de existir em public/, senão o deploy serve o
+// index.html no lugar (fallback do SPA) e o navegador engole o erro.
+describe('index.html (UX-014)', () => {
+  const html = readFileSync(join(ROOT, 'index.html'), 'utf8')
+
+  it('declara description, theme-color (claro e escuro), manifest e apple-touch-icon', () => {
+    expect(html).toMatch(/<meta name="description" content="[^"]{20,}"/)
+    expect(html).toMatch(/<meta name="theme-color" content="#[0-9a-f]{6}" media="\(prefers-color-scheme: light\)"/)
+    expect(html).toMatch(/<meta name="theme-color" content="#[0-9a-f]{6}" media="\(prefers-color-scheme: dark\)"/)
+    expect(html).toContain('<link rel="manifest" href="/manifest.webmanifest"')
+    expect(html).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png"')
+    expect(html).not.toContain('fonts.googleapis.com')
+  })
+
+  it('todo arquivo de public/ referenciado no index.html e no manifest existe', () => {
+    const manifest = readFileSync(join(ROOT, 'public/manifest.webmanifest'), 'utf8')
+    const refs = [...(html + manifest).matchAll(/(?:href|src)=?"?:?\s*"?(\/[\w./-]+\.(?:svg|png|webmanifest|woff2))"/g)].map(m => m[1])
+    expect(refs.length).toBeGreaterThanOrEqual(6)
+    expect(refs.filter(r => !existsSync(join(ROOT, 'public', r)))).toEqual([])
+  })
+
+  it('o favicon fica branco em aba escura', () => {
+    const svg = readFileSync(join(ROOT, 'public/favicon.svg'), 'utf8')
+    expect(svg).toMatch(/@media \(prefers-color-scheme: dark\)\s*\{\s*path\s*\{\s*fill:\s*#fff/)
+  })
+})
