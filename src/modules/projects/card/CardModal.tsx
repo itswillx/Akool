@@ -17,7 +17,7 @@ import { activateProps } from '../../../lib/a11y'
 import { formatCardAsMarkdown } from '../../../lib/cardMarkdown'
 import { type QueueBadge } from '../../../lib/cardQueue'
 import { copyToClipboard } from '../../../lib/clipboard'
-import { validateUpload } from '../../../lib/uploadValidation'
+import { prepareUpload } from '../../../lib/uploadValidation'
 import type { ProjectCard, ProjectCardChecklistItem, ProjectCardPriority } from '../../../types'
 import type { Member } from '../projectsShared'
 import { AUTOSAVE_DEBOUNCE_MS, inputStyle, labelStyle, PRIORITY_COLORS, queueBadgeLabel } from '../projectsShared'
@@ -127,20 +127,23 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
     }
   }, [onDraftChange, scheduleAutoSave])
 
+  // PERF-010: a foto é comprimida já ao entrar na lista de pendentes, então a
+  // prévia e o upload usam o arquivo reduzido (e uma foto de 12 MB é aceita).
   const addPendingFile = (file: File) => {
-    const result = validateUpload('card-image', file)
-    if (!result.ok) {
-      showToast('error', t(result.reason === 'too_large' ? 'upload_error_too_large' : 'upload_error_invalid_type'))
-      return
-    }
-    const id = crypto.randomUUID()
-    const pending: PendingFile = { id, file: result.file, preview: URL.createObjectURL(result.file) }
-    setPendingFiles(prev => {
-      const next = [...prev, pending]
-      pendingFilesRef.current = next
-      return next
+    void prepareUpload('card-image', file).then(result => {
+      if (!result.ok) {
+        showToast('error', t(result.reason === 'too_large' ? 'upload_error_too_large' : 'upload_error_invalid_type'))
+        return
+      }
+      const id = crypto.randomUUID()
+      const pending: PendingFile = { id, file: result.file, preview: URL.createObjectURL(result.file) }
+      setPendingFiles(prev => {
+        const next = [...prev, pending]
+        pendingFilesRef.current = next
+        return next
+      })
+      void runAutoSave(formRef.current, true)
     })
-    void runAutoSave(formRef.current, true)
   }
 
   const removePendingFile = (id: string) => {

@@ -12,11 +12,11 @@ import {
     Trash2,
     Upload
 } from 'lucide-react'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef } from 'react'
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { dndAccessibility } from '../../lib/dndAccessibility'
-import type { Page } from '../../types'
+import type { Page, ProjectCard, ProjectColumn } from '../../types'
 import { CardView } from './board/Card'
 import { Column, SortableColumn } from './board/Column'
 import { loadCardDraft } from './card/cardDraft'
@@ -38,6 +38,10 @@ import { OverviewView } from './views/OverviewView'
 // PERF-009: o Gantt só baixa na visão Linha do tempo.
 const GanttView = lazy(() => import('./GanttView'))
 
+// PERF-011: referências fixas (a coluna vazia e a do overlay de arrastar).
+const NO_CARDS: ProjectCard[] = []
+const noop = () => {}
+
 // ─── Main panel ───────────────────────────────────────────────────────────────
 // ViewMode/VALID_VIEWS moram no ProjectsNav, como StudyViewName mora no StudyNav.
 
@@ -57,6 +61,14 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
   // Gravações (quadros, colunas, cards, fila): useBoardActions.ts
   const boardActions = useBoardActions({ board: boardData, onOpenPage })
   const { createBoard, updateBoard, deleteBoard, enqueueCard, saveColumn, deleteColumn, closeCardModal, validateCard, handleDraftChange, cardDraftKey, autoSaveCard, saveCard, deleteCard, openLinkedPage, handleRescheduleCard, handleGenerateSchedule } = boardActions
+
+  // PERF-011: handlers estáveis para o memo das colunas e dos cards segurar.
+  const openNewCard = useCallback((columnId: string) => setCardModal({ open: true, card: null, columnId }), [setCardModal])
+  const openCard = useCallback((card: ProjectCard) => setCardModal({ open: true, card }), [setCardModal])
+  const openRenameColumn = useCallback((column: ProjectColumn) => setColumnModal({ open: true, column }), [setColumnModal])
+  const deleteColumnRef = useRef(deleteColumn)
+  useEffect(() => { deleteColumnRef.current = deleteColumn })
+  const removeColumn = useCallback((column: ProjectColumn) => deleteColumnRef.current(column), [])
 
   // Arrastar e soltar: useBoardDnd.ts
   const boardDnd = useBoardDnd({ board: boardData })
@@ -212,11 +224,11 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
               <SortableContext items={columns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
                 {columns.map(col => (
                   <SortableColumn
-                    key={col.id} column={col} cards={cardsByColumn[col.id] ?? []} canEdit={canEdit} priorityLabel={pLabel}
-                    onAddCard={() => setCardModal({ open: true, card: null, columnId: col.id })}
-                    onCardClick={(c) => setCardModal({ open: true, card: c })}
-                    onRename={() => setColumnModal({ open: true, column: col })}
-                    onDelete={() => deleteColumn(col)}
+                    key={col.id} column={col} cards={cardsByColumn[col.id] ?? NO_CARDS} canEdit={canEdit} priorityLabel={pLabel}
+                    onAddCard={openNewCard}
+                    onCardClick={openCard}
+                    onRename={openRenameColumn}
+                    onDelete={removeColumn}
                   />
                 ))}
               </SortableContext>
@@ -230,8 +242,8 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
               {activeDragColumn ? (
                 <div style={{ width: 290, opacity: 0.9, cursor: 'grabbing' }}>
                   <Column
-                    column={activeDragColumn} cards={cardsByColumn[activeDragColumn.id] ?? []} canEdit={false} priorityLabel={pLabel}
-                    onAddCard={() => {}} onCardClick={() => {}} onRename={() => {}} onDelete={() => {}}
+                    column={activeDragColumn} cards={cardsByColumn[activeDragColumn.id] ?? NO_CARDS} canEdit={false} priorityLabel={pLabel}
+                    onAddCard={noop} onCardClick={noop} onRename={noop} onDelete={noop}
                   />
                 </div>
               ) : activeDragCard ? <div style={{ width: 274 }}><CardView card={activeDragCard} priorityLabel={pLabel(activeDragCard.priority)} dragging /></div> : null}
@@ -254,10 +266,10 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
             onDragCancel={handleDragCancel}
             activeDragCard={activeDragCard}
             pLabel={pLabel}
-            onAddCard={(columnId) => setCardModal({ open: true, card: null, columnId })}
-            onCardClick={(c) => setCardModal({ open: true, card: c })}
-            onRename={(col) => setColumnModal({ open: true, column: col })}
-            onDelete={deleteColumn}
+            onAddCard={openNewCard}
+            onCardClick={openCard}
+            onRename={openRenameColumn}
+            onDelete={removeColumn}
             onMoveCardToColumn={handleMoveCardToColumn}
             onReorderColumn={canEdit ? moveColumnByOffset : undefined}
           />

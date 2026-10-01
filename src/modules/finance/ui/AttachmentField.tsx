@@ -4,7 +4,7 @@ import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { supabase } from '../../../lib/supabase'
 import { resolveSignedUrl } from '../../../lib/storageUrl'
-import { validateUpload } from '../../../lib/uploadValidation'
+import { prepareUpload } from '../../../lib/uploadValidation'
 import { useDialog } from '../../../hooks/useDialog'
 import type { FinanceAttachment } from '../../../types'
 import { ghostBtnStyle, labelStyle } from './tokens'
@@ -101,7 +101,8 @@ export function AttachmentField({ ownerId, value, onChange, bucket }: {
     setError(null)
     const added: FinanceAttachment[] = []
     for (const file of Array.from(files)) {
-      const result = validateUpload('finance-attachment', file)
+      // PERF-010: fotos sobem reduzidas; PDF segue como está.
+      const result = await prepareUpload('finance-attachment', file)
       if (!result.ok) {
         setError(t(result.reason === 'too_large' ? 'upload_error_too_large' : 'upload_error_invalid_type'))
         continue
@@ -113,8 +114,8 @@ export function AttachmentField({ ownerId, value, onChange, bucket }: {
         id: crypto.randomUUID(),
         path,
         name: file.name,
-        mime: file.type,
-        size: file.size,
+        mime: result.file.type,
+        size: result.file.size,
         uploaded_at: new Date().toISOString(),
       })
     }

@@ -6,7 +6,7 @@ import { useLanguage } from '../../../i18n/LanguageContext'
 import { fromCents, toCents } from '../../../lib/money'
 import { resolveSignedUrl } from '../../../lib/storageUrl'
 import { supabase } from '../../../lib/supabase'
-import { uploadContextBucket, validateUpload } from '../../../lib/uploadValidation'
+import { prepareUpload, uploadContextBucket } from '../../../lib/uploadValidation'
 import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceTxType, FinanceWorkspace } from '../../../types'
 import {
 Drawer,
@@ -140,7 +140,8 @@ export function TransactionModal({
     if (photoFile) {
       // SEC-011: tipo e tamanho conferidos antes do upload; a extensão vem do
       // MIME validado, nunca do nome do arquivo.
-      const checked = validateUpload('transaction-photo', photoFile)
+      // PERF-010: a foto do comprovante sobe reduzida.
+      const checked = await prepareUpload('transaction-photo', photoFile)
       if (!checked.ok) {
         setSaveError(t(checked.reason === 'too_large' ? 'upload_error_too_large' : 'upload_error_invalid_type'))
         setSaving(false)

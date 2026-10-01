@@ -106,7 +106,8 @@ export function useBoardData() {
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates, keyboardCodes: KANBAN_KEYBOARD_CODES }),
   )
-  const pLabel = (p: ProjectCardPriority) => t(`projects_priority_${p}`)
+  // PERF-011: estável, para o memo das colunas.
+  const pLabel = useCallback((p: ProjectCardPriority) => t(`projects_priority_${p}`), [t])
 
   useEffect(() => { localStorage.setItem(VIEW_KEY, view) }, [view])
 

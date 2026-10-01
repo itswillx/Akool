@@ -101,7 +101,7 @@ export function CardAttachmentsSection({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    // Validação real acontece em onAddPending (validateUpload) — este check
+    // Validação real acontece em onAddPending (prepareUpload: comprime e valida) — este check
     // é só o filtro de picker do input accept="image/*".
     if (file) onAddPending(file)
     e.target.value = ''

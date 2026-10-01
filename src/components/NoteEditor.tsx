@@ -8,7 +8,7 @@ import '@blocknote/mantine/style.css'
 import { FolderKanban, PencilRuler } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { resolveSignedUrl } from '../lib/storageUrl'
-import { validateUpload, uploadContextBucket } from '../lib/uploadValidation'
+import { prepareUpload, uploadContextBucket } from '../lib/uploadValidation'
 import { DiagramBlock } from './DiagramBlock'
 import { ProjectCardBlock } from './blocks/ProjectCardBlock'
 import ImportProjectCardsModal from './ImportProjectCardsModal'
@@ -174,7 +174,8 @@ function EditorCore({ pageId, initialContent, readOnly, initialVersion, onReload
   const { showToast } = useToast()
 
   const uploadFile = useCallback(async (file: File): Promise<string> => {
-    const result = validateUpload('note-image', file)
+    // PERF-010: a foto sobe reduzida (lado maior até 2048 px, WebP).
+    const result = await prepareUpload('note-image', file)
     if (!result.ok) {
       const message = t(result.reason === 'too_large' ? 'upload_error_too_large' : 'upload_error_invalid_type')
       showToast('error', message)
