@@ -124,7 +124,7 @@ export default function NewStudyTopicModal({ open, onClose, onCreateManual, onIm
       type="button"
       onClick={onClick}
       disabled={disabled}
-      style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}
+      style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}
     >
       {label}
     </button>
@@ -208,7 +208,7 @@ export default function NewStudyTopicModal({ open, onClose, onCreateManual, onIm
                 type="checkbox"
                 checked={includeQuiz}
                 onChange={e => setIncludeQuiz(e.target.checked)}
-                style={{ width: 15, height: 15, accentColor: '#6366f1', cursor: 'pointer' }}
+                style={{ width: 15, height: 15, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
               />
               {t('study_form_quiz')}
             </label>
@@ -223,7 +223,7 @@ export default function NewStudyTopicModal({ open, onClose, onCreateManual, onIm
                     style={{
                       padding: '5px 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
                       border: quizCount === count ? 'none' : '1px solid var(--color-border)',
-                      background: quizCount === count ? '#6366f1' : 'var(--color-bg)',
+                      background: quizCount === count ? 'var(--color-accent)' : 'var(--color-bg)',
                       color: quizCount === count ? '#fff' : 'var(--color-text)',
                     }}
                   >
@@ -245,7 +245,7 @@ export default function NewStudyTopicModal({ open, onClose, onCreateManual, onIm
               type="button"
               onClick={() => setStep(2)}
               disabled={!canSubmitTitle}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: canSubmitTitle ? 'pointer' : 'default', opacity: canSubmitTitle ? 1 : 0.5 }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: canSubmitTitle ? 'pointer' : 'default', opacity: canSubmitTitle ? 1 : 0.5 }}
             >
               <Sparkles size={14} />
               {t('study_new_generate')}
@@ -275,7 +275,7 @@ export default function NewStudyTopicModal({ open, onClose, onCreateManual, onIm
               <button
                 type="button"
                 onClick={copyPrompt}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 8, border: 'none', background: copied ? '#22c55e' : '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 8, border: 'none', background: copied ? '#22c55e' : 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
               >
                 {copied ? <Check size={14} /> : <Copy size={14} />}
                 {copied ? t('study_prompt_copied') : t('study_copy_prompt')}

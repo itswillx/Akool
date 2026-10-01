@@ -52,7 +52,14 @@ export function AccountsTab({ accounts, transactions, onAdd, onEdit }: {
       </div>
 
       {accounts.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)', fontSize: 14, textAlign: 'center', padding: '32px 0' }}>{t('finance_no_accounts')}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '32px 0' }}>
+          <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: 14, textAlign: 'center' }}>{t('finance_no_accounts')}</p>
+          {/* UX-012: ação no estado vazio */}
+          <button type="button" onClick={onAdd}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            {t('finance_cta_new_account')}
+          </button>
+        </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
           {accounts.map(acc => {

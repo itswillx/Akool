@@ -314,7 +314,7 @@ export default function HelpPanel() {
             </div>
           </div>
           <button
-            onClick={startTour}
+            onClick={() => startTour()}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderRadius: 12,
               border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,

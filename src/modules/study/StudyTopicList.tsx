@@ -103,7 +103,7 @@ export default function StudyTopicList({ topics, cardsByTopic, loading, onOpen, 
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 999,
           border: active ? 'none' : '1px solid var(--color-border)', cursor: 'pointer', flexShrink: 0,
-          backgroundColor: active ? '#6366f1' : 'var(--color-surface)',
+          backgroundColor: active ? 'var(--color-accent)' : 'var(--color-surface)',
           color: active ? '#fff' : 'var(--color-text)', fontSize: 12, fontWeight: 600,
         }}
       >
@@ -151,12 +151,12 @@ export default function StudyTopicList({ topics, cardsByTopic, loading, onOpen, 
         <span style={{
           width: 44, height: 44, borderRadius: 10, backgroundColor: 'var(--color-surface)',
           border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', color: '#6366f1', flexShrink: 0,
+          justifyContent: 'center', color: 'var(--color-accent)', flexShrink: 0,
         }}>
           <Plus size={20} />
         </span>
         <span style={{ minWidth: 0 }}>
-          <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: '#6366f1' }}>{t('study_create_card_title')}</span>
+          <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: 'var(--color-accent)' }}>{t('study_create_card_title')}</span>
           <span style={{ display: 'block', fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: 2 }}>{t('study_create_card_hint')}</span>
         </span>
       </button>
@@ -168,6 +168,11 @@ export default function StudyTopicList({ topics, cardsByTopic, loading, onOpen, 
           <GraduationCap size={38} strokeWidth={1.25} />
           <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: 'var(--color-text)' }}>{t('study_empty_title')}</p>
           <p style={{ margin: 0, fontSize: 13 }}>{t('study_empty_hint')}</p>
+          {/* UX-012: ação no estado vazio */}
+          <button type="button" onClick={onNew}
+            style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <Plus size={14} /> {t('study_cta_new_topic')}
+          </button>
         </div>
       ) : rows.length === 0 ? (
         <p style={{ marginTop: 18, fontSize: 13, color: 'var(--color-text-muted)' }}>{t('study_empty_filtered')}</p>

@@ -348,7 +348,7 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
       <label style={labelStyle}>{t('projects_linked_page')}</label>
       <PagePicker value={form.linked_page_id} onChange={(id) => patchForm(f => ({ ...f, linked_page_id: id }), true)} />
       {form.linked_page_id && (
-        <button onClick={() => onOpenPage(form.linked_page_id!)} style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: '#6366f1', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+        <button onClick={() => onOpenPage(form.linked_page_id!)} style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: 'var(--color-accent)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
           <ExternalLink size={13} />{t('projects_open_page')}
         </button>
       )}
@@ -490,7 +490,7 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
           />
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
             <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => setEditingDesc(false)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               <CheckSquare size={14} />{t('projects_desc_done')}
             </button>
           </div>

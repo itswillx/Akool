@@ -75,7 +75,7 @@ export default function ImportStudyAppendModal({ open, onClose, onAppend, isMobi
             type="button"
             onClick={handleAppend}
             disabled={!canAppend || saving}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: saving ? 'wait' : canAppend ? 'pointer' : 'default', opacity: canAppend ? 1 : 0.5 }}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: saving ? 'wait' : canAppend ? 'pointer' : 'default', opacity: canAppend ? 1 : 0.5 }}
           >
             {saving ? t('study_importing') : t('study_append_confirm')}
           </button>

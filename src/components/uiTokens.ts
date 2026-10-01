@@ -38,6 +38,12 @@ export const FIN_POS_SOFT = 'rgba(16,185,129,0.13)'
 export const FIN_NEG_SOFT = 'rgba(239,68,68,0.13)'
 export const FIN_WARN = '#f59e0b'                             // attention / overdue (kept semantic)
 
+// UX-015: o índigo de destaque. Antes era `#6366f1` fixo em 99 pontos; agora é o
+// token, que no tema escuro clareia. Paletas de dados (cor de quadro, categoria,
+// conta, meta) continuam hex: são escolhas do usuário gravadas no banco.
+export const ACCENT = 'var(--color-accent)'
+export const ACCENT_SOFT = 'var(--color-accent-soft)'
+
 // Numeric figures use tabular-nums so columns of money align (design parity).
 export const tabularNums: CSSProperties = { fontVariantNumeric: 'tabular-nums' }
 

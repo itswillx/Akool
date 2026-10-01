@@ -26,7 +26,7 @@ export function Avatar({ title, size = 44 }: { title: string; size?: number }) {
 export function ProgressBar({ pct, height = 6 }: { pct: number; height?: number }) {
   return (
     <div style={{ height, borderRadius: 999, backgroundColor: 'var(--color-border)', overflow: 'hidden', width: '100%' }}>
-      <div style={{ width: `${Math.min(100, Math.max(0, pct))}%`, height: '100%', borderRadius: 999, backgroundColor: '#6366f1', transition: 'width 0.25s' }} />
+      <div style={{ width: `${Math.min(100, Math.max(0, pct))}%`, height: '100%', borderRadius: 999, backgroundColor: 'var(--color-accent)', transition: 'width 0.25s' }} />
     </div>
   )
 }

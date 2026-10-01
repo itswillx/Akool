@@ -47,7 +47,7 @@ export default function StudyDiary({ logs, onAdd, onRequestDeleteLog }: StudyDia
             type="button"
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 13px', borderRadius: 7,
-              border: 'none', backgroundColor: '#6366f1', color: '#fff', fontSize: 12.5, fontWeight: 600,
+              border: 'none', backgroundColor: 'var(--color-accent)', color: '#fff', fontSize: 12.5, fontWeight: 600,
               cursor: draft.trim() ? 'pointer' : 'default', opacity: draft.trim() ? 1 : 0.5,
             }}
           >

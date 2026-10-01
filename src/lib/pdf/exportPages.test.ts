@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Page } from '../types'
+import type { Page } from '../../types'
 
 // PERF-006: as consultas saem em lote (e não por página), e o Excalidraw só é
 // carregado quando alguma página exportada tem desenho.
@@ -41,10 +41,10 @@ function fakeClient() {
   }
 }
 
-vi.mock('../lib/supabase', () => ({ supabase: fakeClient() }))
+vi.mock('../supabase', () => ({ supabase: fakeClient() }))
 
-import { exportPagesToPdf, fetchPageContents, groupByPage, pdfSafe } from './usePdfExport'
-import { getT } from '../i18n/translations'
+import { exportPagesToPdf, fetchPageContents, groupByPage, pdfSafe } from './exportPages'
+import { getT } from '../../i18n/translations'
 
 const page = (id: string, type: Page['type']) => ({ id, type, title: id, updated_at: '2026-09-26T12:00:00Z' }) as Page
 

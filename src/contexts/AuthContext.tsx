@@ -8,6 +8,12 @@ import { localDateKey } from '../lib/localDate'
 import { clearLocalUserData } from '../lib/localData'
 import { getT, toLang } from '../i18n/translations'
 
+/** UX-012: o jsonb de profiles.onboarding vira módulo → data; lixo é ignorado. */
+function asOnboarding(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'))
+}
+
 export interface UserProfile {
   id: string
   email: string
@@ -23,6 +29,8 @@ export interface UserProfile {
   /** Storage PATH in the private `avatars` bucket, resolved via signed URL. */
   avatar_url: string | null
   finance_dashboard_view: 'simple' | 'detailed'
+  /** UX-012: tour visto, por módulo (`welcome`, `projects`, `finance`, `study`) → data ISO. */
+  onboarding: Record<string, string>
 }
 
 interface AuthContextType {
@@ -52,7 +60,7 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<{ error: string | null }>
   completePasswordReset: (newPassword: string) => Promise<{ error: string | null }>
   cancelPasswordReset: () => Promise<void>
-  updateProfile: (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url' | 'finance_dashboard_view'>>) => Promise<{ error: string | null }>
+  updateProfile: (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url' | 'finance_dashboard_view' | 'onboarding'>>) => Promise<{ error: string | null }>
   refreshProfile: () => Promise<void>
 }
 
@@ -115,12 +123,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // legíveis para outros perfis; o próprio perfil vem pela RPC get_my_profile.
     const { data } = await supabase
       .rpc('get_my_profile')
-      .select('id, email, display_name, role, is_active, language, theme, invite_slots_remaining, last_login_date, avatar_emoji, avatar_color, avatar_url, finance_dashboard_view')
+      .select('id, email, display_name, role, is_active, language, theme, invite_slots_remaining, last_login_date, avatar_emoji, avatar_color, avatar_url, finance_dashboard_view, onboarding')
       .eq('id', userId)
       .single()
     if (data) {
       // `language` é texto livre no banco (sem CHECK).
-      const profile: UserProfile = { ...data, language: toLang(data.language) }
+      const profile: UserProfile = { ...data, language: toLang(data.language), onboarding: asOnboarding(data.onboarding) }
       // Catches a ban that happened after this session was already open —
       // signIn's own is_active check only covers the login moment itself.
       if (!profile.is_active) {
@@ -305,7 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut()
   }, [signOut])
 
-  const updateProfile = useCallback(async (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url' | 'finance_dashboard_view'>>): Promise<{ error: string | null }> => {
+  const updateProfile = useCallback(async (data: Partial<Pick<UserProfile, 'display_name' | 'language' | 'theme' | 'avatar_emoji' | 'avatar_color' | 'avatar_url' | 'finance_dashboard_view' | 'onboarding'>>): Promise<{ error: string | null }> => {
     if (!user) return { error: authT()('settings_unauthenticated') }
     const { error } = await supabase.from('profiles').update(data).eq('id', user.id)
     if (error) return { error: error.message }

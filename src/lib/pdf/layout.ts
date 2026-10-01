@@ -1,5 +1,5 @@
 // Medidas A4 (mm) dos PDFs exportados. Compartilhadas pelo export de páginas
-// (hooks/usePdfExport.ts) e pelo do financeiro (lib/financePdf.ts).
+// (lib/pdf/exportPages.ts) e pelo do financeiro (lib/financePdf.ts).
 export const MARGIN = 15
 export const PAGE_W = 210
 export const PAGE_H = 297

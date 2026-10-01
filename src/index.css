@@ -39,6 +39,10 @@
   --color-icon: #8a8985; /* 3,5:1 — ícone que carrega sentido pede 3:1 */
   --color-done: #10b981;
   --color-primary: #3b82f6;
+  /* UX-015: o índigo de destaque (chips ativos, ícones de atalho, notificação);
+     não é o botão primário (grafite, --color-btn-primary) nem o link/foco (--color-primary). */
+  --color-accent: #6366f1;
+  --color-accent-soft: rgba(99, 102, 241, 0.13);
   --color-error: #ef4444;
   --color-success: #10b981;
   --color-warning: #f59e0b;
@@ -78,6 +82,8 @@ html.dark {
   --color-icon: #7a7a77;
   --color-done: #10b981;
   --color-primary: #60a5fa;
+  --color-accent: #818cf8;
+  --color-accent-soft: rgba(129, 140, 248, 0.18);
   --color-error: #f87171;
   --color-success: #34d399;
   --color-warning: #fbbf24;

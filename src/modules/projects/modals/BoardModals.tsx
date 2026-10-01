@@ -44,7 +44,7 @@ export function BoardModal({ board, onClose, onSave }: { board: ProjectBoard | n
           <label style={labelStyle}>{t('projects_board_icon')}</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {BOARD_ICONS.map(ic => (
-              <button key={ic} onClick={() => setIcon(ic)} style={{ width: 34, height: 34, borderRadius: 8, border: '1.5px solid', borderColor: icon === ic ? '#6366f1' : 'var(--color-border)', background: icon === ic ? '#6366f11f' : 'var(--color-bg)', fontSize: 17, cursor: 'pointer' }}>{ic}</button>
+              <button key={ic} onClick={() => setIcon(ic)} style={{ width: 34, height: 34, borderRadius: 8, border: '1.5px solid', borderColor: icon === ic ? 'var(--color-accent)' : 'var(--color-border)', background: icon === ic ? 'var(--color-accent-soft)' : 'var(--color-bg)', fontSize: 17, cursor: 'pointer' }}>{ic}</button>
             ))}
           </div>
         </div>

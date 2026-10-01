@@ -148,7 +148,7 @@ export function CardAttachmentsSection({
             </div>
           ))}
           {pendingFiles.map(p => (
-            <div key={p.id} style={{ position: 'relative', width: 80, height: 80, borderRadius: 8, overflow: 'hidden', border: '1px dashed #6366f1', flexShrink: 0 }}>
+            <div key={p.id} style={{ position: 'relative', width: 80, height: 80, borderRadius: 8, overflow: 'hidden', border: '1px dashed var(--color-accent)', flexShrink: 0 }}>
               <button
                 type="button"
                 title={t('projects_attachments_view')}
@@ -227,7 +227,7 @@ export function CardChecklistSection({
         <>
           {total > 0 && (
             <div style={{ height: 4, borderRadius: 999, backgroundColor: 'var(--color-hover)', marginBottom: 8, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${progressPct}%`, borderRadius: 999, backgroundColor: done === total ? '#22c55e' : '#6366f1', transition: 'width 0.2s' }} />
+              <div style={{ height: '100%', width: `${progressPct}%`, borderRadius: 999, backgroundColor: done === total ? '#22c55e' : 'var(--color-accent)', transition: 'width 0.2s' }} />
             </div>
           )}
           {items.length > 0 && (

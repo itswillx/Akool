@@ -74,7 +74,7 @@ export default function StudyPlanning({ topics, cardsByTopic, onOpen, onStart, i
                   <button
                     onClick={e => { e.stopPropagation(); onStart(topic.id) }}
                     type="button"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
                   >
                     <Play size={12} />
                     {t('study_planning_start')}

@@ -440,6 +440,7 @@
     "public.profiles.is_active": "boolean not null default true",
     "public.profiles.language": "character varying not null default 'pt-BR'::character varying",
     "public.profiles.last_login_date": "date",
+    "public.profiles.onboarding": "jsonb not null default '{}'::jsonb",
     "public.profiles.role": "text not null default 'standard'::text",
     "public.profiles.theme": "text not null default 'light'::text",
     "public.project_boards.color": "text not null default '#6366f1'::text",

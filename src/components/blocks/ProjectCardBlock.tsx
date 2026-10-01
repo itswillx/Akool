@@ -51,7 +51,7 @@ export const ProjectCardBlock = createReactBlockSpec(
       const checklistDone = checklist.filter(i => i.completed).length
       const checklistTotal = checklist.length
 
-      const boardColor = data.boardColor || '#6366f1'
+      const boardColor = data.boardColor || 'var(--color-accent)'
 
       const openInProject = () => {
         if (block.props.boardId) {

@@ -81,3 +81,18 @@ jsxTester.run('akool/no-literal-jsx-text', noLiteralJsxText, {
     { code: '<p>{page.title || "Untitled"}</p>', errors: [{ messageId: 'literal' }] },
   ],
 })
+
+import { noHexColor } from './eslint-no-hex-color.mjs'
+
+jsxTester.run('akool/no-hex-color', noHexColor, {
+  valid: [
+    "<div style={{ color: 'var(--color-accent)' }} />",
+    "const x = 'texto sem cor #1'",
+    "<div style={{ background: `${ACCENT_SOFT}` }} />",
+  ],
+  invalid: [
+    { code: "<div style={{ color: '#6366f1' }} />", errors: [{ messageId: 'hex' }] },
+    { code: "const c = '#fff'", errors: [{ messageId: 'hex' }] },
+    { code: "<div style={{ background: `${c}22 #6366f122` }} />", errors: [{ messageId: 'hex' }] },
+  ],
+})

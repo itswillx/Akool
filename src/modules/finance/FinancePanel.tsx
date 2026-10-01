@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, FileDown, PanelLeft, PanelTop, Plus, Users, Wallet } from 'lucide-react'
+import { useModuleTour } from '../../hooks/useModuleTour'
 import { onAppEvent } from '../../lib/appEvents'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Tabs } from '../../components/Tabs'
@@ -63,6 +64,7 @@ import OverviewDetailedTab from './tabs/OverviewDetailedTab'
 export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: boolean } = {}) {
   const { user, profile } = useAuth()
   const { t, lang } = useLanguage()
+  useModuleTour('finance')
   const { showToast } = useToast()
   const isMobileHook = useIsMobile()
   const isMobile = isMobileProp ?? isMobileHook

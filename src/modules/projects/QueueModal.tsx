@@ -35,7 +35,7 @@ interface QueueModalProps {
 }
 
 function Chip({ active, color, onClick, children }: { active: boolean; color?: string; onClick: () => void; children: React.ReactNode }) {
-  const c = color ?? '#6366f1'
+  const c = color ?? 'var(--color-accent)'
   return (
     <button
       type="button"
@@ -418,7 +418,7 @@ export default function QueueModal({ boardId, columns, cards, canEdit, isMobile,
               type="button"
               onClick={() => { void startQueue() }}
               disabled={busy || preview.length === 0}
-              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: preview.length === 0 ? 0.5 : 1 }}
+              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: preview.length === 0 ? 0.5 : 1 }}
             >
               {t('projects_queue_start')}
             </button>

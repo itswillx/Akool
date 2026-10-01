@@ -76,7 +76,7 @@ export default function QuickNotes({ isMobile = false }: { isMobile?: boolean })
             onClick={submit} disabled={!draft.trim()} type="button"
             style={{
               display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 7, border: 'none',
-              backgroundColor: '#6366f1', color: '#fff', fontSize: 12.5, fontWeight: 600,
+              backgroundColor: 'var(--color-accent)', color: '#fff', fontSize: 12.5, fontWeight: 600,
               cursor: draft.trim() ? 'pointer' : 'default', opacity: draft.trim() ? 1 : 0.5, marginLeft: 4,
             }}
           >

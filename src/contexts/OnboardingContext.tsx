@@ -1,55 +1,92 @@
-import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { localKey } from '../lib/localKeys'
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { localDateKey } from '../lib/localDate'
+import { localKey } from '../lib/localKeys'
+import { useLanguage } from '../i18n/LanguageContext'
+import { moduleTours, type TourModule } from '../i18n/tourContent'
 import { useAuth } from './AuthContext'
 
 // PERF-009: o tour só baixa quando começa.
 const WelcomeTour = lazy(() => import('../components/WelcomeTour'))
 
+// UX-012: o que já foi visto fica no perfil (profiles.onboarding, módulo →
+// data ISO), então não reaparece noutro aparelho. O localStorage antigo
+// (akool:onboarding.seen:<userId>) só serve para migrar quem já tinha visto o
+// tour geral neste aparelho: na primeira carga, vira `welcome` no perfil, sem
+// reabrir o tour.
+export type TourId = 'welcome' | TourModule
+
 interface OnboardingContextType {
+  /** O tour aberto agora, ou null. */
+  activeTour: TourId | null
   showTour: boolean
-  startTour: () => void
+  /** O módulo (ou `welcome`) já foi visto? */
+  seen: (id: TourId) => boolean
+  startTour: (id?: TourId) => void
   finishTour: () => void
 }
 
 const OnboardingContext = createContext<OnboardingContextType | null>(null)
 
+/** Referência estável para "nada visto", para o `seen` não mudar a cada render. */
+const NO_ONBOARDING: Record<string, string> = {}
+
+const BADGE_KEY = { projects: 'tour_module_badge_projects', finance: 'tour_module_badge_finance', study: 'tour_module_badge_study' } as const
+
+/** A marca antiga, por aparelho, de quem já viu o tour geral. */
+function seenLocally(userId: string | undefined) {
+  if (!userId) return false
+  try { return localStorage.getItem(localKey.onboardingSeen(userId)) === '1' } catch { return false }
+}
 
 export function OnboardingProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
-  const [showTour, setShowTour] = useState(false)
+  const { user, profile, updateProfile } = useAuth()
+  const { lang, t } = useLanguage()
+  // Tour pedido (Ajuda ou mini-tour de módulo). O tour geral não passa por aqui:
+  // ele é derivado do perfil, e `welcomeClosedFor` cobre o instante entre fechar
+  // e o perfil voltar gravado.
+  const [requested, setRequested] = useState<TourId | null>(null)
+  const [welcomeClosedFor, setWelcomeClosedFor] = useState<string | null>(null)
+  const migratedFor = useRef<string | null>(null)
 
+  const userId = user?.id
+  const onboarding = profile?.onboarding ?? NO_ONBOARDING
+  const seen = useCallback((id: TourId) => typeof onboarding[id] === 'string', [onboarding])
+
+  const welcomeSeen = seen('welcome')
+  const hasLocalMark = seenLocally(userId)
+  const welcomeDue = !!userId && !!profile && !welcomeSeen && !hasLocalMark && welcomeClosedFor !== userId
+  const activeTour: TourId | null = requested ?? (welcomeDue ? 'welcome' : null)
+
+  // Quem já tinha a marca local migra para o perfil, uma vez por conta.
   useEffect(() => {
-    const userId = user?.id
-    if (!userId) return
-    try {
-      const seen = localStorage.getItem(localKey.onboardingSeen(userId))
-      if (!seen) setShowTour(true)
-    } catch {
-      // localStorage unavailable; skip auto-open
-    }
-  }, [user?.id])
+    if (!userId || !profile || welcomeSeen || !hasLocalMark) return
+    if (migratedFor.current === userId) return
+    migratedFor.current = userId
+    void updateProfile({ onboarding: { ...onboarding, welcome: localDateKey() } })
+  }, [userId, profile, welcomeSeen, hasLocalMark, onboarding, updateProfile])
 
-  const startTour = useCallback(() => setShowTour(true), [])
+  const startTour = useCallback((id: TourId = 'welcome') => setRequested(id), [])
 
   const finishTour = useCallback(() => {
-    setShowTour(false)
-    const userId = user?.id
-    if (userId) {
-      try {
-        localStorage.setItem(localKey.onboardingSeen(userId), '1')
-      } catch {
-        // ignore persistence errors
-      }
-    }
-  }, [user?.id])
+    const id = activeTour
+    setRequested(null)
+    if (!id || !userId) return
+    if (id === 'welcome') setWelcomeClosedFor(userId)
+    void updateProfile({ onboarding: { ...onboarding, [id]: localDateKey() } })
+    try { localStorage.setItem(localKey.onboardingSeen(userId), '1') } catch { /* storage bloqueado */ }
+  }, [activeTour, userId, onboarding, updateProfile])
 
-  const value = useMemo(() => ({ showTour, startTour, finishTour }), [showTour, startTour, finishTour])
+  const value = useMemo(() => ({ activeTour, showTour: activeTour !== null, seen, startTour, finishTour }), [activeTour, seen, startTour, finishTour])
+
+  const moduleProps = activeTour && activeTour !== 'welcome'
+    ? { steps: moduleTours[lang][activeTour], badge: t(BADGE_KEY[activeTour]), finishLabel: t('tour_module_finish') }
+    : {}
 
   return (
     <OnboardingContext.Provider value={value}>
       {children}
-      {showTour && <Suspense fallback={null}><WelcomeTour onClose={finishTour} /></Suspense>}
+      {activeTour && <Suspense fallback={null}><WelcomeTour onClose={finishTour} {...moduleProps} /></Suspense>}
     </OnboardingContext.Provider>
   )
 }

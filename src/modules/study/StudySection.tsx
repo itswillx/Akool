@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useModuleTour } from '../../hooks/useModuleTour'
 import { useAuth } from '../../contexts/AuthContext'
 import { useLanguage } from '../../i18n/LanguageContext'
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal'
@@ -32,6 +33,7 @@ interface DeleteRequest {
 export default function StudySection({ isMobile = false }: StudySectionProps) {
   const { user } = useAuth()
   const { t } = useLanguage()
+  useModuleTour('study')
   const store = useStudyTopics(user?.id)
   const [view, setView] = useState<StudyViewName>('overview')
   const [openTopicId, setOpenTopicId] = useState<string | null>(null)

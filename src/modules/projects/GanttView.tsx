@@ -131,7 +131,7 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
     columns.forEach(c => m.set(c.id, c.color))
     return m
   }, [columns])
-  const cardColor = (c: ProjectCard) => columnColor.get(c.column_id) ?? '#6366f1'
+  const cardColor = (c: ProjectCard) => columnColor.get(c.column_id) ?? 'var(--color-accent)'
 
   const tree = useMemo<GanttNode[]>(() => buildTree(cards), [cards])
 
@@ -211,13 +211,13 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
   if (!range) {
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center' }}>
-        <div style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: '#6366f122', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <GanttChartSquare size={28} color="#6366f1" />
+        <div style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: 'var(--color-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <GanttChartSquare size={28} color="var(--color-accent)" />
         </div>
         <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--color-text)' }}>{t('projects_gantt_empty_title')}</h3>
         <p style={{ margin: 0, fontSize: 13.5, color: 'var(--color-text-muted)', maxWidth: 360 }}>{t('projects_gantt_empty_desc')}</p>
         {canEdit && firstColumnId && (
-          <button onClick={() => onAddCard(firstColumnId)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          <button onClick={() => onAddCard(firstColumnId)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
             <Plus size={14} />{t('projects_add_card')}
           </button>
         )}
@@ -230,7 +230,7 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
   const rowsHeight = rows.length * ROW_H
 
   const zoomBtn = (z: Zoom, label: string) => (
-    <button key={z} onClick={() => setZoom(z)} style={{ padding: '5px 10px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: zoom === z ? 600 : 400, backgroundColor: zoom === z ? '#6366f1' : 'var(--color-bg)', color: zoom === z ? '#fff' : 'var(--color-text-muted)' }}>
+    <button key={z} onClick={() => setZoom(z)} style={{ padding: '5px 10px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: zoom === z ? 600 : 400, backgroundColor: zoom === z ? 'var(--color-accent)' : 'var(--color-bg)', color: zoom === z ? '#fff' : 'var(--color-text-muted)' }}>
       {label}
     </button>
   )
@@ -247,7 +247,7 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
         <button
           onClick={() => setShowDeps(v => !v)}
           title={t('projects_gantt_show_deps')}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: showDeps ? '#6366f11f' : 'var(--color-bg)', color: showDeps ? '#6366f1' : 'var(--color-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: showDeps ? 'var(--color-accent-soft)' : 'var(--color-bg)', color: showDeps ? 'var(--color-accent)' : 'var(--color-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
         >
           <Share2 size={13} />{!isMobile && t('projects_gantt_show_deps')}
         </button>
@@ -321,7 +321,7 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
                       <div style={{ width: 80, fontSize: 12, color: 'var(--color-text-muted)' }}>{row.card.start_date ? fmtShort(row.card.start_date) : '–'}</div>
                       <div style={{ width: 72, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <div style={{ flex: 1, height: 5, borderRadius: 999, background: 'var(--color-hover)', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${bar?.progress ?? 0}%`, background: (bar?.progress ?? 0) >= 100 ? '#22c55e' : '#6366f1' }} />
+                          <div style={{ height: '100%', width: `${bar?.progress ?? 0}%`, background: (bar?.progress ?? 0) >= 100 ? '#22c55e' : 'var(--color-accent)' }} />
                         </div>
                         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', width: 26, textAlign: 'right' }}>{bar?.progress ?? 0}%</span>
                       </div>
@@ -459,7 +459,7 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
                 const x2 = dateToX(toBar.start)
                 const y2 = HEADER_H + toIdx * ROW_H + ROW_H / 2
                 const d = linkPath({ x1, y1, x2, y2, rowH: ROW_H })
-                const stroke = isParent ? '#6366f1' : 'var(--color-text-muted)'
+                const stroke = isParent ? 'var(--color-accent)' : 'var(--color-text-muted)'
                 const opacity = isParent ? 0.45 : 0.7
                 return (
                   <g key={`${link.kind}-${link.from}-${link.to}`}>
