@@ -11,6 +11,7 @@ import { useToast } from '../contexts/ToastContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useDialog } from '../hooks/useDialog'
 import { UserAvatar } from './UserAvatar'
+import { useDebouncedCallback } from '../hooks/useDebounce'
 
 interface UserProfile {
   id: string
@@ -140,7 +141,6 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
   const [loadingShares, setLoadingShares] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadShares = useCallback(async () => {
     setLoadingShares(true)
@@ -163,11 +163,8 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
     }
   }, [open, loadShares])
 
-  const handleSearch = (q: string) => {
-    setSearchQuery(q)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!q.trim()) { setSearchResults([]); return }
-    debounceRef.current = setTimeout(async () => {
+  // PERF-013: debounce compartilhado (cancela ao fechar o modal).
+  const runSearch = useDebouncedCallback(async (q: string) => {
       const term = sanitizeIlikeTerm(q)
       if (term.length < 3) { setSearchResults([]); return }
       const existingIds = new Set([user?.id, ...shares.map(s => s.shared_with_user_id)])
@@ -180,7 +177,12 @@ export default function SharePageModal({ open, onClose, pageId, pageTitle }: Sha
       if (data) {
         setSearchResults(data.filter(p => !existingIds.has(p.id)))
       }
-    }, 300)
+  }, 300)
+
+  const handleSearch = (q: string) => {
+    setSearchQuery(q)
+    if (!q.trim()) { runSearch.cancel(); setSearchResults([]); return }
+    runSearch(q)
   }
 
   const handleAddUser = async (profile: UserProfile, role: PageShareRole = 'editor') => {

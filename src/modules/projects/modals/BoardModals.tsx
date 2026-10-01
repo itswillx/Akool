@@ -3,7 +3,7 @@ import {
 Search,
 Trash2
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { UserAvatar } from '../../../components/UserAvatar'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useToast } from '../../../contexts/ToastContext'
@@ -22,6 +22,7 @@ import type { ProjectBoard, ProjectColumn, ProjectShare, ProjectShareRole } from
 import type { Member } from '../projectsShared'
 import { BOARD_COLORS, BOARD_ICONS, inputStyle, labelStyle } from '../projectsShared'
 import { GhostBtn, Modal, PrimaryBtn } from '../ui'
+import { useDebouncedCallback } from '../../../hooks/useDebounce'
 
 // ─── Board modal ────────────────────────────────────────────────────────────
 
@@ -115,7 +116,6 @@ export function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: (
   const [results, setResults] = useState<Member[]>([])
   const [role, setRole] = useState<ProjectShareRole>('editor')
   const [err, setErr] = useState<string | null>(null)
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const load = useCallback(async () => {
     const { data } = await listBoardShares(board.id)
@@ -126,11 +126,8 @@ export function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: (
 
   useEffect(() => { load() }, [load])
 
-  const search = (val: string) => {
-    setQ(val)
-    if (debounce.current) clearTimeout(debounce.current)
-    if (!val.trim()) { setResults([]); return }
-    debounce.current = setTimeout(async () => {
+  // PERF-013: debounce compartilhado (cancela ao desmontar).
+  const runSearch = useDebouncedCallback(async (val: string) => {
       const term = sanitizeIlikeTerm(val)
       if (term.length < 3) { setResults([]); return }
       const exclude = new Set([user?.id, board.user_id, ...shares.map(s => s.shared_with_user_id)])
@@ -141,7 +138,12 @@ export function ShareModal({ board, onClose }: { board: ProjectBoard; onClose: (
         return
       }
       if (data) setResults(data.filter(m => !exclude.has(m.id)))
-    }, 300)
+  }, 300)
+
+  const search = (val: string) => {
+    setQ(val)
+    if (!val.trim()) { runSearch.cancel(); setResults([]); return }
+    runSearch(val)
   }
 
   const add = async (m: Member) => {

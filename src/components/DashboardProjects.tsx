@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { FolderKanban, CalendarClock } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { fetchAllRows } from '../lib/fetchAllRows'
+import { loadDashboardProjects, type DashboardBoardRow, type DashboardCardRow } from '../lib/data/dashboard'
+import { dashboardKeys } from '../lib/queryClient'
 import { usePages } from '../contexts/PagesContext'
 import { setDocsSelection } from '../lib/docsNavigation'
 import { activateProps } from '../lib/a11y'
@@ -37,68 +37,56 @@ export interface DashboardProjectsData {
 
 const EMPTY_DATA: DashboardProjectsData = { boards: [], dueSoon: [], totalOpen: 0, totalCards: 0, loaded: false }
 
-export function useDashboardProjects(userId: string | undefined, enabled: boolean): DashboardProjectsData {
-  const [data, setData] = useState<DashboardProjectsData>(EMPTY_DATA)
+/** Resumo dos quadros e prazos, calculado ao carregar (o "hoje" é o da carga). */
+function summarizeDashboardProjects(
+  { boards: allBoards, cards }: { boards: DashboardBoardRow[]; cards: DashboardCardRow[] },
+  now: number,
+): DashboardProjectsData {
+  const boardName = new Map(allBoards.map(b => [b.id, b.name]))
+  const today = new Date(now).toISOString().slice(0, 10)
+  const horizon = new Date(now + 7 * 86400000).toISOString().slice(0, 10)
 
-  useEffect(() => {
-    if (!userId || !enabled) return
-    let cancelled = false
-    const load = async () => {
-      const [ownRes, sharedRes] = await Promise.all([
-        supabase.from('project_boards').select('id, name, icon, color, sort_order').eq('user_id', userId).order('sort_order'),
-        supabase.from('project_shares').select('project_boards(id, name, icon, color, sort_order)').eq('shared_with_user_id', userId),
-      ])
-      const own = (ownRes.data ?? []).map(b => ({ ...b, is_shared: false }))
-      const shared = (sharedRes.data ?? []).flatMap(({ project_boards: b }) => (b ? [{ ...b, is_shared: true }] : []))
-      const allBoards = [...own, ...shared.filter(s => !own.some(o => o.id === s.id))]
-      if (allBoards.length === 0) {
-        if (!cancelled) setData({ ...EMPTY_DATA, loaded: true })
-        return
-      }
-
-      type CardRow = { id: string; board_id: string; title: string; completed: boolean; due_date: string | null }
-      // REL-003: paginado; o PostgREST corta em 1000 sem erro.
-      const { data: cards, error } = await fetchAllRows<CardRow>((from, to) => supabase
-        .from('project_cards').select('id, board_id, title, completed, due_date')
-        .in('board_id', allBoards.map(b => b.id))
-        .order('id').range(from, to))
-      if (cancelled) return
-      if (error) { console.error('dashboard projects:', error); return }
-
-      const boardName = new Map(allBoards.map(b => [b.id, b.name]))
-      const today = new Date().toISOString().slice(0, 10)
-      const horizon = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
-
-      const boards: DashboardBoard[] = allBoards.map(b => {
-        const list = cards.filter(c => c.board_id === b.id)
-        return {
-          id: b.id, name: b.name, icon: b.icon, color: b.color, is_shared: b.is_shared,
-          openCards: list.filter(c => !c.completed).length,
-          totalCards: list.length,
-        }
-      })
-
-      const dueSoon: DashboardDueCard[] = cards
-        .filter((c): c is typeof c & { due_date: string } => !c.completed && !!c.due_date && c.due_date <= horizon)
-        .sort((a, b) => a.due_date.localeCompare(b.due_date))
-        .slice(0, 6)
-        .map(c => ({
-          cardId: c.id, boardId: c.board_id, boardName: boardName.get(c.board_id) ?? '',
-          title: c.title, due_date: c.due_date, overdue: c.due_date < today,
-        }))
-
-      setData({
-        boards, dueSoon,
-        totalOpen: cards.filter(c => !c.completed).length,
-        totalCards: cards.length,
-        loaded: true,
-      })
+  const boards: DashboardBoard[] = allBoards.map(b => {
+    const list = cards.filter(c => c.board_id === b.id)
+    return {
+      id: b.id, name: b.name, icon: b.icon, color: b.color, is_shared: b.is_shared,
+      openCards: list.filter(c => !c.completed).length,
+      totalCards: list.length,
     }
-    load()
-    return () => { cancelled = true }
-  }, [userId, enabled])
+  })
 
-  return data
+  const dueSoon: DashboardDueCard[] = cards
+    .filter((c): c is typeof c & { due_date: string } => !c.completed && !!c.due_date && c.due_date <= horizon)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))
+    .slice(0, 6)
+    .map(c => ({
+      cardId: c.id, boardId: c.board_id, boardName: boardName.get(c.board_id) ?? '',
+      title: c.title, due_date: c.due_date, overdue: c.due_date < today,
+    }))
+
+  return {
+    boards, dueSoon,
+    totalOpen: cards.filter(c => !c.completed).length,
+    totalCards: cards.length,
+    loaded: true,
+  }
+}
+
+export function useDashboardProjects(userId: string | undefined, enabled: boolean): DashboardProjectsData {
+  // PERF-015: em cache (react-query); o realtime de project_cards invalida.
+  const { data } = useQuery({
+    queryKey: dashboardKeys.projects(userId),
+    queryFn: async () => {
+      try {
+        return summarizeDashboardProjects(await loadDashboardProjects(userId!), Date.now())
+      } catch (err) {
+        console.error('dashboard projects:', err)
+        throw err
+      }
+    },
+    enabled: !!userId && enabled,
+  })
+  return data ?? EMPTY_DATA
 }
 
 export default function DashboardProjects({ data, isMobile = false }: { data: DashboardProjectsData; isMobile?: boolean }) {
