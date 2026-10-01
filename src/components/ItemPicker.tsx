@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { flattenTree as flatten } from '../lib/pageTree'
 import { Search, X, FolderKanban } from 'lucide-react'
-import type { Page } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -20,9 +20,6 @@ interface PickerCard {
   boardName: string
 }
 
-function flatten(ps: Page[]): Page[] {
-  return ps.flatMap(p => [p, ...flatten(p.children ?? [])])
-}
 
 export default function ItemPicker({ onSelect, onClose }: {
   onSelect: (item: PickedItem) => void

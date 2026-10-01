@@ -1,16 +1,13 @@
 import { createReactBlockSpec } from '@blocknote/react'
+import { PROJECT_PRIORITY_COLORS as PRIORITY_COLORS } from '../../lib/priorities'
 import { localeOf } from '../../i18n/translations'
 import { Calendar, CheckSquare, ExternalLink } from 'lucide-react'
-import type { ProjectCardPriority } from '../../types'
 import type { ProjectCardSnapshot } from '../../lib/projectImport'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { usePages } from '../../contexts/PagesContext'
 import { setDocsSelection } from '../../lib/docsNavigation'
 import { MarkdownText } from '../MarkdownText'
 
-const PRIORITY_COLORS: Record<ProjectCardPriority, string> = {
-  low: '#94a3b8', medium: '#3b82f6', high: '#f59e0b', urgent: '#ef4444',
-}
 const ACTIVE_BOARD_KEY = 'projects_active_board'
 
 function todayStr() {

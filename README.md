@@ -159,6 +159,7 @@ O desenvolvimento segue um quadro de Projetos que funciona como fila, em fases: 
 
 ## Documentação
 
+- [`docs/arquitetura.md`](docs/arquitetura.md): boot, ordem dos providers, roteamento, fluxo de auth e de dados
 - [`docs/deploy-coolify.md`](docs/deploy-coolify.md): deploy, variáveis e checagem pós-deploy
 - [`docs/matriz-rls.md`](docs/matriz-rls.md): quem lê e escreve o quê, tabela por tabela
 - [`docs/plano-execucao.md`](docs/plano-execucao.md): roadmap de execução do backlog, por risco

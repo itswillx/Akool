@@ -6,6 +6,7 @@ ListOrdered,
 UserRound,
 X
 } from 'lucide-react'
+import { Backdrop } from '../../components/Backdrop'
 import { useDialog } from '../../hooks/useDialog'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { type QueueBadge } from '../../lib/cardQueue'
@@ -29,11 +30,7 @@ export function Modal({
 
   if (isMobile) {
     return (
-      <div role="presentation"
-        className="finance-sheet-overlay"
-        onClick={handleBackdropClick}
-        style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
-      >
+      <Backdrop align="bottom" className="finance-sheet-overlay" onClick={handleBackdropClick}>
         <div
           {...dialogProps}
           className="finance-sheet-panel finance-safe-bottom"
@@ -51,16 +48,12 @@ export function Modal({
           </div>
           {children}
         </div>
-      </div>
+      </Backdrop>
     )
   }
 
   return (
-    <div role="presentation"
-      className="finance-sheet-overlay"
-      onClick={handleBackdropClick}
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 16 }}
-    >
+    <Backdrop className="finance-sheet-overlay" padding={16} onClick={handleBackdropClick}>
       <div
         {...dialogProps}
         className="finance-modal-panel"
@@ -75,7 +68,7 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </Backdrop>
   )
 }
 

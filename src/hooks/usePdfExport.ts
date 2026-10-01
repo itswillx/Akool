@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import { isProjectPriority, projectPriorityLabelKey } from '../lib/priorities'
 import { localeOf, type Lang } from '../i18n/translations'
 import type { TFn } from '../lib/optimistic'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -35,7 +36,6 @@ function inlineText(content: unknown): string {
 
 // UX-011: os rótulos do PDF saem no idioma de quem exporta (`t` vem de quem
 // chama; o jsPDF roda fora dos componentes).
-const CARD_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent'])
 
 /** Bloco do BlockNote como fica guardado no jsonb (só o que o PDF lê). */
 interface StoredBlock {
@@ -60,7 +60,7 @@ function extractProjectCard(b: StoredBlock, t: TFn): LineEntry[] {
 
   const meta: string[] = []
   if (snap.priority) {
-    const label = CARD_PRIORITIES.has(snap.priority) ? t(`projects_priority_${snap.priority}`) : snap.priority
+    const label = isProjectPriority(snap.priority) ? t(projectPriorityLabelKey(snap.priority)) : snap.priority
     meta.push(`${t('projects_priority')}: ${label}`)
   }
   if (snap.dueDate) meta.push(`${t('projects_due_date')}: ${snap.dueDate}`)

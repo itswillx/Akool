@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PROJECT_PRIORITIES as PRIORITIES } from '../../lib/priorities'
 import { Filter, Search, ChevronDown, ChevronUp, X } from 'lucide-react'
 import type { ProjectColumn, ProjectCardPriority } from '../../types'
 import type { DueDatePreset, ProjectCardFilters, CompletionFilter } from '../../lib/projectCardFilters'
@@ -11,7 +12,6 @@ interface Member {
   display_name: string | null
 }
 
-const PRIORITIES: ProjectCardPriority[] = ['urgent', 'high', 'medium', 'low']
 const DUE_PRESETS: DueDatePreset[] = ['all', 'overdue', 'today', 'this_week', 'no_date', 'has_date']
 const COMPLETION_OPTIONS: CompletionFilter[] = ['all', 'open', 'done']
 

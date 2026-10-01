@@ -1,6 +1,6 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { BarChart2, List, MoreHorizontal, Plus, Target, Wallet } from 'lucide-react'
-import { useState } from 'react'
+import { RailButton } from '../../../components/RailButton'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import type { TabId } from '../financeFormat'
 import { fmt } from '../financeFormat'
@@ -13,25 +13,6 @@ tabularNums
 import { FINANCE_NAV, MORE_TABS, tabLabelKey } from './navItems'
 
 // ─── Desktop left navigation (Lateral layout) ─────────────────────────────────
-
-function FinanceSideNavItem({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
-  const [hov, setHov] = useState(false)
-  const bg = active ? 'var(--color-active)' : hov ? 'var(--color-hover)' : 'transparent'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      // UX-008: a barra lateral é navegação (não abas); o item ativo é a página atual.
-      aria-current={active ? 'page' : undefined}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', backgroundColor: bg, color: active ? 'var(--color-text)' : 'var(--color-text-subtle)', fontSize: 13.5, fontWeight: active ? 600 : 500, textAlign: 'left', transition: 'background-color 0.1s' }}
-    >
-      <span style={{ display: 'flex', flexShrink: 0, color: active ? 'var(--color-text)' : 'var(--color-text-muted)' }}>{icon}</span>
-      <span>{label}</span>
-    </button>
-  )
-}
 
 export function FinanceSidebar({ tab, onSelect, accountsBalance, accountCount }: {
   tab: TabId
@@ -50,7 +31,7 @@ export function FinanceSidebar({ tab, onSelect, accountsBalance, accountCount }:
       </div>
       <nav aria-label={t('finance_nav_label')} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 10px', flex: 1, overflowY: 'auto' }}>
         {FINANCE_NAV.map(item => (
-          <FinanceSideNavItem key={item.id} active={tab === item.id} icon={item.icon} label={t(tabLabelKey(item.id))} onClick={() => onSelect(item.id)} />
+          <RailButton subtle key={item.id} active={tab === item.id} icon={item.icon} label={t(tabLabelKey(item.id))} onClick={() => onSelect(item.id)} />
         ))}
       </nav>
       <div style={{ padding: '14px 18px', borderTop: '1px solid var(--color-border)' }}>

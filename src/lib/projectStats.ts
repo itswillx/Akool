@@ -1,11 +1,13 @@
 import type { ProjectCard, ProjectCardPriority } from '../types'
+import { PROJECT_PRIORITIES } from './priorities'
 import { todayStr, isOverdue } from './projectCardFilters'
 
 // Pure aggregations for the Projects "Overview" dashboard. UI-agnostic: they
 // return counts keyed by id/priority/bucket; the view maps colors, labels and
 // i18n. Kept here (not in the component) so they can be unit-tested.
 
-export const PRIORITY_ORDER: ProjectCardPriority[] = ['urgent', 'high', 'medium', 'low']
+// QA-004: a ordem vive em priorities.ts; o nome antigo continua para quem importa daqui.
+export const PRIORITY_ORDER: readonly ProjectCardPriority[] = PROJECT_PRIORITIES
 
 // ─── date helpers (ISO yyyy-mm-dd math, local-time, no TZ surprises) ──────────
 

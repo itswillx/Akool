@@ -23,6 +23,9 @@ export function flattenTree(list: Page[]): Page[] {
   return list.flatMap(p => [p, ...flattenTree(p.children ?? [])])
 }
 
+/** QA-004: o mesmo flatten, com o nome que os componentes já usavam (5 cópias saíram). */
+export const flattenPages = flattenTree
+
 function sameFields(a: Page, b: Page): boolean {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)])
   keys.delete('children')

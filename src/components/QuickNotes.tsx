@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { flattenTree as flatten } from '../lib/pageTree'
 import { StickyNote, Trash2, Plus, Link2, X, FileText, FolderKanban } from 'lucide-react'
 import type { QuickNote, QuickNoteColor, QuickNoteLinkedItem } from '../types'
 import { useQuickNotes } from '../hooks/useQuickNotes'
@@ -9,13 +10,9 @@ import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import ItemPicker, { type PickedItem } from './ItemPicker'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
-import type { Page } from '../types'
 
 const COLORS: QuickNoteColor[] = ['yellow', 'green', 'pink', 'blue', 'purple']
 
-function flatten(ps: Page[]): Page[] {
-  return ps.flatMap(p => [p, ...flatten(p.children ?? [])])
-}
 
 function ColorDot({ color, selected, onClick, title }: {
   color: QuickNoteColor; selected: boolean; onClick: () => void; title: string

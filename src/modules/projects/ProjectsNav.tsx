@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
+import { RailButton, RailGroupTitle as GroupTitle } from '../../components/RailButton'
 import {
   BarChart3, GanttChartSquare, LayoutGrid, List as ListIcon, Pencil, Plus,
   ListOrdered, Share2, Smartphone, Trash2, Upload,
@@ -12,7 +13,7 @@ import type { TranslationKey } from '../../i18n/translations'
 // no mobile. Diferente do study, há dois eixos — qual quadro e qual visualização —
 // então no mobile só as visualizações viram chips; o seletor de quadros continua
 // dropdown no cabeçalho do painel. RailButton/GroupTitle são cópias locais dos
-// primitivos do StudyNav de propósito: módulos não importam uns dos outros.
+// o RailButton vem de src/components (QA-004): módulos não importam uns dos outros.
 
 export type ViewMode = 'kanban' | 'compact' | 'list' | 'overview' | 'timeline'
 
@@ -43,41 +44,6 @@ interface ProjectsNavProps {
   onShare: () => void
   onEditBoard: () => void
   onDeleteBoard: () => void
-}
-
-function RailButton({ icon, label, active, danger, trailing, onClick }: {
-  icon: ReactNode; label: string; active?: boolean; danger?: boolean; trailing?: ReactNode; onClick: () => void
-}) {
-  const [hov, setHov] = useState(false)
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      type="button"
-      style={{
-        display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '8px 10px',
-        borderRadius: 8, border: 'none', cursor: 'pointer', textAlign: 'left',
-        backgroundColor: active ? 'var(--color-active)' : hov ? 'var(--color-hover)' : 'transparent',
-        color: danger ? '#ef4444' : 'var(--color-text)', fontSize: 13.5, fontWeight: active ? 600 : 500,
-      }}
-    >
-      <span style={{ display: 'flex', color: danger ? '#ef4444' : active ? 'var(--color-text)' : 'var(--color-text-muted)' }}>{icon}</span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-      {trailing && <span style={{ marginLeft: 'auto', display: 'flex', color: 'var(--color-text-muted)', flexShrink: 0 }}>{trailing}</span>}
-    </button>
-  )
-}
-
-function GroupTitle({ children }: { children: ReactNode }) {
-  return (
-    <div style={{
-      fontSize: 11, fontWeight: 700, letterSpacing: 0.7, textTransform: 'uppercase',
-      color: 'var(--color-text-muted)', padding: '0 10px', marginBottom: 4,
-    }}>
-      {children}
-    </div>
-  )
 }
 
 export default function ProjectsNav({

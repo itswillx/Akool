@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
+import { flattenPages } from '../lib/pageTree'
 import { localDateKey } from '../lib/localDate'
 import { X, FileDown, CheckSquare, Square } from 'lucide-react'
 import type { Page } from '../types'
@@ -11,9 +12,6 @@ interface ExportPdfModalProps {
   onClose: () => void
 }
 
-function flattenPages(ps: Page[]): Page[] {
-  return ps.flatMap(p => [p, ...flattenPages(p.children ?? [])])
-}
 
 function PageCheckItem({
   page,

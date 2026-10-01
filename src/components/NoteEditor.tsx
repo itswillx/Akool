@@ -19,7 +19,7 @@ import { useCollaborativeContent } from '../hooks/useCollaborativeContent'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useToast } from '../contexts/ToastContext'
-import { classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, type SaveStatus } from '../lib/contentPersistence'
+import { asVersionedClient, classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, type SaveStatus } from '../lib/contentPersistence'
 import SaveStatusBadge, { EditConflictBanner, EditorLoadError } from './SaveStatusBadge'
 
 interface NoteEditorProps {
@@ -96,6 +96,9 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
 const schema = BlockNoteSchema.create({
   blockSpecs: { ...defaultBlockSpecs, diagram: DiagramBlock(), projectCard: ProjectCardBlock() },
 })
+
+// O schema expõe o tipo do bloco parcial (fantasma); evita instanciar os genéricos à mão.
+type NoteBlock = typeof schema.PartialBlock
 
 function EditorInner({
   pageId,
@@ -201,8 +204,10 @@ function EditorCore({ pageId, initialContent, readOnly, initialVersion, onReload
     schema,
     uploadFile,
     resolveFileUrl,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ...(initialContent.length > 0 ? { initialContent: initialContent as any } : {}),
+    // QA-005: o conteúdo vem do banco como unknown[]; o tipo é o do próprio schema.
+    // Passa por unknown de propósito: comparar unknown[] com o bloco do schema faz o
+    // TypeScript expandir o schema inteiro ("type instantiation is excessively deep").
+    ...(initialContent.length > 0 ? { initialContent: initialContent as unknown as NoteBlock[] } : {}),
   })
 
   const [importOpen, setImportOpen] = useState(false)
@@ -219,7 +224,7 @@ function EditorCore({ pageId, initialContent, readOnly, initialVersion, onReload
     delayMs: 1000,
     onStatus: setSaveStatus,
     version: initialVersion,
-    save: (content, { force, version }) => saveVersionedContent(supabase, {
+    save: (content, { force, version }) => saveVersionedContent(asVersionedClient(supabase), {
       table: 'note_contents', pageId, values: { content }, expected: version, force,
     }),
   }))

@@ -1,4 +1,5 @@
 import { memo, useEffect, useState, useMemo } from 'react'
+import { TODO_PRIORITY_COLORS as priorityColors } from '../lib/priorities'
 import { Plus, Trash2, Calendar, Flag, CheckCircle2, Circle, Filter } from 'lucide-react'
 import type { Todo, TodoPriority } from '../types'
 import { supabase } from '../lib/supabase'
@@ -17,11 +18,6 @@ interface TodoListProps {
   embedded?: boolean
 }
 
-const priorityColors: Record<TodoPriority, string> = {
-  low: '#6b7280',
-  medium: '#0ea5e9',
-  high: '#ef4444',
-}
 
 type FilterMode = 'all' | 'open' | 'done'
 

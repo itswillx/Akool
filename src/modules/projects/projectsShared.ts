@@ -6,7 +6,6 @@ pointerWithin, rectIntersection
 import { createContext } from 'react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { type QueueBadge } from '../../lib/cardQueue'
-import type { Page, ProjectCardPriority } from '../../types'
 import { type BoardMember } from './boardLoader'
 import { type ViewMode } from './ProjectsNav'
 
@@ -15,9 +14,8 @@ export const VALID_VIEWS: ViewMode[] = ['kanban', 'compact', 'list', 'overview',
 
 // ─── Constants & helpers ──────────────────────────────────────────────────────
 
-export const PRIORITY_COLORS: Record<ProjectCardPriority, string> = {
-  low: '#94a3b8', medium: '#3b82f6', high: '#f59e0b', urgent: '#ef4444',
-}
+// QA-004: cores e ordem das prioridades vivem em src/lib/priorities.ts.
+export { PROJECT_PRIORITY_COLORS as PRIORITY_COLORS } from '../../lib/priorities'
 export const BOARD_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#22c55e', '#06b6d4', '#3b82f6']
 export const BOARD_ICONS = ['📋', '🚀', '🎯', '💡', '🛠️', '📦', '🎨', '🧩', '📈', '🏗️', '🔥', '⭐']
 export const ACTIVE_BOARD_KEY = 'projects_active_board'
@@ -34,9 +32,8 @@ export function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export function flattenPages(ps: Page[]): Page[] {
-  return ps.flatMap(p => [p, ...flattenPages(p.children ?? [])])
-}
+// QA-004: o flatten da árvore vive em src/lib/pageTree.ts.
+export { flattenPages } from '../../lib/pageTree'
 
 // ─── Shared styles ──────────────────────────────────────────────────────────
 

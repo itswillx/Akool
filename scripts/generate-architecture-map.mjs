@@ -1,5 +1,8 @@
 /**
- * Gera docs/architecture-map.excalidraw — mapa da arquitetura Excalinotion.
+ * Gera docs/architecture-map.excalidraw — mapa da arquitetura do Akool.
+ *
+ * ARCH-009: a ordem dos providers vem do src/App.tsx (scripts/provider-order.mjs),
+ * não de uma lista à mão; o resto do mapa é o spec declarativo abaixo.
  *
  * Como importar no app:
  *   1. npm run generate:architecture-map   (ou: node scripts/generate-architecture-map.mjs)
@@ -13,12 +16,16 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { STYLE, createMapContext, buildScene, writeScene } from './excalidraw-map-helpers.mjs'
+import { providerChain, providerId, readAppProviderOrder } from './provider-order.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const OUT_PATH = join(__dirname, '..', 'docs', 'architecture-map.excalidraw')
+const PROVIDERS = readAppProviderOrder(join(__dirname, '..', 'src', 'App.tsx'))
+const PROVIDER_IDS = new Set(providerChain(PROVIDERS).map(providerId))
 
 function buildElements() {
   const { box, container, edge } = createMapContext()
+  const chain = providerChain(PROVIDERS)
   const elements = []
   const push = (...groups) => groups.flat().forEach((el) => elements.push(el))
 
@@ -42,24 +49,23 @@ function buildElements() {
   const by = topY
 
   push(
-    container('bootstrap', { x: bx, y: by, w: 260, h: 260, title: 'Bootstrap' }),
+    container('bootstrap', { x: bx, y: by, w: 260, h: 290, title: 'Bootstrap' }),
     box('mainTsx', { x: bx + 40, y: by + 55, w: 110, h: 40, label: 'main.tsx', fontSize: 14 }),
     box('authLoading', { x: bx + 170, y: by + 55, w: 70, h: 40, label: 'loading', fontSize: 13 }),
     box('app', { x: bx + 40, y: by + 110, w: 110, h: 40, label: 'App', fontSize: 14 }),
     box('authGate', { x: bx + 170, y: by + 110, w: 80, h: 40, label: 'AuthPage', fontSize: 13 }),
-    box('authProvider', { x: bx + 40, y: by + 175, w: 150, h: 40, label: 'AuthProvider', fontSize: 13 }),
+    // Providers do App(): envolvem tudo, inclusive a tela de login.
+    ...PROVIDERS.outer.map((name, i) => box(providerId(name), { x: bx + 30, y: by + 150 + i * 44, w: 200, h: 36, label: name, fontSize: 12 })),
   )
 
   const px = bx + 300
   const py = topY
   push(
-    container('providers', { x: px, y: py, w: 500, h: 260, title: 'Providers (pos-login)' }),
-    box('pagesProvider', { x: px + 20, y: py + 55, w: 145, h: 38, label: 'PagesProvider', fontSize: 13 }),
-    box('notificationsProvider', { x: px + 20, y: py + 100, w: 185, h: 38, label: 'NotificationsProvider', fontSize: 12 }),
-    box('languageProvider', { x: px + 20, y: py + 145, w: 155, h: 38, label: 'LanguageProvider', fontSize: 13 }),
-    box('themeProvider', { x: px + 20, y: py + 190, w: 145, h: 38, label: 'ThemeProvider', fontSize: 13 }),
-    box('onboardingProvider', { x: px + 250, y: py + 55, w: 175, h: 38, label: 'OnboardingProvider', fontSize: 12 }),
-    box('workspaceModeProvider', { x: px + 250, y: py + 100, w: 205, h: 38, label: 'WorkspaceModeProvider', fontSize: 11 }),
+    container('providers', { x: px, y: py, w: 500, h: 260, title: 'Providers do AppInner (pos-login)' }),
+    // Montados só depois dos portões do AppInner (loading, recuperação, login, MFA).
+    ...PROVIDERS.inner.map((name, i) => box(providerId(name), {
+      x: px + 20 + (i % 2) * 240, y: py + 55 + Math.floor(i / 2) * 45, w: 215, h: 38, label: name, fontSize: 12,
+    })),
   )
 
   const fx = px + 530
@@ -134,17 +140,13 @@ function buildElements() {
 
   push(
     edge('mainTsx', 'app'),
-    edge('app', 'authProvider'),
+    edge('app', providerId(chain[0])),
     edge('app', 'authGate'),
     edge('app', 'authLoading'),
-    edge('authProvider', 'pagesProvider'),
-    edge('pagesProvider', 'notificationsProvider'),
-    edge('notificationsProvider', 'languageProvider'),
-    edge('languageProvider', 'themeProvider'),
-    edge('themeProvider', 'onboardingProvider'),
-    edge('onboardingProvider', 'workspaceModeProvider'),
-    edge('workspaceModeProvider', 'modeSwitch'),
-    edge('workspaceModeProvider', 'sidebar'),
+    // A cadeia de providers, de fora para dentro, na ordem do App.tsx.
+    ...chain.slice(1).map((name, i) => edge(providerId(chain[i]), providerId(name))),
+    edge(providerId(chain[chain.length - 1]), 'modeSwitch'),
+    edge(providerId(chain[chain.length - 1]), 'sidebar'),
     edge('sidebar', 'mainContent'),
     edge('modeSwitch', 'mainContent'),
     edge('mainContent', 'financePanel'),
@@ -163,9 +165,9 @@ function buildElements() {
     edge('drawingCanvas', 'useCollab'),
     edge('pageView', 'usePresence'),
     edge('backupPanel', 'useBackup'),
-    edge('authProvider', 'sbAuth', { dashed: true }),
+    ...(PROVIDER_IDS.has('authProvider') ? [edge('authProvider', 'sbAuth', { dashed: true })] : []),
     edge('authGate', 'sbAuth', { dashed: true }),
-    edge('pagesProvider', 'tblPages', { dashed: true }),
+    ...(PROVIDER_IDS.has('pagesProvider') ? [edge('pagesProvider', 'tblPages', { dashed: true })] : []),
     edge('useCollab', 'sbRealtime', { dashed: true }),
     edge('useCollab', 'tblContent', { dashed: true }),
     edge('usePresence', 'tblPages', { dashed: true }),
@@ -175,7 +177,7 @@ function buildElements() {
     edge('financeBarrel', 'tblFinance', { dashed: true }),
     edge('financeRpc', 'sbRpc', { dashed: true }),
     edge('noteEditor', 'sbStorage', { dashed: true }),
-    edge('notificationsProvider', 'tblMisc', { dashed: true }),
+    ...(PROVIDER_IDS.has('notificationsProvider') ? [edge('notificationsProvider', 'tblMisc', { dashed: true })] : []),
     edge('usersPanel', 'tblMisc', { dashed: true }),
   )
 

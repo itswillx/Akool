@@ -4,7 +4,7 @@ import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { documentTitleFor, useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useDocsSelection } from '../hooks/useDocsSelection'
-import { flattenPages } from './PageTree'
+import { flattenPages } from '../lib/pageTree'
 import PageEditor, { Lazy } from './PageEditor'
 import ErrorBoundary from './ErrorBoundary'
 

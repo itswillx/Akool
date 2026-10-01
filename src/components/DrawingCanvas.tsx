@@ -10,7 +10,7 @@ import { usePages } from '../contexts/PagesContext'
 import { useCollaborativeContent } from '../hooks/useCollaborativeContent'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import { classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, sceneVersion, type SaveStatus } from '../lib/contentPersistence'
+import { asVersionedClient, classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, sceneVersion, type SaveStatus } from '../lib/contentPersistence'
 import SaveStatusBadge, { EditConflictBanner, EditorLoadError } from './SaveStatusBadge'
 
 interface DrawingCanvasProps {
@@ -144,7 +144,7 @@ function CanvasInner({ pageId, initialData, initialUpdatedAt, isCollaborative, r
       }
       // REL-009: só grava sobre a versão conhecida (lastSaveAt); se outra
       // pessoa salvou antes, o saver para em `conflict` e o aviso pede a escolha.
-      return saveVersionedContent(supabase, {
+      return saveVersionedContent(asVersionedClient(supabase), {
         table: 'drawing_contents',
         pageId,
         values: { elements, app_state: safeAppState, files },

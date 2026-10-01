@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
+import { RailButton, RailGroupTitle as GroupTitle } from '../../components/RailButton'
 import { BarChart3, BookOpen, CalendarClock, History, LayoutDashboard, PlusCircle } from 'lucide-react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { TranslationKey } from '../../i18n/translations'
@@ -24,54 +25,6 @@ const VIEW_ITEMS: { view: StudyViewName; labelKey: TranslationKey; icon: ReactNo
   { view: 'stats', labelKey: 'study_nav_stats', icon: <BarChart3 size={15} /> },
   { view: 'planning', labelKey: 'study_nav_planning', icon: <CalendarClock size={15} /> },
 ]
-
-function Badge({ count }: { count: number }) {
-  if (count <= 0) return null
-  return (
-    <span style={{
-      marginLeft: 'auto', minWidth: 18, height: 18, borderRadius: 999, backgroundColor: '#ef4444',
-      color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center',
-      justifyContent: 'center', padding: '0 5px', flexShrink: 0,
-    }}>
-      {count}
-    </span>
-  )
-}
-
-function RailButton({ icon, label, active, onClick, badge }: {
-  icon: ReactNode; label: string; active?: boolean; onClick: () => void; badge?: number
-}) {
-  const [hov, setHov] = useState(false)
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      type="button"
-      style={{
-        display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '8px 10px',
-        borderRadius: 8, border: 'none', cursor: 'pointer', textAlign: 'left',
-        backgroundColor: active ? 'var(--color-active)' : hov ? 'var(--color-hover)' : 'transparent',
-        color: 'var(--color-text)', fontSize: 13.5, fontWeight: active ? 600 : 500,
-      }}
-    >
-      <span style={{ display: 'flex', color: active ? 'var(--color-text)' : 'var(--color-text-muted)' }}>{icon}</span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-      {badge != null && <Badge count={badge} />}
-    </button>
-  )
-}
-
-function GroupTitle({ children }: { children: ReactNode }) {
-  return (
-    <div style={{
-      fontSize: 11, fontWeight: 700, letterSpacing: 0.7, textTransform: 'uppercase',
-      color: 'var(--color-text-muted)', padding: '0 10px', marginBottom: 4,
-    }}>
-      {children}
-    </div>
-  )
-}
 
 export default function StudyNav({ active, overdueCount, onSelect, onNew, isMobile = false }: StudyNavProps) {
   const { t } = useLanguage()
