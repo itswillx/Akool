@@ -478,6 +478,7 @@ const en: Record<TranslationKey, string> = {
   dashboard_tasks: 'Tasks',
   dashboard_upcoming: 'Upcoming tasks',
   dashboard_empty_recent: 'No items yet. Create your first page above.',
+  dashboard_badge_favorite: 'Favorite',
   dashboard_empty_favorites: 'Star pages from the sidebar to see them here.',
   dashboard_empty_upcoming: 'No open tasks. Enjoy the calm.',
   dashboard_loading_todos: 'Loading...',

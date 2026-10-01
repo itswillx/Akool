@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { BarChart3 } from 'lucide-react'
 import type { StudyCard, StudyLog, StudyTopic } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
+import { localeOf } from '../../i18n/translations'
 import { countByStatus, logsPerDay, progressByArea, topicProgress } from '../../lib/studyProgress'
 import { quizScore } from '../../lib/studyQuiz'
 import { ProgressBar, SectionLabel } from './StudyBits'
@@ -47,7 +48,7 @@ export default function StudyStats({ topics, cardsByTopic, logsByTopic, isMobile
   const weekday = (dateISO: string) => {
     const [y, m, d] = dateISO.split('-').map(Number)
     return new Date(y, m - 1, d)
-      .toLocaleDateString(lang === 'en' ? 'en-US' : 'pt-BR', { weekday: 'short' })
+      .toLocaleDateString(localeOf(lang), { weekday: 'short' })
       .slice(0, 3)
   }
 

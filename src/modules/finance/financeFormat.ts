@@ -1,5 +1,6 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { formatBRL } from '../../lib/money'
+import { localeOf, type Lang } from '../../i18n/translations'
 import { parseFinanceLocation, type ProjectsSection } from './myprojects/section'
 
 
@@ -35,9 +36,9 @@ export function fmt(cents: number) {
   return formatBRL(cents)
 }
 
-export function monthLabel(ym: string) {
+export function monthLabel(ym: string, lang: Lang) {
   const [y, m] = ym.split('-').map(Number)
-  return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  return new Date(y, m - 1, 1).toLocaleDateString(localeOf(lang), { month: 'long', year: 'numeric' })
 }
 
 export function prevMonth(ym: string) {

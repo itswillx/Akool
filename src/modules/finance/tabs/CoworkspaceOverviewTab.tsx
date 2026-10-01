@@ -13,6 +13,7 @@ import {
 import { Donut } from '../../../components/Charts'
 import { UserAvatar } from '../../../components/UserAvatar'
 import { useLanguage } from '../../../i18n/LanguageContext'
+import { localeOf } from '../../../i18n/translations'
 import {
   useFinanceMobile,
   cardSurfaceStyle, sectionCaptionStyle, ghostBtnStyle, tabularNums,
@@ -254,7 +255,7 @@ export default function CoworkspaceOverviewTab({
                         {avatarOf(tx.user_id, 15)}
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{memberName(tx.user_id)}</span>
                         <span>·</span>
-                        <span style={{ flexShrink: 0 }}>{new Date(tx.date + 'T12:00:00').toLocaleDateString(lang === 'en' ? 'en-US' : 'pt-BR', { day: '2-digit', month: 'short' })}</span>
+                        <span style={{ flexShrink: 0 }}>{new Date(tx.date + 'T12:00:00').toLocaleDateString(localeOf(lang), { day: '2-digit', month: 'short' })}</span>
                       </div>
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 600, color: tx.type === 'income' ? FIN_POS : FIN_NEG, flexShrink: 0, ...tabularNums }}>

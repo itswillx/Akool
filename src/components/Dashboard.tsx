@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase'
 import { setDocsSelection } from '../lib/docsNavigation'
 import { activateProps } from '../lib/a11y'
 import { useLanguage } from '../i18n/LanguageContext'
+import { localeOf, type Lang } from '../i18n/translations'
 import ErrorBoundary from './ErrorBoundary'
 import { formatBRL } from '../lib/money'
 import { accountBalance } from '../lib/financeCalc'
@@ -48,14 +49,14 @@ function last6Months(ym: string): string[] {
   return result
 }
 
-function monthLabel(ym: string, locale = 'pt-BR'): string {
+function monthLabel(ym: string, lang: Lang): string {
   const [y, m] = ym.split('-').map(Number)
-  return new Date(y, m - 1).toLocaleString(locale, { month: 'long', year: 'numeric' })
+  return new Date(y, m - 1).toLocaleString(localeOf(lang), { month: 'long', year: 'numeric' })
 }
 
-function shortMonthLabel(ym: string, locale = 'pt-BR'): string {
+function shortMonthLabel(ym: string, lang: Lang): string {
   const [y, m] = ym.split('-').map(Number)
-  return new Date(y, m - 1).toLocaleString(locale, { month: 'short' })
+  return new Date(y, m - 1).toLocaleString(localeOf(lang), { month: 'short' })
 }
 
 // Stored amounts are integer cents; format via the shared helper.
@@ -147,7 +148,7 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
   const { pages, createPage, setActivePage, setActivePanel } = usePages()
   const { user, profile } = useAuth()
   const { mode } = useWorkspaceMode()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const { notifications, unreadCount, markAsRead, markAllRead } = useNotifications()
   const [notifOpen, setNotifOpen] = useState(false)
   const notifRef = useRef<HTMLDivElement>(null)
@@ -236,7 +237,7 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
               {t('dashboard_hello')}, {displayName}! 👋
             </h1>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-muted)', textTransform: 'capitalize' }}>
-              {monthLabel(ym)}
+              {monthLabel(ym, lang)}
             </p>
           </div>
           <div ref={notifRef} style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'relative' }}>
@@ -397,9 +398,9 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
               <Empty text={t('dashboard_empty_recent')} />
             ) : (
               <ul style={listStyle}>
-                {favorites.slice(0, 3).map(p => <PageRow key={`fav-${p.id}`} page={p} onClick={() => openPage(p.id)} badge="Favorito" />)}
+                {favorites.slice(0, 3).map(p => <PageRow key={`fav-${p.id}`} page={p} onClick={() => openPage(p.id)} badge={t('dashboard_badge_favorite')} />)}
                 {recent.filter(p => !p.is_favorite).slice(0, 4).map(p => (
-                  <PageRow key={p.id} page={p} onClick={() => openPage(p.id)} badge={p.type === 'note' ? 'Nota' : p.type === 'drawing' ? 'Desenho' : p.type === 'todo' ? 'Lista' : 'Nota'} />
+                  <PageRow key={p.id} page={p} onClick={() => openPage(p.id)} badge={t(p.type === 'drawing' ? 'page_type_drawing' : p.type === 'todo' ? 'page_type_todo' : 'page_type_note')} />
                 ))}
               </ul>
             )}
@@ -631,7 +632,7 @@ export function Panel({ title, icon, children }: { title: string; icon: React.Re
 }
 
 function MonthlyChart({ data }: { data: { month: string; income: number; expense: number }[] }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   if (data.length === 0) return <div style={{ height: 80 }} />
   const max = Math.max(...data.flatMap(d => [d.income, d.expense]), 1)
   const chartH = 80
@@ -641,7 +642,7 @@ function MonthlyChart({ data }: { data: { month: string; income: number; expense
       {data.map(d => {
         const incH = Math.max((d.income / max) * chartH, d.income > 0 ? 2 : 0)
         const expH = Math.max((d.expense / max) * chartH, d.expense > 0 ? 2 : 0)
-        const lbl = shortMonthLabel(d.month)
+        const lbl = shortMonthLabel(d.month, lang)
         return (
           <div key={d.month} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, gap: 0 }}>
             <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: chartH }}>

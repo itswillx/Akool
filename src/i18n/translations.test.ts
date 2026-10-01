@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import { getT, isLangLoaded, loadLang, subscribeLangs } from './translations'
+import { getT, isLangLoaded, loadLang, localeOf, subscribeLangs } from './translations'
 import type { Lang } from './translations'
 import { ptBR } from './translations.pt-BR'
 import en from './translations.en'
@@ -77,5 +77,13 @@ describe('getT', () => {
     const t = getT('pt-BR')
     // @ts-expect-error testing unknown key fallback
     expect(t('nonexistent_key_xyz')).toBe('nonexistent_key_xyz')
+  })
+})
+
+describe('localeOf (UX-011)', () => {
+  it('mapeia o idioma do app para o locale do Intl', () => {
+    expect(localeOf('pt-BR')).toBe('pt-BR')
+    expect(localeOf('en')).toBe('en-US')
+    expect(new Date(2026, 9, 1).toLocaleDateString(localeOf('en'), { month: 'long' })).toBe('October')
   })
 })

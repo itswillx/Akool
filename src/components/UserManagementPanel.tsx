@@ -3,7 +3,7 @@ import { Users, Shield, User, Trash2, MailCheck, Power, PowerOff, Search, Refres
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import { toLang, type TranslationKey } from '../i18n/translations'
+import { localeOf, toLang, type TranslationKey } from '../i18n/translations'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { UserProfile } from '../contexts/AuthContext'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
@@ -646,7 +646,7 @@ const UserTableRow = memo(function UserTableRow({
   const { t, lang } = useLanguage()
 
   const lastSeen = u.last_sign_in
-    ? new Date(u.last_sign_in).toLocaleDateString(lang === 'en' ? 'en-US' : 'pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+    ? new Date(u.last_sign_in).toLocaleDateString(localeOf(lang), { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
     : '—'
 
   const actionButtons = (

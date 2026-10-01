@@ -2,6 +2,7 @@
 // ele arrastava o Excalidraw e o chunk do editor (~3 MB) para quem só queria
 // exportar as finanças.
 import { jsPDF } from 'jspdf'
+import { localeOf, type Lang } from '../i18n/translations'
 import { formatBRL } from './money'
 import { accountBalance } from './financeCalc'
 import type { FinanceTransaction, FinanceAccount, FinanceCategory, FinanceBudget, FinanceGoal, FinanceGoalContribution, FinanceRecurring } from '../types'
@@ -10,6 +11,8 @@ import { CONTENT_W, MARGIN, PAGE_H, PAGE_W } from './pdf/layout'
 // ─── Finance PDF export ───────────────────────────────────────────────────────
 
 export interface FinancePdfData {
+  /** UX-011: locale dos meses e das datas do relatório. */
+  lang?: Lang
   transactions: FinanceTransaction[]
   accounts: FinanceAccount[]
   categories: FinanceCategory[]
@@ -32,9 +35,9 @@ function finBRL(cents: number): string {
   return formatBRL(cents)
 }
 
-function finMonthLabel(ym: string): string {
+function finMonthLabel(ym: string, lang: Lang): string {
   const [y, m] = ym.split('-').map(Number)
-  return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  return new Date(y, m - 1, 1).toLocaleDateString(localeOf(lang), { month: 'long', year: 'numeric' })
 }
 
 function finCheckPage(doc: jsPDF, y: number, needed = 10): number {
@@ -349,6 +352,7 @@ export function exportFinanceToPdf({
   recurring,
   month,
   userName,
+  lang = 'pt-BR',
 }: FinancePdfData): void {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const catMap = new Map(categories.map(c => [c.id, c]))
@@ -368,9 +372,9 @@ export function exportFinanceToPdf({
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(140, 140, 140)
-  const mLabel = finMonthLabel(month)
+  const mLabel = finMonthLabel(month, lang)
   const monthCap = `${mLabel.charAt(0).toUpperCase()}${mLabel.slice(1)}`
-  const genDate = new Date().toLocaleDateString('pt-BR')
+  const genDate = new Date().toLocaleDateString(localeOf(lang))
   const safeUser = finSafe(userName)
   doc.text(`${monthCap}  |  Gerado em ${genDate}  |  Por: ${safeUser}`, MARGIN, y)
   y += 5
@@ -469,7 +473,7 @@ export function exportFinanceToPdf({
       const ym = `${ny}-${String(nm).padStart(2, '0')}`
       const txs = transactions.filter(tx => tx.date.startsWith(ym))
       monthsData.push({
-        label: new Date(ny, nm - 1, 1).toLocaleDateString('pt-BR', { month: 'short' }),
+        label: new Date(ny, nm - 1, 1).toLocaleDateString(localeOf(lang), { month: 'short' }),
         income: txs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0),
         expense: txs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0),
       })

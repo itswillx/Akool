@@ -5,6 +5,7 @@ import { FieldGroup } from '../../../components/Field'
 import { UserAvatar } from '../../../components/UserAvatar'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
+import { localeOf } from '../../../i18n/translations'
 import { supabase } from '../../../lib/supabase'
 import type { FinanceWorkspace, FinanceWorkspaceInvite, FinanceWorkspaceMember } from '../../../types'
 import {
@@ -28,7 +29,7 @@ export function WorkspaceModal({
   onClose: () => void
   onReload: () => Promise<void>
 }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const { user } = useAuth()
   const [creating, setCreating] = useState(false)
   const [wsName, setWsName] = useState('')
@@ -261,7 +262,7 @@ export function WorkspaceModal({
                   <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 8, backgroundColor: 'var(--color-surface)' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.invited_email}</p>
-                      <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{new Date(inv.created_at).toLocaleDateString()}</p>
+                      <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{new Date(inv.created_at).toLocaleDateString(localeOf(lang))}</p>
                     </div>
                     <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, backgroundColor: sc.bg, color: sc.text }}>{sc.label}</span>
                   </div>

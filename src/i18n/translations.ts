@@ -46,6 +46,14 @@ export function subscribeLangs(onChange: () => void): () => void {
 }
 
 /** Texto guardado (perfil, localStorage) → idioma do app; o que não for 'en' é pt-BR. */
+/**
+ * UX-011: o locale do Intl para o idioma do app. As datas e os meses de todas
+ * as telas passam por aqui; antes havia `'pt-BR'` fixo e mapeamentos à mão.
+ */
+export function localeOf(lang: Lang): 'pt-BR' | 'en-US' {
+  return lang === 'en' ? 'en-US' : 'pt-BR'
+}
+
 export function toLang(value: string | null | undefined): Lang {
   return value === 'en' ? 'en' : 'pt-BR'
 }

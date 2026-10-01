@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { History, Trash2 } from 'lucide-react'
 import type { StudyLog, StudyTopic } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
+import { localeOf } from '../../i18n/translations'
 import { localDateISO } from '../../lib/studyProgress'
 import { SectionLabel } from './StudyBits'
 import { formatDateISO } from './studyUi'
@@ -69,7 +70,7 @@ export default function StudyHistory({ topics, logsByTopic, onOpenTopic, request
                         </button>
                       )}
                       <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                        {new Date(log.created_at).toLocaleTimeString(lang === 'en' ? 'en-US' : 'pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(log.created_at).toLocaleTimeString(localeOf(lang), { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text)', whiteSpace: 'pre-wrap', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{log.content}</p>

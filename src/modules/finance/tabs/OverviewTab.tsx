@@ -2,6 +2,7 @@
 import { ChevronRight, CreditCard, RefreshCw, Star, Target, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useLanguage } from '../../../i18n/LanguageContext'
+import { localeOf } from '../../../i18n/translations'
 import {
 balancesByAccount,
 expenseByCategory,
@@ -47,7 +48,7 @@ export function OverviewTab({ transactions, transactionsAgg, categories, month, 
   workspaceName?: string | null
   onOpenWorkspaceView?: () => void
 }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const isMobile = useFinanceMobile()
   const [confirm, setConfirm] = useState<{ entryId: string; action: 'pay' | 'skip' } | null>(null)
 
@@ -91,12 +92,12 @@ export function OverviewTab({ transactions, transactionsAgg, categories, month, 
     const monthStats = months6.map((m, i) => ({
       month: m,
       label: new Date(parseInt(m.split('-')[0]), parseInt(m.split('-')[1]) - 1, 1)
-        .toLocaleDateString('pt-BR', { month: 'short' }),
+        .toLocaleDateString(localeOf(lang), { month: 'short' }),
       income: series[i].income,
       expense: series[i].expense,
     }))
     return { monthStats, maxBar: Math.max(...monthStats.flatMap(m => [m.income, m.expense]), 1) }
-  }, [transactionsAgg, month])
+  }, [transactionsAgg, month, lang])
 
   // Upcoming bills — next 15 days + overdue pending entries. `today` entra nas
   // dependências para o horizonte andar na virada do dia.
@@ -318,7 +319,7 @@ export function OverviewTab({ transactions, transactionsAgg, categories, month, 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rec.description}</p>
                     <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)' }}>
-                      {new Date(entry.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                      {new Date(entry.due_date + 'T12:00:00').toLocaleDateString(localeOf(lang), { day: '2-digit', month: 'short' })}
                       {rec.is_variable ? ` · ${t('finance_upcoming_variable')}` : rec.amount != null ? ` · ${fmt(rec.amount)}` : ''}
                     </p>
                   </div>
