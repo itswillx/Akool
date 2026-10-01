@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
+import { localDateKey } from '../lib/localDate'
 import {
   FileText, Pencil, Layers, CheckSquare, Star, ArrowRight,
   TrendingUp, Wallet, Bell, Check, X, Users, FolderKanban,
 } from 'lucide-react'
 import QuickNotes from './QuickNotes'
 import DashboardProjects, { useDashboardProjects } from './DashboardProjects'
-import type { Page, PageType, Todo, FinanceAccount, FinanceCategory } from '../types'
+import type { Page, PageType, Todo } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
@@ -14,10 +15,13 @@ import { supabase } from '../lib/supabase'
 import { setDocsSelection } from '../lib/docsNavigation'
 import { activateProps } from '../lib/a11y'
 import { useLanguage } from '../i18n/LanguageContext'
+import { localeOf, type Lang } from '../i18n/translations'
 import ErrorBoundary from './ErrorBoundary'
 import { formatBRL } from '../lib/money'
-import { accountBalance, FINANCE_TX_AGG_COLUMNS, type FinanceTxAgg } from '../lib/financeCalc'
-import { fetchAllRows } from '../lib/fetchAllRows'
+import { accountBalance } from '../lib/financeCalc'
+import { QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { loadDashboardFinance, loadDashboardTodos } from '../lib/data/dashboard'
+import { dashboardKeys, queryClient, startDashboardInvalidation } from '../lib/queryClient'
 
 interface DashboardProps {
   isMobile?: boolean
@@ -26,6 +30,8 @@ interface DashboardProps {
 function flatPages(ps: Page[]): Page[] {
   return ps.flatMap(p => [p, ...flatPages(p.children ?? [])])
 }
+
+const NO_TODOS: Todo[] = []
 
 function currentYM(): string {
   const d = new Date()
@@ -44,14 +50,14 @@ function last6Months(ym: string): string[] {
   return result
 }
 
-function monthLabel(ym: string, locale = 'pt-BR'): string {
+function monthLabel(ym: string, lang: Lang): string {
   const [y, m] = ym.split('-').map(Number)
-  return new Date(y, m - 1).toLocaleString(locale, { month: 'long', year: 'numeric' })
+  return new Date(y, m - 1).toLocaleString(localeOf(lang), { month: 'long', year: 'numeric' })
 }
 
-function shortMonthLabel(ym: string, locale = 'pt-BR'): string {
+function shortMonthLabel(ym: string, lang: Lang): string {
   const [y, m] = ym.split('-').map(Number)
-  return new Date(y, m - 1).toLocaleString(locale, { month: 'short' })
+  return new Date(y, m - 1).toLocaleString(localeOf(lang), { month: 'short' })
 }
 
 // Stored amounts are integer cents; format via the shared helper.
@@ -70,74 +76,81 @@ interface FinanceStats {
 }
 
 function useDashboardFinance(userId: string | undefined, enabled: boolean): FinanceStats {
-  const [stats, setStats] = useState<FinanceStats>({
-    totalBalance: 0, monthIncome: 0, monthExpense: 0,
-    topCategories: [], monthlyData: [], savingsRate: 0, loaded: false,
+  // PERF-015: em cache (react-query). Finanças não estão no realtime, então
+  // staleTime 0: ao voltar, os números aparecem na hora e são revalidados.
+  const { data } = useQuery({
+    queryKey: dashboardKeys.finance(userId),
+    queryFn: () => loadDashboardFinance(userId!).catch((err: unknown) => {
+      console.error('dashboard finance:', err)
+      throw err
+    }),
+    // In "projects" mode finance is hidden, so skip the finance_* queries entirely.
+    enabled: !!userId && enabled,
+    staleTime: 0,
   })
 
-  useEffect(() => {
-    // In "projects" mode finance is hidden, so skip the finance_* queries entirely.
-    if (!userId || !enabled) return
+  return useMemo(() => {
+    if (!data) return EMPTY_FINANCE
+    const { accounts, transactions, categories } = data
     const ym = currentYM()
     const months = last6Months(ym)
 
-    Promise.all([
-      supabase.from('finance_accounts').select('*').eq('user_id', userId),
-      // REL-003: o histórico inteiro, paginado (o PostgREST corta em 1000 sem
-      // erro), e só as colunas que o saldo e os totais usam.
-      fetchAllRows<FinanceTxAgg>((from, to) => supabase.from('finance_transactions')
-        .select(FINANCE_TX_AGG_COLUMNS).eq('user_id', userId)
-        .order('id').range(from, to).overrideTypes<FinanceTxAgg[], { merge: false }>()),
-      supabase.from('finance_categories').select('*').eq('user_id', userId),
-    ]).then(([accRes, txRes, catRes]) => {
-      const error = accRes.error ?? txRes.error ?? catRes.error
-      if (error) { console.error('dashboard finance:', error); return }
-      const accounts: FinanceAccount[] = (accRes.data ?? [])
-      const transactions = txRes.data ?? []
-      const categories: FinanceCategory[] = (catRes.data ?? [])
+    // Via the shared helper, para não divergir do saldo mostrado no painel.
+    const totalBalance = accounts.reduce(
+      (s, acc) => s + accountBalance(acc, transactions), 0)
 
-      // Via the shared helper, para não divergir do saldo mostrado no painel.
-      const totalBalance = accounts.reduce(
-        (s, acc) => s + accountBalance(acc, transactions), 0)
+    const monthTx = transactions.filter(t => t.date.startsWith(ym))
+    const monthIncome = monthTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
+    const monthExpense = monthTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+    const savingsRate = monthIncome > 0 ? Math.round(((monthIncome - monthExpense) / monthIncome) * 100) : 0
 
-      const monthTx = transactions.filter(t => t.date.startsWith(ym))
-      const monthIncome = monthTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-      const monthExpense = monthTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-      const savingsRate = monthIncome > 0 ? Math.round(((monthIncome - monthExpense) / monthIncome) * 100) : 0
+    const catExpenseMap: Record<string, number> = {}
+    monthTx.filter(t => t.type === 'expense' && t.category_id).forEach(t => {
+      catExpenseMap[t.category_id!] = (catExpenseMap[t.category_id!] ?? 0) + t.amount
+    })
+    const topCategories = categories
+      .filter(c => c.type === 'expense' && catExpenseMap[c.id])
+      .map(c => ({ id: c.id, name: c.name, amount: catExpenseMap[c.id] ?? 0, color: c.color || '#6366f1', emoji: c.icon || '' }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 4)
 
-      const catExpenseMap: Record<string, number> = {}
-      monthTx.filter(t => t.type === 'expense' && t.category_id).forEach(t => {
-        catExpenseMap[t.category_id!] = (catExpenseMap[t.category_id!] ?? 0) + t.amount
-      })
-      const topCategories = categories
-        .filter(c => c.type === 'expense' && catExpenseMap[c.id])
-        .map(c => ({ id: c.id, name: c.name, amount: catExpenseMap[c.id] ?? 0, color: c.color || '#6366f1', emoji: c.icon || '' }))
-        .sort((a, b) => b.amount - a.amount)
-        .slice(0, 4)
+    const monthlyData = months.map(m => {
+      const mTx = transactions.filter(t => t.date.startsWith(m))
+      return {
+        month: m,
+        income: mTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0),
+        expense: mTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
+      }
+    })
 
-      const monthlyData = months.map(m => {
-        const mTx = transactions.filter(t => t.date.startsWith(m))
-        return {
-          month: m,
-          income: mTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0),
-          expense: mTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
-        }
-      })
-
-      setStats({ totalBalance, monthIncome, monthExpense, topCategories, monthlyData, savingsRate, loaded: true })
-    }, err => console.error('dashboard finance:', err))
-  }, [userId, enabled])
-
-  return stats
+    return { totalBalance, monthIncome, monthExpense, topCategories, monthlyData, savingsRate, loaded: true }
+  }, [data])
 }
 
-export default function Dashboard({ isMobile = false }: DashboardProps) {
+const EMPTY_FINANCE: FinanceStats = {
+  totalBalance: 0, monthIncome: 0, monthExpense: 0,
+  topCategories: [], monthlyData: [], savingsRate: 0, loaded: false,
+}
+
+// PERF-015: o provider do react-query fica aqui (e não no App) para a lib
+// entrar no chunk do Dashboard, e não no boot. O cliente é singleton: o cache
+// sobrevive a sair e voltar.
+export default function Dashboard(props: DashboardProps) {
+  const { user } = useAuth()
+  useEffect(() => { if (user?.id) startDashboardInvalidation(user.id) }, [user?.id])
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DashboardContent {...props} />
+    </QueryClientProvider>
+  )
+}
+
+function DashboardContent({ isMobile = false }: DashboardProps) {
   const { pages, createPage, setActivePage, setActivePanel } = usePages()
   const { user, profile } = useAuth()
   const { mode } = useWorkspaceMode()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const { notifications, unreadCount, markAsRead, markAllRead } = useNotifications()
-  const [todos, setTodos] = useState<Todo[]>([])
   const [notifOpen, setNotifOpen] = useState(false)
   const notifRef = useRef<HTMLDivElement>(null)
   const ym = currentYM()
@@ -157,24 +170,15 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
     return () => document.removeEventListener('mousedown', handler)
   }, [notifOpen])
 
-  useEffect(() => {
-    const userId = user?.id
-    if (!userId) return
-    // REL-003: todas as tarefas do usuário, paginadas (o total e o % de
-    // conclusão saem daqui).
-    fetchAllRows((from, to) => supabase
-      .from('todos').select('*').eq('user_id', userId)
-      .order('completed', { ascending: true })
-      .order('due_date', { ascending: true, nullsFirst: false })
-      .order('id')
-      .range(from, to))
-      .then(({ data, error }) => {
-        if (error) console.error('dashboard todos:', error)
-        else setTodos(data)
-      }, err => console.error('dashboard todos:', err))
-  // Dashboard remounts when reopened, so fetching once per user is enough;
-  // depending on `pages` caused a full todos refetch on every page edit.
-  }, [user?.id])
+  // PERF-015: em cache; o realtime de todos invalida (lib/queryClient.ts).
+  const { data: todos = NO_TODOS } = useQuery({
+    queryKey: dashboardKeys.todos(user?.id),
+    queryFn: () => loadDashboardTodos(user!.id).catch((err: unknown) => {
+      console.error('dashboard todos:', err)
+      throw err
+    }),
+    enabled: !!user?.id,
+  })
 
   const flat = useMemo(() => flatPages(pages), [pages])
 
@@ -195,7 +199,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
   const todoStats = useMemo(() => {
     const open = todos.filter(t => !t.completed)
     const done = todos.length - open.length
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateKey()
     const completion = todos.length === 0 ? 0 : Math.round((done / todos.length) * 100)
     return { open: open.length, done, total: todos.length, completion,
       overdue: open.filter(t => t.due_date && t.due_date < today).length }
@@ -234,7 +238,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
               {t('dashboard_hello')}, {displayName}! 👋
             </h1>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-muted)', textTransform: 'capitalize' }}>
-              {monthLabel(ym)}
+              {monthLabel(ym, lang)}
             </p>
           </div>
           <div ref={notifRef} style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'relative' }}>
@@ -395,9 +399,9 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
               <Empty text={t('dashboard_empty_recent')} />
             ) : (
               <ul style={listStyle}>
-                {favorites.slice(0, 3).map(p => <PageRow key={`fav-${p.id}`} page={p} onClick={() => openPage(p.id)} badge="Favorito" />)}
+                {favorites.slice(0, 3).map(p => <PageRow key={`fav-${p.id}`} page={p} onClick={() => openPage(p.id)} badge={t('dashboard_badge_favorite')} />)}
                 {recent.filter(p => !p.is_favorite).slice(0, 4).map(p => (
-                  <PageRow key={p.id} page={p} onClick={() => openPage(p.id)} badge={p.type === 'note' ? 'Nota' : p.type === 'drawing' ? 'Desenho' : p.type === 'todo' ? 'Lista' : 'Nota'} />
+                  <PageRow key={p.id} page={p} onClick={() => openPage(p.id)} badge={t(p.type === 'drawing' ? 'page_type_drawing' : p.type === 'todo' ? 'page_type_todo' : 'page_type_note')} />
                 ))}
               </ul>
             )}
@@ -410,7 +414,7 @@ export default function Dashboard({ isMobile = false }: DashboardProps) {
               <ul style={listStyle}>
                 {upcoming.map(todo => {
                   const parent = flat.find(p => p.id === todo.page_id)
-                  const today = new Date().toISOString().slice(0, 10)
+                  const today = localDateKey()
                   const overdue = todo.due_date && todo.due_date < today
                   return (
                     <li
@@ -629,7 +633,7 @@ export function Panel({ title, icon, children }: { title: string; icon: React.Re
 }
 
 function MonthlyChart({ data }: { data: { month: string; income: number; expense: number }[] }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   if (data.length === 0) return <div style={{ height: 80 }} />
   const max = Math.max(...data.flatMap(d => [d.income, d.expense]), 1)
   const chartH = 80
@@ -639,7 +643,7 @@ function MonthlyChart({ data }: { data: { month: string; income: number; expense
       {data.map(d => {
         const incH = Math.max((d.income / max) * chartH, d.income > 0 ? 2 : 0)
         const expH = Math.max((d.expense / max) * chartH, d.expense > 0 ? 2 : 0)
-        const lbl = shortMonthLabel(d.month)
+        const lbl = shortMonthLabel(d.month, lang)
         return (
           <div key={d.month} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, gap: 0 }}>
             <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: chartH }}>

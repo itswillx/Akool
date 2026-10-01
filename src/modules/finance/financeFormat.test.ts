@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { currentYM, daysUntil, fmt, last6Months, nextMonth, prevMonth, resolveTabRequest } from './financeFormat'
+import { currentYM, daysUntil, fmt, last6Months, monthLabel, nextMonth, prevMonth, resolveTabRequest } from './financeFormat'
 
 // ARCH-001: helpers que saíram do FinancePanel (abas, meses, prazos).
 
@@ -50,5 +50,12 @@ describe('daysUntil', () => {
 describe('fmt', () => {
   it('formata centavos em reais', () => {
     expect(fmt(123_456)).toMatch(/1\.234,56/)
+  })
+})
+
+describe('monthLabel (UX-011)', () => {
+  it('segue o idioma do app', () => {
+    expect(monthLabel('2026-10', 'en')).toBe('October 2026')
+    expect(monthLabel('2026-10', 'pt-BR')).toContain('outubro')
   })
 })

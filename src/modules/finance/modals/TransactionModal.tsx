@@ -1,5 +1,6 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { Camera, ChevronDown, Download, Trash2, X } from 'lucide-react'
+import { localDateKey } from '../../../lib/localDate'
 import { useEffect, useRef, useState } from 'react'
 import { Field, FieldGroup } from '../../../components/Field'
 import { useLanguage } from '../../../i18n/LanguageContext'
@@ -55,7 +56,8 @@ export function TransactionModal({
 }) {
   const { t } = useLanguage()
   const isMobile = useFinanceMobile()
-  const today = new Date().toISOString().split('T')[0]
+  // REL-007: data do relógio local; a UTC virava amanhã depois das 21h.
+  const today = localDateKey()
   const [form, setForm] = useState<TxForm>({
     type: tx?.type ?? 'expense',
     amount: tx ? String(fromCents(tx.amount)) : '',

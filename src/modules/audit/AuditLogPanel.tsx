@@ -3,7 +3,7 @@ import { ScrollText, RefreshCw, AlertTriangle, ChevronDown, ChevronRight } from 
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useLanguage } from '../../i18n/LanguageContext'
-import type { TranslationKey } from '../../i18n/translations'
+import { localeOf, type Lang, type TranslationKey } from '../../i18n/translations'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import type { AuditLogEntry } from '../../types'
 import { activateProps } from '../../lib/a11y'
@@ -63,8 +63,8 @@ function ObservabilityRow({ t }: { t: TFn }) {
   )
 }
 
-function formatDate(iso: string, lang: string): string {
-  return new Date(iso).toLocaleString(lang === 'en' ? 'en-US' : 'pt-BR', {
+function formatDate(iso: string, lang: Lang): string {
+  return new Date(iso).toLocaleString(localeOf(lang), {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 }
@@ -248,7 +248,7 @@ const AuditRow = memo(function AuditRow({
   entry, lang, t, isMobile, isLast, isExpanded, onToggle,
 }: {
   entry: AuditLogEntry
-  lang: string
+  lang: Lang
   t: TFn
   isMobile: boolean
   isLast: boolean

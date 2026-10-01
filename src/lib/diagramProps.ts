@@ -25,3 +25,19 @@ export function parseDiagramProps(elements: string, appState: string): DiagramPr
 
   return { ok: true, elements: parsedElements, appState: parsedAppState }
 }
+
+/**
+ * UX-013: ao desmontar o bloco com um save agendado (debounce de 800 ms),
+ * grava na hora se o bloco ainda existir no editor; se foi removido, descarta
+ * (antes, o timer disparava `updateBlock` sobre um bloco inexistente).
+ */
+export function flushPendingDiagramSave<T>({ pending, blockExists, save }: {
+  pending: T | null
+  blockExists: () => boolean
+  save: (value: T) => void
+}): 'saved' | 'discarded' | 'nothing' {
+  if (pending === null) return 'nothing'
+  if (!blockExists()) return 'discarded'
+  save(pending)
+  return 'saved'
+}

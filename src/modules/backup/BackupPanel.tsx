@@ -3,7 +3,7 @@ import { Database, RefreshCw, Trash2, RotateCcw, AlertTriangle, ShieldCheck } fr
 import { useAuth } from '../../contexts/AuthContext'
 import { usePages } from '../../contexts/PagesContext'
 import { useLanguage } from '../../i18n/LanguageContext'
-import type { TranslationKey } from '../../i18n/translations'
+import { localeOf, type Lang, type TranslationKey } from '../../i18n/translations'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { useSiteBackup, formatBackupSize, mapBackupError } from './useSiteBackup'
 import type { SiteBackup } from '../../types'
@@ -11,8 +11,8 @@ import ConfirmDeleteModal from '../../components/ConfirmDeleteModal'
 
 type TFn = (key: TranslationKey, vars?: Record<string, string | number>) => string
 
-function formatDate(iso: string, lang: string): string {
-  return new Date(iso).toLocaleString(lang === 'en' ? 'en-US' : 'pt-BR', {
+function formatDate(iso: string, lang: Lang): string {
+  return new Date(iso).toLocaleString(localeOf(lang), {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 }
@@ -306,7 +306,7 @@ const BackupRow = memo(function BackupRow({
   backup, lang, t, isBusy, isMobile, isLast, runningAction, onRestore, onDelete, onValidate,
 }: {
   backup: SiteBackup
-  lang: string
+  lang: Lang
   t: TFn
   isBusy: boolean
   isMobile: boolean

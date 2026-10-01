@@ -10,7 +10,7 @@ import { usePages } from '../contexts/PagesContext'
 import { useCollaborativeContent } from '../hooks/useCollaborativeContent'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import { classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, type SaveStatus } from '../lib/contentPersistence'
+import { classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, sceneVersion, type SaveStatus } from '../lib/contentPersistence'
 import SaveStatusBadge, { EditConflictBanner, EditorLoadError } from './SaveStatusBadge'
 
 interface DrawingCanvasProps {
@@ -109,10 +109,15 @@ function CanvasInner({ pageId, initialData, initialUpdatedAt, isCollaborative, r
   appTheme: 'light' | 'dark'
   onReloadFromServer: () => void
 }) {
+  // UX-006: o Excalidraw grava `document.documentElement.lang` com o seu
+  // langCode (padrão "en"); com o idioma do app, o <html lang> não muda.
+  const { lang } = useLanguage()
   const lastSaveAt = useRef<string | null>(initialUpdatedAt)
   const isDirty = useRef(false)
   const localSavedAt = useRef<number>(0)
-  const prevElementsRef = useRef<readonly ExcalidrawElement[]>(initialData.elements)
+  // REL-009: a última versão da cena salva ou aplicada. O onChange da carga,
+  // do pan/zoom e do updateScene remoto chega com a mesma versão e não grava.
+  const lastSceneVersion = useRef(sceneVersion(initialData.elements))
   const excalidrawApi = useRef<ExcalidrawImperativeAPI | null>(null)
 
   const { remoteContent, remoteUpdatedAt } = useCollaborativeContent(pageId, 'drawing_contents', isCollaborative)
@@ -166,8 +171,11 @@ function CanvasInner({ pageId, initialData, initialUpdatedAt, isCollaborative, r
         lastSaveAt.current = remoteUpdatedAt
         // REL-009: a cena agora é a versão salva; o próximo save grava sobre ela.
         saver.setVersion(remoteUpdatedAt)
-        // Conteúdo remoto da mesma coluna jsonb (ver o load acima).
-        excalidrawApi.current.updateScene({ elements: remoteContent as ExcalidrawElement[] })
+        // Conteúdo remoto da mesma coluna jsonb (ver o load acima). A versão
+        // entra antes do updateScene: o onChange que ele dispara não é edição.
+        const remoteElements = remoteContent as ExcalidrawElement[]
+        lastSceneVersion.current = sceneVersion(remoteElements)
+        excalidrawApi.current.updateScene({ elements: remoteElements })
       }
     }
   }, [remoteContent, remoteUpdatedAt, saver])
@@ -195,9 +203,11 @@ function CanvasInner({ pageId, initialData, initialUpdatedAt, isCollaborative, r
   const handleChange = useCallback(
     (elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
       if (readOnly) return
-      // Only react to actual element changes, not appState (pan/zoom/selection)
-      if (elements === prevElementsRef.current) return
-      prevElementsRef.current = elements
+      // Só edição de verdade: a soma dos `version` muda a cada mutação de
+      // elemento, e fica igual em pan/zoom, na carga e no eco do realtime.
+      const version = sceneVersion(elements)
+      if (version === lastSceneVersion.current) return
+      lastSceneVersion.current = version
       isDirty.current = true
       saver.schedule({ elements: [...elements], appState, files })
     },
@@ -222,6 +232,7 @@ function CanvasInner({ pageId, initialData, initialUpdatedAt, isCollaborative, r
           files: initialData.files,
         }}
         theme={appTheme}
+        langCode={lang}
         onChange={handleChange}
         viewModeEnabled={readOnly}
         UIOptions={{

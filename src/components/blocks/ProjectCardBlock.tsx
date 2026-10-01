@@ -1,4 +1,5 @@
 import { createReactBlockSpec } from '@blocknote/react'
+import { localeOf } from '../../i18n/translations'
 import { Calendar, CheckSquare, ExternalLink } from 'lucide-react'
 import type { ProjectCardPriority } from '../../types'
 import type { ProjectCardSnapshot } from '../../lib/projectImport'
@@ -32,7 +33,7 @@ export const ProjectCardBlock = createReactBlockSpec(
   },
   {
     render: ({ block }) => {
-      const { t } = useLanguage()
+      const { t, lang } = useLanguage()
       const { setActivePanel } = usePages()
 
       let snap: ProjectCardSnapshot | null = null
@@ -121,7 +122,7 @@ export const ProjectCardBlock = createReactBlockSpec(
               {due && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: dueColor }}>
                   <Calendar size={11} />
-                  {overdue ? t('projects_due_overdue') : isToday ? t('projects_due_today') : due.toLocaleDateString()}
+                  {overdue ? t('projects_due_overdue') : isToday ? t('projects_due_today') : due.toLocaleDateString(localeOf(lang))}
                 </span>
               )}
               {checklistTotal > 0 && (

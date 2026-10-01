@@ -476,6 +476,7 @@ export const ptBR = {
   dashboard_tasks: 'Tarefas',
   dashboard_upcoming: 'Próximas tarefas',
   dashboard_empty_recent: 'Nenhum item ainda. Crie sua primeira página acima.',
+  dashboard_badge_favorite: 'Favorito',
   dashboard_empty_favorites: 'Marque páginas como favoritas na sidebar para vê-las aqui.',
   dashboard_empty_upcoming: 'Nenhuma tarefa em aberto. Aproveite a calma.',
   dashboard_loading_todos: 'Carregando...',

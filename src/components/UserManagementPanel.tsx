@@ -3,7 +3,7 @@ import { Users, Shield, User, Trash2, MailCheck, Power, PowerOff, Search, Refres
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import { toLang, type TranslationKey } from '../i18n/translations'
+import { localeOf, toLang, type TranslationKey } from '../i18n/translations'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { UserProfile } from '../contexts/AuthContext'
 import ConfirmDeleteModal from './ConfirmDeleteModal'
@@ -104,7 +104,7 @@ const ADMIN_OPS_ERROR_KEYS: Record<string, TranslationKey> = {
 
 export default function UserManagementPanel() {
   const { user: currentUser, refreshProfile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const isMobile = useIsMobile()
   const [users, setUsers] = useState<UserRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -522,8 +522,8 @@ export default function UserManagementPanel() {
                       <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 90px 90px 100px 1fr 60px', padding: '10px 16px', borderBottom: isLast ? 'none' : '1px solid var(--color-border)', alignItems: 'center', backgroundColor: 'var(--color-surface)' }}>
                         <span style={{ fontSize: 13, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.created_by_email ?? c.created_by}</span>
                         <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-text)' }}>{c.code}</span>
-                        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{new Date(c.created_at).toLocaleDateString()}</span>
-                        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{new Date(c.expires_at).toLocaleDateString()}</span>
+                        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{new Date(c.created_at).toLocaleDateString(localeOf(lang))}</span>
+                        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{new Date(c.expires_at).toLocaleDateString(localeOf(lang))}</span>
                         <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, backgroundColor: sc.bg, color: sc.text, width: 'fit-content' }}>{t(('admin_invites_filter_' + status) as Parameters<typeof t>[0])}</span>
                         <span style={{ fontSize: 12, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.used_by_email ?? (c.used_by ? c.used_by.slice(0, 8) + '…' : '—')}</span>
                         <div style={{ display: 'flex', gap: 4 }}>
@@ -646,7 +646,7 @@ const UserTableRow = memo(function UserTableRow({
   const { t, lang } = useLanguage()
 
   const lastSeen = u.last_sign_in
-    ? new Date(u.last_sign_in).toLocaleDateString(lang === 'en' ? 'en-US' : 'pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+    ? new Date(u.last_sign_in).toLocaleDateString(localeOf(lang), { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
     : '—'
 
   const actionButtons = (

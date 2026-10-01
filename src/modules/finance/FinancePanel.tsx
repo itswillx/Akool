@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, FileDown, PanelLeft, PanelTop, Plus, Users, Wallet } from 'lucide-react'
+import { onAppEvent } from '../../lib/appEvents'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Tabs } from '../../components/Tabs'
 import { useAuth } from '../../contexts/AuthContext'
@@ -61,7 +62,7 @@ import OverviewDetailedTab from './tabs/OverviewDetailedTab'
 
 export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: boolean } = {}) {
   const { user, profile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const { showToast } = useToast()
   const isMobileHook = useIsMobile()
   const isMobile = isMobileProp ?? isMobileHook
@@ -99,11 +100,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   // income/expense of a sale/purchase) and announces it here, so the
   // Transactions tab reflects the change without an F5. Silent: a full reload
   // would flip `loading` and unmount the tab the user is standing on.
-  useEffect(() => {
-    const handler = () => { refetchTransactions() }
-    window.addEventListener('finance_transactions_changed', handler)
-    return () => window.removeEventListener('finance_transactions_changed', handler)
-  }, [refetchTransactions])
+  useEffect(() => onAppEvent('finance_transactions_changed', () => { refetchTransactions() }), [refetchTransactions])
 
   useAutoRecurringBudgets({ data: financeData, month })
 
@@ -158,7 +155,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
 
   // Header subtitle shown in the Lateral layout under the tab title.
   const tabSubtitle =
-    tab === 'overview' ? t('finance_subtitle_overview', { month: monthLabel(month) })
+    tab === 'overview' ? t('finance_subtitle_overview', { month: monthLabel(month, lang) })
     : tab === 'transactions' ? (monthTxs.length === 1 ? t('finance_subtitle_transactions', { n: 1 }) : t('finance_subtitle_transactions_plural', { n: monthTxs.length }))
     : ''
 
@@ -197,7 +194,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                 <ChevronLeft size={15} />
               </button>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)', minWidth: isMobile ? 74 : 90, textAlign: 'center', textTransform: 'capitalize' }}>
-                {monthLabel(month)}
+                {monthLabel(month, lang)}
               </span>
               <button aria-label={t('finance_next_month')} onClick={() => setMonth(nextMonth(month))}
                 style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', padding: 4, borderRadius: 4 }}>
@@ -245,7 +242,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                   return
                 }
                 const { exportFinanceToPdf } = await import('../../lib/financePdf')
-                exportFinanceToPdf({ transactions: exportTxs, accounts, categories, budgets, goals, contributions, recurring, month, userName: profile?.display_name || profile?.email || '' })
+                exportFinanceToPdf({ transactions: exportTxs, accounts, categories, budgets, goals, contributions, recurring, month, userName: profile?.display_name || profile?.email || '' , lang })
               } catch (err) {
                 console.error('[FinancePDF] export error:', err)
               } finally {

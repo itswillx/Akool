@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Field } from '../../../components/Field'
 import { useLanguage } from '../../../i18n/LanguageContext'
+import { localeOf } from '../../../i18n/translations'
 import { fromCents, toCents } from '../../../lib/money'
 import type { FinanceAccount, FinanceCategory, FinanceRecurring, FinanceRecurringEntry, FinanceTxType } from '../../../types'
 import {
@@ -239,7 +240,7 @@ export function PayAmountModal({ entry, recurring, onClose, onSave }: {
   onClose: () => void
   onSave: (amount: number) => Promise<void>
 }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [amount, setAmount] = useState(recurring.amount != null ? String(fromCents(recurring.amount)) : '')
   const [saving, setSaving] = useState(false)
 
@@ -262,7 +263,7 @@ export function PayAmountModal({ entry, recurring, onClose, onSave }: {
     <Modal title={t('finance_recurring_mark_paid')} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <p style={{ margin: 0, fontSize: 14, color: 'var(--color-text-muted)' }}>
-          {recurring.description} · {new Date(entry.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+          {recurring.description} · {new Date(entry.due_date + 'T12:00:00').toLocaleDateString(localeOf(lang))}
         </p>
         <div>
           <Field label={t('finance_recurring_enter_amount')} labelStyle={labelStyle}>{control => (

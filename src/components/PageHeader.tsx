@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react'
+import { localDateKey } from '../lib/localDate'
 import { FileText, Pencil, Layers, ChevronDown, CheckSquare, UserPlus, FileDown } from 'lucide-react'
 import type { Page, PageType } from '../types'
 import { usePages } from '../contexts/PagesContext'
@@ -80,7 +81,7 @@ function PresenceAvatar({ user: presence }: { user: PresenceUser }) {
 export default function PageHeader({ page, isMobile = false }: PageHeaderProps) {
   const { updatePage, userShareRole } = usePages()
   const { user } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const typeOptions = useTypeOptions()
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleValue, setTitleValue] = useState(page.title)
@@ -215,10 +216,10 @@ export default function PageHeader({ page, isMobile = false }: PageHeaderProps) 
               if (exporting) return
               setExporting(true)
               try {
-                const date = new Date().toISOString().slice(0, 10)
+                const date = localDateKey()
                 const safeTitle = (page.title || 'page').replace(/[^a-zA-Z0-9_-]/g, '_')
                 const { exportPagesToPdf } = await import('../hooks/usePdfExport')
-                await exportPagesToPdf([page], `${safeTitle}-${date}.pdf`, t)
+                await exportPagesToPdf([page], `${safeTitle}-${date}.pdf`, t, lang)
               } catch (err) {
                 console.error('[PageHeader] PDF export error:', err)
               } finally {

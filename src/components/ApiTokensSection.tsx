@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { localeOf } from '../i18n/translations'
 import { Check, Copy, KeyRound } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { copyToClipboard } from '../lib/clipboard'
@@ -28,7 +29,7 @@ function tokenStatus(token: ApiToken, now: number): TokenStatus {
 const STATUS_COLOR: Record<TokenStatus, string> = { active: '#22c55e', revoked: '#ef4444', expired: '#94a3b8' }
 
 export default function ApiTokensSection() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [tokens, setTokens] = useState<ApiToken[]>([])
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -88,7 +89,7 @@ export default function ApiTokensSection() {
     if (newToken && await copyToClipboard(newToken)) setCopied(true)
   }
 
-  const fmt = (iso: string) => new Date(iso).toLocaleDateString()
+  const fmt = (iso: string) => new Date(iso).toLocaleDateString(localeOf(lang))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

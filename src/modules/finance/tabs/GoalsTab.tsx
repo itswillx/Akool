@@ -2,6 +2,7 @@
 import { CheckCircle2, ChevronDown, Pencil, Target, Trash2, Users, XCircle } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useLanguage } from '../../../i18n/LanguageContext'
+import { localeOf } from '../../../i18n/translations'
 import {
 sumByGoal
 } from '../../../lib/financeCalc'
@@ -30,7 +31,7 @@ export function GoalsTab({ goals, contributions, accounts, goalShares, incomingG
   onUpdateStatus: (id: string, status: FinanceGoal['status']) => Promise<void>
   onShareGoal: (g: FinanceGoal) => void
 }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
@@ -81,7 +82,7 @@ export function GoalsTab({ goals, contributions, accounts, goalShares, incomingG
 
   const deadlineLabel = (goal: FinanceGoal, status: ReturnType<typeof getEffectiveStatus>) => {
     if (status === 'completed' || status === 'cancelled') {
-      return new Date(goal.deadline + 'T00:00:00').toLocaleDateString('pt-BR')
+      return new Date(goal.deadline + 'T00:00:00').toLocaleDateString(localeOf(lang))
     }
     const days = Math.abs(daysUntil(goal.deadline))
     const raw = daysUntil(goal.deadline)
@@ -238,7 +239,7 @@ export function GoalsTab({ goals, contributions, accounts, goalShares, incomingG
                   <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: goal.color, flexShrink: 0 }} />
                     <span style={{ fontSize: 13, color: 'var(--color-text-muted)', minWidth: 80 }}>
-                      {new Date(c.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                      {new Date(c.date + 'T12:00:00').toLocaleDateString(localeOf(lang), { day: '2-digit', month: 'short' })}
                     </span>
                     <span style={{ fontSize: 13, fontWeight: 700, color: goal.color }}>{fmt(c.amount)}</span>
                     {c.note && <span style={{ fontSize: 12, color: 'var(--color-text-muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.note}</span>}

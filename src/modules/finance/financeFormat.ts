@@ -1,11 +1,13 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { formatBRL } from '../../lib/money'
+import { localeOf, type Lang } from '../../i18n/translations'
 import { parseFinanceLocation, type ProjectsSection } from './myprojects/section'
 
 
-// Single source of truth for the tabs: the union, the localStorage validator and
-// the CustomEvent whitelist below all derive from this array, so adding a tab in
-// one place can't silently desync the other two.
+// Single source of truth for the tabs: the union and the localStorage validator
+// below both derive from this array, so adding a tab in one place can't
+// silently desync the other. (ARCH-007: o CustomEvent `finance_tab_change`
+// não existe mais; a navegação usa `navigateTo` e o localStorage.)
 const TAB_IDS = ['overview', 'transactions', 'budgets', 'accounts', 'categories', 'recurring', 'network', 'myprojects'] as const
 export type TabId = typeof TAB_IDS[number]
 
@@ -15,8 +17,8 @@ function isTabId(value: unknown): value is TabId {
 
 /**
  * Único ponto do painel que entende os ids de aba antigos ('projects',
- * 'store', 'investments', 'goals'), hoje sub-abas de "Projetos". Usado tanto
- * pelo localStorage quanto pelo CustomEvent, para que os dois nunca divirjam.
+ * 'store', 'investments', 'goals'), hoje sub-abas de "Projetos". Usado pelo
+ * localStorage (ARCH-007: o CustomEvent `finance_tab_change` saiu).
  *
  * O TabId continua sendo 'myprojects' mesmo com o rótulo "Projetos": trocá-lo
  * por 'projects' colidiria com o id legado de Obras, e o mesmo texto passaria a
@@ -35,9 +37,9 @@ export function fmt(cents: number) {
   return formatBRL(cents)
 }
 
-export function monthLabel(ym: string) {
+export function monthLabel(ym: string, lang: Lang) {
   const [y, m] = ym.split('-').map(Number)
-  return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  return new Date(y, m - 1, 1).toLocaleDateString(localeOf(lang), { month: 'long', year: 'numeric' })
 }
 
 export function prevMonth(ym: string) {

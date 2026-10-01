@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { useDocumentTitle } from './useDocumentTitle'
+import { documentTitleFor, useDocumentTitle } from './useDocumentTitle'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -40,5 +40,30 @@ describe('useDocumentTitle', () => {
     act(() => root.unmount())
     expect(document.title).toBe('Akool')
     root = createRoot(container)
+  })
+})
+
+describe('documentTitleFor (UX-006)', () => {
+  const t = (key: string) => `[${key}]`
+  const base = { financeOpen: false, activePanel: null, docsPage: null, activePage: null, t }
+
+  it('finanças vence tudo', () => {
+    expect(documentTitleFor({ ...base, financeOpen: true, activePanel: 'documents', docsPage: { title: 'X' } })).toBe('[sidebar_section_finance]')
+  })
+
+  it('Documentos sem página selecionada é "Documentos"', () => {
+    expect(documentTitleFor({ ...base, activePanel: 'documents', activePage: { title: 'Outra' } })).toBe('[sidebar_section_documents]')
+  })
+
+  it('Documentos com página selecionada é o nome dela (ou "Sem título")', () => {
+    expect(documentTitleFor({ ...base, activePanel: 'documents', docsPage: { title: 'Kubernetes' } })).toBe('Kubernetes')
+    expect(documentTitleFor({ ...base, activePanel: 'documents', docsPage: { title: '' } })).toBe('[page_header_untitled]')
+  })
+
+  it('Ajuda, página aberta e Dashboard', () => {
+    expect(documentTitleFor({ ...base, activePanel: 'help' })).toBe('[sidebar_help]')
+    expect(documentTitleFor({ ...base, activePage: { title: 'Nota' } })).toBe('Nota')
+    expect(documentTitleFor({ ...base, activePage: { title: '' } })).toBe('[page_header_untitled]')
+    expect(documentTitleFor(base)).toBe('[sidebar_dashboard]')
   })
 })

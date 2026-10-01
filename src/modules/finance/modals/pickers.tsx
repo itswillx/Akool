@@ -1,6 +1,6 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { FieldGroup } from '../../../components/Field'
 import { UserAvatar } from '../../../components/UserAvatar'
 import { useAuth } from '../../../contexts/AuthContext'
@@ -13,6 +13,7 @@ import {
 inputStyle, labelStyle
 } from '../ui'
 import type { PartnerProfile } from '../useFinanceData'
+import { useDebouncedCallback } from '../../../hooks/useDebounce'
 
 // ─── Transaction Modal ────────────────────────────────────────────────────────
 
@@ -29,7 +30,6 @@ export function UserPicker({ label, value, onChange, knownPartners }: {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<PartnerProfile[]>([])
   const [searching, setSearching] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const selected = knownPartners.find(p => p.id === value) ?? (value ? { id: value, email: value, display_name: null } : null)
 
   const displayName = (p: PartnerProfile) => p.display_name || p.email
@@ -37,23 +37,22 @@ export function UserPicker({ label, value, onChange, knownPartners }: {
   // SEC-012: antes isto disparava uma RPC POR TECLA. Com o limite de 40
   // buscas/min por usuário, digitar um e-mail longo estourava o próprio limite.
   // 300 ms é o mesmo debounce já usado em SharePageModal e ProjectsPanel.
+  // PERF-013: debounce compartilhado (cancela ao desmontar).
+  const runSearch = useDebouncedCallback(async (s: string) => {
+    const { data, error } = await supabase.rpc('search_users_for_share', { p_term: s })
+    setSearching(false)
+    if (isRateLimited(error)) {
+      showToast('warning', t('search_rate_limited'), { dedupeKey: 'user-search-rate-limited' })
+      return
+    }
+    setResults(data ?? [])
+  }, 300)
   const doSearch = useCallback((q: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
     const s = sanitizeIlikeTerm(q)
-    if (s.length < 3) { setResults([]); setSearching(false); return }
+    if (s.length < 3) { runSearch.cancel(); setResults([]); setSearching(false); return }
     setSearching(true)
-    debounceRef.current = setTimeout(async () => {
-      const { data, error } = await supabase.rpc('search_users_for_share', { p_term: s })
-      setSearching(false)
-      if (isRateLimited(error)) {
-        showToast('warning', t('search_rate_limited'), { dedupeKey: 'user-search-rate-limited' })
-        return
-      }
-      setResults(data ?? [])
-    }, 300)
-  }, [showToast, t])
-
-  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
+    runSearch(s)
+  }, [runSearch])
 
   return (
     <FieldGroup label={label} labelStyle={labelStyle}>
@@ -122,27 +121,24 @@ export function InviteAutocomplete({ value, onChange, onSubmit, sending, exclude
   const [results, setResults] = useState<PartnerProfile[]>([])
   const [searching, setSearching] = useState(false)
   const [open, setOpen] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // SEC-012: mesmo motivo do UserPicker acima — era uma RPC por tecla.
+  const runSearch = useDebouncedCallback(async (term: string) => {
+    const { data, error } = await supabase.rpc('search_users_for_share', { p_term: term })
+    setSearching(false)
+    if (isRateLimited(error)) {
+      showToast('warning', t('search_rate_limited'), { dedupeKey: 'user-search-rate-limited' })
+      return
+    }
+    const filtered = (data ?? []).filter(p => p.id !== user?.id && !excludeIds.includes(p.id))
+    setResults(filtered.slice(0, 6))
+  }, 300)
   const doSearch = useCallback((q: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
     const term = sanitizeIlikeTerm(q)
-    if (term.length < 3) { setResults([]); setSearching(false); return }
+    if (term.length < 3) { runSearch.cancel(); setResults([]); setSearching(false); return }
     setSearching(true)
-    debounceRef.current = setTimeout(async () => {
-      const { data, error } = await supabase.rpc('search_users_for_share', { p_term: term })
-      setSearching(false)
-      if (isRateLimited(error)) {
-        showToast('warning', t('search_rate_limited'), { dedupeKey: 'user-search-rate-limited' })
-        return
-      }
-      const filtered = (data ?? []).filter(p => p.id !== user?.id && !excludeIds.includes(p.id))
-      setResults(filtered.slice(0, 6))
-    }, 300)
-  }, [excludeIds, user?.id, showToast, t])
-
-  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
+    runSearch(term)
+  }, [runSearch])
 
   const handleChange = (v: string) => {
     onChange(v)

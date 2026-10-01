@@ -1,5 +1,6 @@
 // ARCH-002: saiu do ProjectsPanel.tsx sem mudança de lógica.
 import { useSortable } from '@dnd-kit/sortable'
+import { localeOf } from '../../../i18n/translations'
 import { CSS } from '@dnd-kit/utilities'
 import {
 Calendar, CheckSquare,
@@ -20,7 +21,7 @@ import { PriorityBadge, QueueBadgePill } from '../ui'
 // PERF-011: memo; com props iguais (o mesmo objeto de card), o card não redesenha
 // quando o painel ou outra coluna muda.
 export const CardView = memo(function CardView({ card, priorityLabel, dragging }: { card: ProjectCard; priorityLabel: string; dragging?: boolean }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const due = card.due_date ? new Date(card.due_date + 'T00:00:00') : null
   const overdue = due && !card.completed && due.getTime() < new Date(todayStr() + 'T00:00:00').getTime()
   const isToday = due && card.due_date === todayStr()
@@ -54,7 +55,7 @@ export const CardView = memo(function CardView({ card, priorityLabel, dragging }
         {due && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: dueColor }}>
             <Calendar size={11} />
-            {overdue ? t('projects_due_overdue') : isToday ? t('projects_due_today') : due.toLocaleDateString()}
+            {overdue ? t('projects_due_overdue') : isToday ? t('projects_due_today') : due.toLocaleDateString(localeOf(lang))}
           </span>
         )}
         {checklistTotal > 0 && (

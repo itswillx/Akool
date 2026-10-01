@@ -3,6 +3,7 @@ import { Camera, Download, Link2, Pencil, Plus, Search, Trash2, Upload, Users, Z
 import { useMemo, useState } from 'react'
 import { useToast } from '../../../contexts/ToastContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
+import { localeOf } from '../../../i18n/translations'
 import { activateProps } from '../../../lib/a11y'
 import { downloadTransactionsCsv } from '../../../lib/financeCsv'
 import { toCents } from '../../../lib/money'
@@ -42,7 +43,7 @@ export function TransactionsTab({ transactions, partnerTransactions, partnerProf
   onBulkDelete: (ids: string[]) => Promise<void>
   onImport: () => void
 }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const { showToast } = useToast()
   const isMobile = useFinanceMobile()
   const [filterType, setFilterType] = useState<'all' | FinanceTxType>('all')
@@ -217,7 +218,7 @@ export function TransactionsTab({ transactions, partnerTransactions, partnerProf
               <div key={group.date}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 16px', background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border)' }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-subtle)', textTransform: 'capitalize' }}>
-                    {new Date(group.date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })}
+                    {new Date(group.date + 'T12:00:00').toLocaleDateString(localeOf(lang), { weekday: 'short', day: '2-digit', month: 'short' })}
                   </span>
                   <span style={{ fontSize: 12, color: net >= 0 ? FIN_POS : FIN_NEG, fontWeight: 600, ...tabularNums }}>{net >= 0 ? '+' : '−'}{fmt(Math.abs(net))}</span>
                 </div>

@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
+import { localDateKey } from '../lib/localDate'
 import { X, FileDown, CheckSquare, Square } from 'lucide-react'
 import type { Page } from '../types'
 import { usePages } from '../contexts/PagesContext'
@@ -91,7 +92,7 @@ function PageCheckItem({
 
 export default function ExportPdfModal({ open, onClose }: ExportPdfModalProps) {
   const { pages, sharedPages } = usePages()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [generating, setGenerating] = useState(false)
   // Igual ao clique no fundo: não fecha no meio da geração do PDF.
@@ -122,16 +123,16 @@ export default function ExportPdfModal({ open, onClose }: ExportPdfModalProps) {
     if (toExport.length === 0) return
     setGenerating(true)
     try {
-      const date = new Date().toISOString().slice(0, 10)
+      const date = localDateKey()
       const { exportPagesToPdf } = await import('../hooks/usePdfExport')
-      await exportPagesToPdf(toExport, `workspace-${date}.pdf`, t)
+      await exportPagesToPdf(toExport, `workspace-${date}.pdf`, t, lang)
     } catch (err) {
       console.error('[ExportPdf] error:', err)
     } finally {
       setGenerating(false)
       onClose()
     }
-  }, [allFlat, selected, onClose, t])
+  }, [allFlat, selected, onClose, t, lang])
 
   if (!open) return null
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { emitAppEvent } from '../../../lib/appEvents'
 import { supabase } from '../../../lib/supabase'
 import { purchaseTotal, saleNetReceived } from '../../../lib/financeStoreCalc'
 import type {
@@ -28,11 +29,10 @@ import type {
 // expense row. The link is owned by this side — finance_transactions has no
 // store column, and its FK is ON DELETE SET NULL, so a transaction deleted by
 // hand in the Transactions tab simply unlinks. Every write to
-// finance_transactions dispatches TRANSACTIONS_CHANGED_EVENT so the
-// FinancePanel reloads without an F5.
+// finance_transactions emits `finance_transactions_changed` (src/lib/appEvents.ts,
+// ARCH-007) so the FinancePanel reloads without an F5.
 
 export const STORE_ATTACHMENT_BUCKET = 'store-files'
-export const TRANSACTIONS_CHANGED_EVENT = 'finance_transactions_changed'
 
 type NewProduct = Pick<FinanceStoreProduct,
   'kind' | 'name' | 'category' | 'condition' | 'serial_number' | 'notes' | 'target_price' | 'attachments'>
@@ -65,7 +65,7 @@ export function todayISO(): string {
 }
 
 function notifyTransactionsChanged() {
-  window.dispatchEvent(new CustomEvent(TRANSACTIONS_CHANGED_EVENT))
+  emitAppEvent('finance_transactions_changed')
 }
 
 export function useFinanceStore(userId: string | undefined, workspaceId: string | null) {

@@ -1,5 +1,6 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { useState } from 'react'
+import { localDateKey } from '../../../lib/localDate'
 import { Field, FieldGroup } from '../../../components/Field'
 import { UserAvatar } from '../../../components/UserAvatar'
 import { useLanguage } from '../../../i18n/LanguageContext'
@@ -126,7 +127,8 @@ export function ContributionModal({ goal, onClose, onSave }: {
   onSave: (data: { goal_id: string; amount: number; note: string; date: string }) => Promise<void>
 }) {
   const { t } = useLanguage()
-  const today = new Date().toISOString().split('T')[0]
+  // REL-007: data do relógio local; a UTC virava amanhã depois das 21h.
+  const today = localDateKey()
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
   const [date, setDate] = useState(today)

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, type SaveResult } from './contentPersistence'
+import { classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, sceneVersion, type SaveResult } from './contentPersistence'
 
 describe('classifyLoad (REL-002)', () => {
   it('linha existente → ok', () => {
@@ -255,5 +255,27 @@ describe('isNewer (REL-009)', () => {
     expect(isNewer('2026-09-28T15:55:57-03:00', '2026-09-28T18:55:57.500+00:00')).toBe(false)
     expect(isNewer('2026-09-28T18:00:00Z', null)).toBe(true)
     expect(isNewer(null, '2026-09-28T18:00:00Z')).toBe(false)
+  })
+})
+
+describe('sceneVersion (REL-009)', () => {
+  const a = { id: 'a', version: 3 }
+  const b = { id: 'b', version: 5 }
+
+  it('os mesmos elementos em arrays diferentes têm a mesma versão (carga, pan/zoom, eco do realtime)', () => {
+    expect(sceneVersion([a, b])).toBe(sceneVersion([{ ...a }, { ...b }]))
+  })
+
+  it('editar um elemento (version incrementado) muda a versão', () => {
+    expect(sceneVersion([{ ...a, version: 4 }, b])).not.toBe(sceneVersion([a, b]))
+  })
+
+  it('apagar um elemento também incrementa o version dele, então muda a versão', () => {
+    const deleted = { ...b, version: 6, isDeleted: true }
+    expect(sceneVersion([a, deleted])).toBe(sceneVersion([a, b]) + 1)
+  })
+
+  it('cena vazia é 0', () => {
+    expect(sceneVersion([])).toBe(0)
   })
 })

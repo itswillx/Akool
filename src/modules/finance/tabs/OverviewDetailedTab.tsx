@@ -14,6 +14,7 @@ import {
 import { Donut, DualAreaTrend } from '../../../components/Charts'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
+import { localeOf } from '../../../i18n/translations'
 import {
   useFinanceMobile,
   cardSurfaceStyle, sectionCaptionStyle, ghostBtnStyle, tabularNums,
@@ -54,7 +55,7 @@ export default function OverviewDetailedTab({
   const { t, lang } = useLanguage()
   const { user, profile } = useAuth()
   const isMobile = useFinanceMobile()
-  const locale = lang === 'en' ? 'en-US' : 'pt-BR'
+  const locale = localeOf(lang)
   const allocation = useAllocationSummary(user?.id)
 
   // ─── Aggregations (all cents, all via financeCalc) ─────────────────────────

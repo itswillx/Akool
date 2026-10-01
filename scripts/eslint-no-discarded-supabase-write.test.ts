@@ -66,9 +66,16 @@ jsxTester.run('akool/no-literal-jsx-text', noLiteralJsxText, {
     '<input placeholder="you@example.com" />',
     '<button title={t("close")} />',
     '<div data-testid="lista" className="row" />',
+    // UX-011: valores técnicos em atributos quaisquer passam.
+    '<Button type="button" variant="ghost" method="POST" key="finance" lang="pt-BR" />',
+    '<a rel="noopener noreferrer" className="finance-sheet-panel finance-safe-bottom" data-kind="Nota" aria-live="polite" />',
   ],
   invalid: [
     { code: '<button>Salvar</button>', errors: [{ messageId: 'literal' }] },
+    // UX-011: texto de interface em atributo qualquer (o badge do Dashboard).
+    { code: '<Row badge="Favorito" />', errors: [{ messageId: 'literal' }] },
+    { code: '<Row badge={p.type === "note" ? "Nota" : "Desenho"} />', errors: [{ messageId: 'literal' }, { messageId: 'literal' }] },
+    { code: '<Row label="minha conta" hint="Olá" />', errors: [{ messageId: 'literal' }, { messageId: 'literal' }] },
     { code: '<button title="Fechar" />', errors: [{ messageId: 'literal' }] },
     { code: '<input placeholder={kind === "a" ? "Ex: Aluguel" : "Ex: Salário"} />', errors: [{ messageId: 'literal' }, { messageId: 'literal' }] },
     { code: '<p>{page.title || "Untitled"}</p>', errors: [{ messageId: 'literal' }] },

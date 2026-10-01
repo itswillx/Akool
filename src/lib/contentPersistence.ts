@@ -220,3 +220,16 @@ export function isNewer(a: string | null, b: string | null): boolean {
   if (Number.isNaN(ta) || Number.isNaN(tb)) return a > b
   return ta > tb
 }
+
+// ── REL-009: versão da cena do desenho ───────────────────────────────────────
+
+/**
+ * Soma do `version` dos elementos, a mesma conta do `getSceneVersion` do
+ * Excalidraw: cada edição incrementa o `version` do elemento (apagar também,
+ * via `isDeleted`). O `onChange` do Excalidraw dispara ao montar, em pan/zoom e
+ * depois de cada `updateScene`, sempre com um array novo; comparar a versão, e
+ * não a referência, é o que separa edição de eco.
+ */
+export function sceneVersion(elements: readonly { version: number }[]): number {
+  return elements.reduce((sum, el) => sum + el.version, 0)
+}

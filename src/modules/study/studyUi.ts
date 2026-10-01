@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { StudyTopicStatus } from '../../types'
-import type { TranslationKey } from '../../i18n/translations'
+import { localeOf, type Lang, type TranslationKey } from '../../i18n/translations'
 
 // Non-component UI helpers of the study module (kept out of StudyBits.tsx so
 // component files only export components — react-refresh friendly).
@@ -46,8 +46,8 @@ export function formatDateISO(dateISO: string, lang: string): string {
   return lang === 'en' ? `${m}/${d}/${y}` : `${d}/${m}/${y}`
 }
 
-export function formatTimestamp(ts: string, lang: string): string {
-  return new Date(ts).toLocaleString(lang === 'en' ? 'en-US' : 'pt-BR', {
+export function formatTimestamp(ts: string, lang: Lang): string {
+  return new Date(ts).toLocaleString(localeOf(lang), {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 }

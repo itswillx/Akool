@@ -2,7 +2,9 @@ import { lazy } from 'react'
 import { usePages } from '../contexts/PagesContext'
 import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { documentTitleFor, useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useDocsSelection } from '../hooks/useDocsSelection'
+import { flattenPages } from './PageTree'
 import PageEditor, { Lazy } from './PageEditor'
 import ErrorBoundary from './ErrorBoundary'
 
@@ -20,19 +22,18 @@ interface MainContentProps {
 // screen after switching to another (REL-005). Each panel gets its own key;
 // pages share one boundary that forgets the error when the open page changes.
 export default function MainContent({ isMobile = false }: MainContentProps) {
-  const { activePage, activePanel } = usePages()
+  const { pages, activePage, activePanel } = usePages()
   const { mode } = useWorkspaceMode()
   const { t } = useLanguage()
+  const docsSelection = useDocsSelection()
 
   // UX-006: título da aba pela seção aberta (mesmas regras dos ramos abaixo).
+  // Em Documentos, a página vem da seleção do painel, não do activePage.
   const financeOpen = mode === 'finance' || (activePanel === 'finance' && mode === 'all')
-  useDocumentTitle(
-    financeOpen ? t('sidebar_section_finance')
-      : activePanel === 'documents' ? t('sidebar_section_documents')
-      : activePanel === 'help' ? t('sidebar_help')
-      : activePage ? activePage.title || t('page_header_untitled')
-      : t('sidebar_dashboard'),
-  )
+  const docsPage = activePanel === 'documents' && docsSelection?.kind === 'page'
+    ? flattenPages(pages).find(p => p.id === docsSelection.id) ?? null
+    : null
+  useDocumentTitle(documentTitleFor({ financeOpen, activePanel, docsPage, activePage, t }))
 
   // Finance mode: the finance module takes over the whole content area and
   // ignores the projects-world page/panel routing entirely.
