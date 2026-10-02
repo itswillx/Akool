@@ -18,9 +18,11 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
 ## Depois de cada migration (DEV-005)
 
 1. **Advisors** de segurança e performance (MCP `get_advisors`, ou `npm run drift`).
-2. **Retrato do schema:** rode `supabase/checks/schema-snapshot.sql` pelo MCP (`execute_sql`) e regrave `supabase/schema-snapshot.json` com o resultado (chaves ordenadas). O workflow **Supabase drift** compara o banco com esse arquivo e acusa mudança feita fora do repositório.
+2. **Retrato do schema:** `npm run drift -- --write` roda `supabase/checks/schema-snapshot.sql` na produção e regrava `supabase/schema-snapshot.json` (ordem natural do jsonb; não ordene as chaves). O workflow **Supabase drift** compara o banco com esse arquivo e acusa mudança feita fora do repositório. O retrato cobre ACLs de tabela **e de coluna** (`col_acl`).
 3. **Tipos:** regenere `src/types/database.ts` (ARCH-004).
 4. **Staging:** `npm run staging:reset -- --migrations` aplica a migration nova no staging, pulando as já aplicadas.
+
+**Grants por coluna:** `profiles` não tem GRANT de tabela para SELECT/UPDATE; o app vive dos grants por coluna. No Postgres, um `REVOKE` *na tabela* revoga o mesmo privilégio em **todas as colunas** sem mudar o `relacl` (foi assim que a `dev002_profiles_table_grants` derrubou a produção em 02/10/2026; a `dev002_profiles_column_grants_restore` recriou os grants). Coluna nova em `profiles` precisa de `grant select/update (coluna)`, e nenhum `revoke … on table public.profiles` entra sem recriar os grants por coluna na mesma migration. Dry run de grants compara `pg_attribute.attacl` antes e depois, não só `relacl`.
 
 **Exceções do drift** (`supabase/drift-allowlist.json`):
 - `baseline_remote_schema` nunca é aplicada no remoto.

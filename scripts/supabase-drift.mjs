@@ -9,11 +9,12 @@
 //
 //   npm run drift                          produção
 //   npm run drift -- --project-ref=<ref>   outro projeto (ex.: staging)
+//   npm run drift -- --write               regrava supabase/schema-snapshot.json a
+//                                          partir da produção (depois de uma migration)
 //
 // Sai com erro se houver drift. Lê SUPABASE_ACCESS_TOKEN do ambiente/.env.local.
-// Depois de uma migration, o retrato é regravado pelo MCP com a mesma consulta.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { PRODUCTION_REF, migrationFiles, verifyJwtFor } from './staging-reset.mjs'
@@ -103,6 +104,8 @@ async function main() {
   const token = process.env.SUPABASE_ACCESS_TOKEN
   if (!token) throw new Error('SUPABASE_ACCESS_TOKEN não definido.')
   const ref = process.argv.find(a => a.startsWith('--project-ref='))?.split('=')[1] ?? PRODUCTION_REF
+  const write = process.argv.includes('--write')
+  if (write && ref !== PRODUCTION_REF) throw new Error('--write regrava o retrato versionado, que é o da produção: use sem --project-ref.')
   const allowlist = JSON.parse(readFileSync(join(ROOT, 'supabase/drift-allowlist.json'), 'utf8'))
   const toml = readFileSync(join(ROOT, 'supabase/config.toml'), 'utf8')
   const functionsDir = join(ROOT, 'supabase/functions')
@@ -128,8 +131,14 @@ async function main() {
   ]
   // O retrato versionado é o da produção; em outro projeto ele só vale se o
   // schema for o mesmo (é o caso do staging recriado pelo staging:reset).
-  const expected = JSON.parse(readFileSync(join(ROOT, 'supabase/schema-snapshot.json'), 'utf8'))
   const actual = snapshotRows?.[0]?.snapshot ?? {}
+  if (write) {
+    // Ordem natural do jsonb (chaves por tamanho e depois bytes): é como a API
+    // devolve, e a comparação acima é por JSON.stringify.
+    writeFileSync(join(ROOT, 'supabase/schema-snapshot.json'), JSON.stringify(actual, null, 2) + '\n')
+    console.log('Retrato regravado em supabase/schema-snapshot.json a partir da produção.')
+  }
+  const expected = JSON.parse(readFileSync(join(ROOT, 'supabase/schema-snapshot.json'), 'utf8'))
   // O staging desliga o cron de backup de propósito (staging:reset).
   if (ref !== PRODUCTION_REF) { delete expected.cron; delete actual.cron }
   problems.push(...diffSnapshot(expected, actual))

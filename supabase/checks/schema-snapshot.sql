@@ -1,13 +1,18 @@
 -- DEV-005: retrato do schema para detectar mudança feita fora do repositório
 -- (painel, SQL avulso). A MESMA consulta roda no CI (scripts/supabase-drift.mjs,
--- pela Management API) e pelo MCP (execute_sql) para regravar
--- supabase/schema-snapshot.json depois de cada migration. Corpos e ACLs entram
--- como md5: o arquivo fica pequeno e qualquer mudança aparece.
+-- pela Management API) e regrava supabase/schema-snapshot.json depois de cada
+-- migration (`npm run drift -- --write`). Corpos e ACLs (de tabela E de coluna)
+-- entram como md5: o arquivo fica pequeno e qualquer mudança aparece.
 -- Objetos de extensões ficam de fora.
 select jsonb_build_object(
   'tables', (
     select coalesce(jsonb_object_agg(format('%s.%s', n.nspname, c.relname),
-      jsonb_build_object('kind', c.relkind, 'rls', c.relrowsecurity, 'acl', md5(coalesce((select string_agg(x::text, ',' order by x::text) from unnest(c.relacl) x), '')))), '{}')
+      jsonb_build_object('kind', c.relkind, 'rls', c.relrowsecurity,
+        'acl', md5(coalesce((select string_agg(x::text, ',' order by x::text) from unnest(c.relacl) x), '')),
+        -- DEV-002: grants POR COLUNA (profiles vive só deles): um REVOKE de tabela os
+        -- apaga sem tocar no relacl, e o retrato precisa acusar isso.
+        'col_acl', md5(coalesce((select string_agg(a.attname || '=' || (select string_agg(x::text, ',' order by x::text) from unnest(a.attacl) x), ';' order by a.attname)
+          from pg_attribute a where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped and a.attacl is not null), '')))), '{}')
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname in ('public', 'private') and c.relkind in ('r', 'p', 'v', 'm')
       and not exists (select 1 from pg_depend d where d.objid = c.oid and d.deptype = 'e')
