@@ -20,6 +20,7 @@ export type HelpIcon =
   | 'settings'
   | 'sparkles'
   | 'help'
+  | 'graduationCap'
 
 export type HelpMock =
   | 'sidebarCreate'
@@ -384,6 +385,48 @@ const pt: HelpContent = {
           steps: [
             { text: 'Alterne entre Kanban, Lista e Overview no topo do quadro.' },
             { text: 'O Overview mostra progresso por prioridade, por coluna e atrasos.' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'study',
+      icon: 'graduationCap',
+      color: '#8b5cf6',
+      label: 'Estudos',
+      description: 'Tópicos com cards de estudo, roteiro, revisões e diário.',
+      articles: [
+        {
+          id: 'topics-cards',
+          title: 'Tópicos e cards',
+          summary: 'Cada assunto vira um tópico com cards que você marca ao dominar.',
+          keywords: 'estudo topico card dominar progresso roteiro etapa',
+          steps: [
+            { text: 'Em Documentos → Estudos, crie um tópico com nome, área e meta.' },
+            { text: 'Adicione cards (um conceito por card) ou gere um plano com o importador de markdown.' },
+            { text: 'Marque o card como dominado quando conseguir explicá-lo sem olhar.' },
+          ],
+        },
+        {
+          id: 'planning-reviews',
+          title: 'Planejamento e revisões',
+          summary: 'Datas-alvo e revisões vencidas num lugar só.',
+          keywords: 'planejamento revisao vencida meta data alvo fila',
+          steps: [
+            { text: 'Defina a data-alvo do tópico; o Planejamento mostra o que vence antes.' },
+            { text: 'A fila de revisões traz os cards que pedem releitura, pelo prazo.' },
+            { text: 'Reagende arrastando a data ou marcando a revisão como feita.' },
+          ],
+        },
+        {
+          id: 'diary-stats',
+          title: 'Diário e estatísticas',
+          summary: 'Registre sessões e veja o ritmo por área.',
+          keywords: 'diario sessao historico estatistica area quiz',
+          steps: [
+            { text: 'Registre uma sessão no Diário com o que estudou e por quanto tempo.' },
+            { text: 'Estatísticas mostram cards dominados por área e a sequência de dias.' },
+            { text: 'Os quizzes dos cards contam como revisão quando acertados.' },
           ],
         },
       ],
@@ -795,6 +838,48 @@ const en: HelpContent = {
           steps: [
             { text: 'Switch between Kanban, List and Overview at the top of the board.' },
             { text: 'Overview shows progress by priority, by column and overdue counts.' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'study',
+      icon: 'graduationCap',
+      color: '#8b5cf6',
+      label: 'Study',
+      description: 'Topics with study cards, a roadmap, reviews and a diary.',
+      articles: [
+        {
+          id: 'topics-cards',
+          title: 'Topics and cards',
+          summary: 'Each subject becomes a topic with cards you tick off as you master them.',
+          keywords: 'study topic card master progress roadmap step',
+          steps: [
+            { text: 'In Documents → Study, create a topic with a name, an area and a goal.' },
+            { text: 'Add cards (one concept per card) or generate a plan with the markdown importer.' },
+            { text: 'Mark a card as mastered when you can explain it without looking.' },
+          ],
+        },
+        {
+          id: 'planning-reviews',
+          title: 'Planning and reviews',
+          summary: 'Target dates and overdue reviews in one place.',
+          keywords: 'planning review overdue goal target date queue',
+          steps: [
+            { text: 'Set the topic target date; Planning shows what is due first.' },
+            { text: 'The review queue lists the cards that need rereading, by due date.' },
+            { text: 'Reschedule by moving the date or marking the review as done.' },
+          ],
+        },
+        {
+          id: 'diary-stats',
+          title: 'Diary and statistics',
+          summary: 'Log sessions and see your pace by area.',
+          keywords: 'diary session history statistics area quiz',
+          steps: [
+            { text: 'Log a session in the Diary with what you studied and for how long.' },
+            { text: 'Statistics show mastered cards by area and your day streak.' },
+            { text: 'Card quizzes count as a review when answered correctly.' },
           ],
         },
       ],

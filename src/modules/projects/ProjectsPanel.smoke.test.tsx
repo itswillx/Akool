@@ -45,6 +45,7 @@ vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1
 vi.mock('../../contexts/PagesContext', () => ({ usePages: () => ({ pages: [], sharedPages: [], setActivePage: () => {} }) }))
 vi.mock('../../i18n/LanguageContext', () => ({ useLanguage: () => ({ lang: 'pt-BR', t: (k: string) => k }) }))
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ showToast: () => {} }) }))
+vi.mock('../../contexts/OnboardingContext', () => ({ useOnboarding: () => ({ activeTour: null, showTour: false, seen: () => true, startTour: () => {}, finishTour: () => {} }) }))
 
 // listOwnBoards precisa devolver o quadro (o mock acima responde vazio a tudo).
 const projectsData = await import('../../lib/data/projects')

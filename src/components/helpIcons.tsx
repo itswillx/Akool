@@ -1,6 +1,6 @@
 import {
   Rocket, FileText, Pencil, Layers, CheckSquare, Wallet, KanbanSquare,
-  Share2, FileDown, Settings, Sparkles, HelpCircle,
+  Share2, FileDown, Settings, Sparkles, HelpCircle, GraduationCap,
 } from 'lucide-react'
 import type { HelpIcon } from '../i18n/helpContent'
 
@@ -17,6 +17,7 @@ const ICONS: Record<HelpIcon, React.ComponentType<{ size?: number }>> = {
   settings: Settings,
   sparkles: Sparkles,
   help: HelpCircle,
+  graduationCap: GraduationCap,
 }
 
 export function HelpGlyph({ name, size = 22 }: { name: HelpIcon; size?: number }) {

@@ -117,7 +117,7 @@ export default function StudyOverview({ topics, cardsByTopic, logsByTopic, loadi
                       <span style={{ fontSize: 11.5, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{progress.pct}%</span>
                     </div>
                   </div>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: '#6366f1', flexShrink: 0 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--color-accent)', flexShrink: 0 }}>
                     {t('study_open')}
                     <ArrowRight size={13} />
                   </span>
@@ -165,7 +165,7 @@ export default function StudyOverview({ topics, cardsByTopic, logsByTopic, loadi
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     {log.topicTitle && (
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.topicTitle}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.topicTitle}</span>
                     )}
                     <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 'auto', whiteSpace: 'nowrap' }}>{formatTimestamp(log.created_at, lang)}</span>
                   </div>

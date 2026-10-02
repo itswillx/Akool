@@ -169,7 +169,7 @@ export default function ImportProjectCardsModal({ open, onClose, onImport }: Pro
                     onClick={() => openBoard(b)}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--color-border)', background: 'var(--color-surface)', cursor: 'pointer' }}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, fontSize: 16, backgroundColor: `${b.color || '#6366f1'}22` }}>{b.icon || '📋'}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, fontSize: 16, backgroundColor: `${b.color || 'var(--color-accent)'}22` }}>{b.icon || '📋'}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</span>
                       {b.is_shared ? <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{t('projects_shared_badge')}</span> : null}

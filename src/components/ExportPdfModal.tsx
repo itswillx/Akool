@@ -122,7 +122,7 @@ export default function ExportPdfModal({ open, onClose }: ExportPdfModalProps) {
     setGenerating(true)
     try {
       const date = localDateKey()
-      const { exportPagesToPdf } = await import('../hooks/usePdfExport')
+      const { exportPagesToPdf } = await import('../lib/pdf/exportPages')
       await exportPagesToPdf(toExport, `workspace-${date}.pdf`, t, lang)
     } catch (err) {
       console.error('[ExportPdf] error:', err)

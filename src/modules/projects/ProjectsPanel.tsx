@@ -1,6 +1,7 @@
 import {
     DndContext, DragOverlay
 } from '@dnd-kit/core'
+import { useModuleTour } from '../../hooks/useModuleTour'
 import { horizontalListSortingStrategy, SortableContext } from '@dnd-kit/sortable'
 import {
     ChevronDown,
@@ -53,6 +54,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
   onOpenPage?: (page: Page) => void
 }) {
   const { t } = useLanguage()
+  useModuleTour('projects')
 
   // Estado, carga, realtime e fila do quadro: useBoardData.ts
   const boardData = useBoardData()
@@ -123,7 +125,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
               <button onClick={() => setBoardSelectorOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: 'var(--color-text)', maxWidth: 260 }}>
                 <span>{activeBoard?.icon}</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeBoard?.name ?? t('projects_select_board')}</span>
-                {activeBoard?.is_shared && <span style={{ fontSize: 9, fontWeight: 700, color: '#6366f1', backgroundColor: '#6366f11f', padding: '1px 5px', borderRadius: 4 }}>{t('projects_shared_badge')}</span>}
+                {activeBoard?.is_shared && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--color-accent)', backgroundColor: 'var(--color-accent-soft)', padding: '1px 5px', borderRadius: 4 }}>{t('projects_shared_badge')}</span>}
                 <ChevronDown size={14} style={{ color: 'var(--color-text-muted)' }} />
               </button>
               {boardSelectorOpen && (
@@ -135,7 +137,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
                     </button>
                   ))}
                   <div style={{ borderTop: '1px solid var(--color-border)', marginTop: 4, paddingTop: 4 }}>
-                    <button onClick={() => { setBoardModal({ open: true, board: null }); setBoardSelectorOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', background: 'transparent', color: '#6366f1', fontSize: 13, fontWeight: 600, textAlign: 'left' }}>
+                    <button onClick={() => { setBoardModal({ open: true, board: null }); setBoardSelectorOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', background: 'transparent', color: 'var(--color-accent)', fontSize: 13, fontWeight: 600, textAlign: 'left' }}>
                       <Plus size={13} />{t('projects_new_board')}
                     </button>
                   </div>
@@ -146,7 +148,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <span style={{ fontSize: 16, lineHeight: 1 }}>{activeBoard.icon}</span>
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeBoard.name}</span>
-              {activeBoard.is_shared && <span style={{ fontSize: 9, fontWeight: 700, color: '#6366f1', backgroundColor: '#6366f11f', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>{t('projects_shared_badge')}</span>}
+              {activeBoard.is_shared && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--color-accent)', backgroundColor: 'var(--color-accent-soft)', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>{t('projects_shared_badge')}</span>}
             </div>
           ) : (
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>{t('projects_title')}</h2>
@@ -154,7 +156,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
 
           {isMobile && activeBoard && canEdit && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button onClick={() => setQueueOpen(true)} title={t('projects_queue')} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: queueRows.length ? '#6366f1' : 'var(--color-text-muted)', fontSize: 11, fontWeight: 700 }}>
+              <button onClick={() => setQueueOpen(true)} title={t('projects_queue')} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: queueRows.length ? 'var(--color-accent)' : 'var(--color-text-muted)', fontSize: 11, fontWeight: 700 }}>
                 <ListOrdered size={13} />{queueRows.length > 0 && queueRows.length}
               </button>
               {isOwner && (<>
@@ -198,7 +200,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
           <LoadError message={t('projects_boards_load_error')} retryLabel={t('common_error_retry')} onRetry={() => { void loadBoards() }} />
         ) : boards.length === 0 ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center' }}>
-            <div style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: '#6366f122', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FolderKanban size={28} color="#6366f1" /></div>
+            <div style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: 'var(--color-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FolderKanban size={28} color="var(--color-accent)" /></div>
             <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--color-text)' }}>{t('projects_no_boards_title')}</h3>
             <p style={{ margin: 0, fontSize: 13.5, color: 'var(--color-text-muted)', maxWidth: 360 }}>{t('projects_no_boards_desc')}</p>
             <PrimaryBtn onClick={() => setBoardModal({ open: true, board: null })}>{t('projects_create_board')}</PrimaryBtn>

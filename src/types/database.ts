@@ -1763,6 +1763,7 @@ export type Database = {
           is_active: boolean
           language: string
           last_login_date: string | null
+          onboarding: Json
           role: string
           theme: string
         }
@@ -1780,6 +1781,7 @@ export type Database = {
           is_active?: boolean
           language?: string
           last_login_date?: string | null
+          onboarding?: Json
           role?: string
           theme?: string
         }
@@ -1797,6 +1799,7 @@ export type Database = {
           is_active?: boolean
           language?: string
           last_login_date?: string | null
+          onboarding?: Json
           role?: string
           theme?: string
         }
@@ -2474,6 +2477,7 @@ export type Database = {
           is_active: boolean
           language: string
           last_login_date: string | null
+          onboarding: Json
           role: string
           theme: string
         }[]
@@ -2660,6 +2664,7 @@ export type Database = {
           is_active: boolean
           language: string
           last_login_date: string | null
+          onboarding: Json
           role: string
           theme: string
         }[]

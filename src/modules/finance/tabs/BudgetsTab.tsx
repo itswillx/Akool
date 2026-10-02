@@ -57,7 +57,7 @@ export function BudgetsTab({ budgets, sharedBudgets, transactions, partnerTransa
             const pct = Math.min((spent / budget.amount_limit) * 100, 100)
             const over = spent > budget.amount_limit
             const remaining = budget.amount_limit - spent
-            const barColor = over ? '#ef4444' : pct > 80 ? '#f59e0b' : (cat?.color ?? '#6366f1')
+            const barColor = over ? '#ef4444' : pct > 80 ? '#f59e0b' : (cat?.color ?? 'var(--color-accent)')
 
             return (
               <div key={budget.id} style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: '14px 18px' }}>

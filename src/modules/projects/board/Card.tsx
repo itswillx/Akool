@@ -70,7 +70,7 @@ export const CardView = memo(function CardView({ card, priorityLabel, dragging }
             {attachmentCount}
           </span>
         )}
-        {card.linked_page_id && <Link2 size={12} style={{ color: '#6366f1' }} />}
+        {card.linked_page_id && <Link2 size={12} style={{ color: 'var(--color-accent)' }} />}
         {card.assignee_profile && (
           <span style={{ marginLeft: 'auto', display: 'inline-flex' }}>
             <UserAvatar

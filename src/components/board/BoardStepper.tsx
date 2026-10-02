@@ -8,7 +8,7 @@ import { isTerminalStep, stepStates, type StepDef } from '../../lib/boardStepper
 const DOT = 9
 const CURRENT_DOT = 13
 
-export function BoardStepper({ steps, currentIndex, accent = '#6366f1', compact = false }: {
+export function BoardStepper({ steps, currentIndex, accent = 'var(--color-accent)', compact = false }: {
   steps: StepDef[]
   /** Índice na trilha; -1 = fora dela (cancelado), tudo apagado. */
   currentIndex: number

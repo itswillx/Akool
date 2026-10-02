@@ -111,7 +111,7 @@ function useDashboardFinance(userId: string | undefined, enabled: boolean): Fina
     })
     const topCategories = categories
       .filter(c => c.type === 'expense' && catExpenseMap[c.id])
-      .map(c => ({ id: c.id, name: c.name, amount: catExpenseMap[c.id] ?? 0, color: c.color || '#6366f1', emoji: c.icon || '' }))
+      .map(c => ({ id: c.id, name: c.name, amount: catExpenseMap[c.id] ?? 0, color: c.color || 'var(--color-accent)', emoji: c.icon || '' }))
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 4)
 
@@ -260,7 +260,7 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px 8px', borderBottom: '1px solid var(--color-border)' }}>
                   <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)' }}>{t('notif_title')}</span>
                   {unreadCount > 0 && (
-                    <button onClick={() => markAllRead()} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 11, color: '#6366f1', fontWeight: 600, padding: '2px 6px' }}>
+                    <button onClick={() => markAllRead()} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--color-accent)', fontWeight: 600, padding: '2px 6px' }}>
                       {t('notif_mark_all_read')}
                     </button>
                   )}
@@ -295,7 +295,7 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
           {showFinance && (
             <StatCard
               onClick={() => { localStorage.setItem(LOCAL_KEYS.financeTab, 'overview'); setActivePanel('finance') }}
-              icon={<Wallet size={15} />} iconColor="#6366f1"
+              icon={<Wallet size={15} />} iconColor="var(--color-accent)"
               label={t('sidebar_finance')} sub={t('dashboard_finance_balance')}
               value={fmtCurrency(finance.totalBalance)}
               valueColor={finance.totalBalance < 0 ? 'var(--color-error)' : 'var(--color-text)'}
@@ -322,7 +322,7 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
           {showProjects && (
             <StatCard
               onClick={() => { setDocsSelection({ kind: 'projects' }); setActivePanel('documents') }}
-              icon={<FolderKanban size={15} />} iconColor="#6366f1"
+              icon={<FolderKanban size={15} />} iconColor="var(--color-accent)"
               label={t('dashboard_projects_section')} sub={t('dashboard_stat_projects')}
               value={String(projects.boards.length)}
               secondaryValue={`${projects.totalOpen}/${projects.totalCards}`}
@@ -397,7 +397,7 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: 14 }}>
           <Panel title={t('dashboard_recent_favorites')} icon={<FileText size={13} />}>
             {recent.length === 0 && favorites.length === 0 ? (
-              <Empty text={t('dashboard_empty_recent')} />
+              <Empty text={t('dashboard_empty_recent')} action={{ label: t('dashboard_cta_new_note'), onClick: () => { void handleCreate('note') } }} />
             ) : (
               <ul style={listStyle}>
                 {favorites.slice(0, 3).map(p => <PageRow key={`fav-${p.id}`} page={p} onClick={() => openPage(p.id)} badge={t('dashboard_badge_favorite')} />)}
@@ -410,7 +410,7 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
 
           <Panel title={t('dashboard_upcoming')} icon={<CheckSquare size={13} />}>
             {upcoming.length === 0 ? (
-              <Empty text={t('dashboard_empty_upcoming')} />
+              <Empty text={t('dashboard_empty_upcoming')} action={{ label: t('dashboard_cta_new_todo'), onClick: () => { void handleCreate('todo') } }} />
             ) : (
               <ul style={listStyle}>
                 {upcoming.map(todo => {
@@ -489,7 +489,7 @@ function NotificationItem({ notification: n, onRead, onClose }: {
     if (!n.read) onRead(n.id)
   }
 
-  const iconColor = n.type === 'workspace_invite' ? '#6366f1'
+  const iconColor = n.type === 'workspace_invite' ? 'var(--color-accent)'
     : n.type === 'invite_accepted' || n.type === 'member_joined' ? '#22c55e'
     : n.type === 'invite_declined' ? '#f59e0b'
     : '#ef4444'
@@ -533,7 +533,7 @@ function NotificationItem({ notification: n, onRead, onClose }: {
           </div>
         )}
       </div>
-      {!n.read && <div style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: '#6366f1', flexShrink: 0, marginTop: 4 }} />}
+      {!n.read && <div style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: 'var(--color-accent)', flexShrink: 0, marginTop: 4 }} />}
     </div>
   )
 }
@@ -740,8 +740,19 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   )
 }
 
-export function Empty({ text }: { text: string }) {
-  return <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)', padding: '6px 0' }}>{text}</p>
+// UX-012: estado vazio com uma ação, para a tela não ser um beco sem saída.
+export function Empty({ text, action }: { text: string; action?: { label: string; onClick: () => void } }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8, padding: '6px 0' }}>
+      <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>{text}</p>
+      {action && (
+        <button type="button" onClick={action.onClick}
+          style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+          {action.label}
+        </button>
+      )}
+    </div>
+  )
 }
 
 function PageRow({ page, onClick, badge }: { page: Page; onClick: () => void; badge?: string }) {

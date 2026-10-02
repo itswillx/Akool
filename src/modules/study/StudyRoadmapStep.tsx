@@ -46,7 +46,7 @@ export default function StudyRoadmapStep({
       <Check size={isMobile ? 14 : 16} strokeWidth={3} />
     </div>
   ) : state === 'current' ? (
-    <div style={{ width: nodeSize, height: nodeSize, borderRadius: '50%', backgroundColor: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: isMobile ? 12.5 : 14, fontWeight: 700, flexShrink: 0, boxShadow: '0 0 0 4px #6366f126' }}>
+    <div style={{ width: nodeSize, height: nodeSize, borderRadius: '50%', backgroundColor: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: isMobile ? 12.5 : 14, fontWeight: 700, flexShrink: 0, boxShadow: '0 0 0 4px var(--color-accent-soft)' }}>
       {index + 1}
     </div>
   ) : (
@@ -95,7 +95,7 @@ export default function StudyRoadmapStep({
                   {card.title || t('study_card_untitled')}
                 </span>
                 {state === 'current' && (
-                  <span style={{ padding: '1px 7px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6366f1', backgroundColor: '#6366f11c', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  <span style={{ padding: '1px 7px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--color-accent)', backgroundColor: 'var(--color-accent)1c', whiteSpace: 'nowrap', flexShrink: 0 }}>
                     {t('study_roadmap_current')}
                   </span>
                 )}
@@ -134,7 +134,7 @@ export default function StudyRoadmapStep({
                 />
               ) : card.rationale ? (
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, padding: '8px 10px', borderRadius: 8, backgroundColor: 'var(--color-hover)' }}>
-                  <Milestone size={13} style={{ color: '#6366f1', flexShrink: 0, marginTop: 2 }} />
+                  <Milestone size={13} style={{ color: 'var(--color-accent)', flexShrink: 0, marginTop: 2 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                       {t('study_card_rationale_label')}

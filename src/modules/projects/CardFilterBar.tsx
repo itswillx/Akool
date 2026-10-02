@@ -102,7 +102,7 @@ export default function CardFilterBar({
           >
             <span>{t('projects_labels')}:</span>
             {filters.labels.length > 0 && (
-              <span style={{ fontSize: 10, fontWeight: 600, color: '#6366f1', backgroundColor: '#6366f11f', padding: '1px 6px', borderRadius: 999 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-accent)', backgroundColor: 'var(--color-accent-soft)', padding: '1px 6px', borderRadius: 999 }}>
                 {t('projects_filter_labels_selected').replace('{count}', String(filters.labels.length))}
               </span>
             )}
@@ -308,7 +308,7 @@ export default function CardFilterBar({
             <Filter size={14} color="var(--color-icon)" />
             {t('projects_filter_title')}
             {activeCount > 0 && (
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#6366f1', backgroundColor: '#6366f11f', padding: '1px 7px', borderRadius: 999 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-accent)', backgroundColor: 'var(--color-accent-soft)', padding: '1px 7px', borderRadius: 999 }}>
                 {t('projects_filter_active').replace('{count}', String(activeCount))}
               </span>
             )}
@@ -326,7 +326,7 @@ export default function CardFilterBar({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
           <Filter size={14} color="var(--color-icon)" style={{ flexShrink: 0 }} />
           {activeCount > 0 && (
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#6366f1', backgroundColor: '#6366f11f', padding: '2px 8px', borderRadius: 999, flexShrink: 0 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-accent)', backgroundColor: 'var(--color-accent-soft)', padding: '2px 8px', borderRadius: 999, flexShrink: 0 }}>
               {t('projects_filter_active').replace('{count}', String(activeCount))}
             </span>
           )}

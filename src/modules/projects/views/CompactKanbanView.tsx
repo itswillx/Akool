@@ -114,7 +114,7 @@ export function CompactKanbanView({
                 display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
                 padding: '7px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
                 fontSize: 12, fontWeight: active ? 600 : 500, whiteSpace: 'nowrap',
-                backgroundColor: active ? '#6366f1' : 'var(--color-bg-secondary)',
+                backgroundColor: active ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
                 color: active ? '#fff' : 'var(--color-text-muted)',
               }}
             >

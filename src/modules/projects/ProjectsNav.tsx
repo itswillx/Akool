@@ -69,7 +69,7 @@ export default function ProjectsNav({
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999,
               border: view === item.view ? 'none' : '1px solid var(--color-border)', cursor: 'pointer', flexShrink: 0,
-              backgroundColor: view === item.view ? '#6366f1' : 'var(--color-surface)',
+              backgroundColor: view === item.view ? 'var(--color-accent)' : 'var(--color-surface)',
               color: view === item.view ? '#fff' : 'var(--color-text)', fontSize: 12.5, fontWeight: 600,
             }}
           >
@@ -122,7 +122,7 @@ export default function ProjectsNav({
             <RailButton
               icon={<ListOrdered size={15} />}
               label={t('projects_queue')}
-              trailing={queueCount > 0 ? <span style={{ fontSize: 11, fontWeight: 700, color: '#6366f1' }}>{queueCount}</span> : undefined}
+              trailing={queueCount > 0 ? <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)' }}>{queueCount}</span> : undefined}
               onClick={onQueue}
             />
           )}

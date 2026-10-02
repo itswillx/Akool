@@ -180,7 +180,7 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <SectionLabel>{t('study_roadmap_title')}</SectionLabel>
           {orderedCards.length > 0 && (
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#6366f1', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
               {t('study_roadmap_step_of', {
                 current: stepIndex === -1 ? orderedCards.length : stepIndex + 1,
                 total: orderedCards.length,

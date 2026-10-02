@@ -85,7 +85,7 @@ export function LoadError({ message, retryLabel, onRetry }: { message: string; r
 
 export function PrimaryBtn({ onClick, children, disabled }: { onClick: () => void; children: React.ReactNode; disabled?: boolean }) {
   return (
-    <button onClick={onClick} disabled={disabled} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1 }}>
+    <button onClick={onClick} disabled={disabled} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1 }}>
       {children}
     </button>
   )
@@ -112,7 +112,7 @@ export function PriorityBadge({ priority, label }: { priority: ProjectCardPriori
 
 export function QueueBadgePill({ badge }: { badge: QueueBadge }) {
   const { t } = useLanguage()
-  const c = badge.kind === 'queued' ? '#6366f1'
+  const c = badge.kind === 'queued' ? 'var(--color-accent)'
     : badge.kind === 'review' ? '#0891b2'
     : badge.kind === 'waiting' ? '#dc2626'
     : badge.phase === 'plano' || badge.phase === 'aprovado' ? '#8b5cf6' : '#f59e0b'

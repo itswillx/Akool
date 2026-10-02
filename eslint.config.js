@@ -65,7 +65,20 @@ export default defineConfig([
       'akool/button-has-name': 'error',
       // UX-011: texto de interface passa pelas traduções (src/i18n).
       'akool/no-literal-jsx-text': 'error',
+      // UX-015: cor é token, não hex solto (paletas de dados liberadas abaixo).
+      'akool/no-hex-color': 'error',
     },
+  },
+  {
+    // UX-015: paletas de dados (escolha do usuário, gravada no banco), cores dos
+    // passos do tour/Ajuda, o PDF (jsPDF/canvas não lê CSS) e os tokens em si.
+    files: [
+      'src/lib/priorities.ts', 'src/lib/avatar.ts', 'src/lib/importProjectCards.ts', 'src/lib/financePdf.ts',
+      'src/modules/projects/projectsShared.ts', 'src/modules/projects/QueueModal.tsx', 'src/modules/study/studyUi.ts',
+      'src/modules/finance/modals/AccountModal.tsx', 'src/modules/finance/modals/GoalModals.tsx', 'src/modules/finance/modals/CategoryModal.tsx',
+      'src/modules/projects/modals/BoardModals.tsx', 'src/i18n/tourContent.ts', 'src/i18n/helpContent.ts', 'src/components/uiTokens.ts',
+    ],
+    rules: { 'akool/no-hex-color': 'off' },
   },
   {
     // QA-003: Playwright não é React; o `use` das fixtures não é hook.
@@ -77,6 +90,7 @@ export default defineConfig([
     files: ['src/**/*.test.{ts,tsx}', 'src/test/**'],
     rules: {
       'akool/no-literal-jsx-text': 'off',
+      'akool/no-hex-color': 'off',
       // Mocks async sem await imitam a API real; e expect(obj.metodo) com
       // vi.fn() não tem `this` para perder.
       '@typescript-eslint/require-await': 'off',

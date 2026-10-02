@@ -105,6 +105,12 @@ export default function DashboardProjects({ data, isMobile = false }: { data: Da
     setActivePanel('documents')
   }
 
+  // UX-012: sem quadro, o botão leva ao painel de Projetos, que tem o "Criar quadro".
+  const openProjects = () => {
+    setDocsSelection({ kind: 'projects' })
+    setActivePanel('documents')
+  }
+
   const openCard = (boardId: string, cardId: string) => {
     localStorage.setItem(LOCAL_KEYS.projectsActiveBoard, boardId)
     localStorage.setItem(LOCAL_KEYS.projectsOpenCard, cardId)
@@ -116,7 +122,7 @@ export default function DashboardProjects({ data, isMobile = false }: { data: Da
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: 14, marginBottom: 20 }}>
       <Panel title={t('dashboard_projects_boards')} icon={<FolderKanban size={13} />}>
         {data.boards.length === 0 ? (
-          <Empty text={t('dashboard_projects_empty_boards')} />
+          <Empty text={t('dashboard_projects_empty_boards')} action={{ label: t('dashboard_cta_new_board'), onClick: openProjects }} />
         ) : (
           <ul style={listStyle}>
             {data.boards.map(b => <BoardRow key={b.id} board={b} onClick={() => openBoard(b.id)} />)}
@@ -174,7 +180,7 @@ function BoardRow({ board: b, onClick }: { board: DashboardBoard; onClick: () =>
           )}
         </div>
         <div style={{ height: 4, backgroundColor: 'var(--color-border)', borderRadius: 999, overflow: 'hidden', marginTop: 5 }}>
-          <div style={{ height: '100%', width: `${pct}%`, backgroundColor: b.color || '#6366f1', borderRadius: 999, transition: 'width 0.3s' }} />
+          <div style={{ height: '100%', width: `${pct}%`, backgroundColor: b.color || 'var(--color-accent)', borderRadius: 999, transition: 'width 0.3s' }} />
         </div>
       </div>
       <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>

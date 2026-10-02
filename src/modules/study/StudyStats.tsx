@@ -133,7 +133,7 @@ export default function StudyStats({ topics, cardsByTopic, logsByTopic, isMobile
                   style={{
                     width: '100%', maxWidth: 34, borderRadius: 5,
                     height: Math.max(4, Math.round((day.count / activityMax) * 46)),
-                    backgroundColor: day.count > 0 ? '#6366f1' : 'var(--color-border)',
+                    backgroundColor: day.count > 0 ? 'var(--color-accent)' : 'var(--color-border)',
                   }}
                 />
                 <span style={{ fontSize: 10.5, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{weekday(day.date)}</span>

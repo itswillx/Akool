@@ -27,7 +27,7 @@ export function OverviewView({ columns, cards, members }: { columns: ProjectColu
     { label: t('projects_overview_due_overdue'), value: due.overdue, color: '#ef4444' },
     { label: t('projects_overview_due_today'), value: due.today, color: '#f59e0b' },
     { label: t('projects_overview_due_week'), value: due.week, color: '#3b82f6' },
-    { label: t('projects_overview_due_later'), value: due.later, color: '#6366f1' },
+    { label: t('projects_overview_due_later'), value: due.later, color: 'var(--color-accent)' },
     { label: t('projects_overview_due_none'), value: due.none, color: 'var(--color-text-muted)' },
   ]
 
@@ -65,7 +65,7 @@ export function OverviewView({ columns, cards, members }: { columns: ProjectColu
         {stat(t('projects_overview_completed'), s.completed, '#22c55e', `${s.completionPct}%`)}
         {stat(t('projects_overview_overdue'), s.overdue, '#ef4444')}
         {stat(t('projects_overview_due_week'), s.dueThisWeekOpen, '#f59e0b')}
-        {stat(t('projects_overview_unassigned'), s.unassigned, '#6366f1')}
+        {stat(t('projects_overview_unassigned'), s.unassigned, 'var(--color-accent)')}
       </div>
 
       {/* Charts */}
@@ -98,7 +98,7 @@ export function OverviewView({ columns, cards, members }: { columns: ProjectColu
                       <span style={{ fontSize: 12.5, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
                       <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-muted)', flexShrink: 0 }}>{a.count}</span>
                     </div>
-                    <div style={{ height: 7, borderRadius: 999, backgroundColor: 'var(--color-hover)' }}><div style={{ width: `${w}%`, height: '100%', backgroundColor: '#6366f1', borderRadius: 999 }} /></div>
+                    <div style={{ height: 7, borderRadius: 999, backgroundColor: 'var(--color-hover)' }}><div style={{ width: `${w}%`, height: '100%', backgroundColor: 'var(--color-accent)', borderRadius: 999 }} /></div>
                   </div>
                 </div>
               )
@@ -112,7 +112,7 @@ export function OverviewView({ columns, cards, members }: { columns: ProjectColu
           </>
         ))}
         {cardBox(t('projects_overview_created_trend'), (
-          <AreaTrend points={trend} color="#6366f1" />
+          <AreaTrend points={trend} color="var(--color-accent)" />
         ), true)}
       </div>
     </div>

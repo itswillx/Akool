@@ -64,7 +64,7 @@ export default function StudyHistory({ topics, logsByTopic, onOpenTopic, request
                         <button
                           onClick={() => onOpenTopic(log.topic_id)}
                           type="button"
-                          style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, fontSize: 11.5, fontWeight: 700, color: '#6366f1' }}
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, fontSize: 11.5, fontWeight: 700, color: 'var(--color-accent)' }}
                         >
                           {log.topicTitle}
                         </button>

@@ -1,13 +1,20 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { useLanguage } from '../i18n/LanguageContext'
-import { helpContent } from '../i18n/helpContent'
+import { helpContent, type TourStep } from '../i18n/helpContent'
 import { HelpGlyph } from './helpIcons'
 
-export default function WelcomeTour({ onClose }: { onClose: () => void }) {
+// UX-012: sem `steps`, é o tour geral; com `steps`, `badge` e `finishLabel`, o
+// mini-tour de um módulo.
+export default function WelcomeTour({ onClose, steps: stepsProp, badge, finishLabel }: {
+  onClose: () => void
+  steps?: TourStep[]
+  badge?: string
+  finishLabel?: string
+}) {
   const { lang } = useLanguage()
   const c = helpContent[lang]
-  const steps = c.tour
+  const steps = stepsProp && stepsProp.length > 0 ? stepsProp : c.tour
   const [index, setIndex] = useState(0)
 
   const step = steps[index]
@@ -69,7 +76,7 @@ export default function WelcomeTour({ onClose }: { onClose: () => void }) {
             fontSize: 11, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase',
             color: step.color, backgroundColor: `${step.color}1a`,
           }}>
-            {c.tourBadge}
+            {badge ?? c.tourBadge}
           </div>
 
           <h2 style={{ margin: '0 0 8px', fontSize: 21, fontWeight: 700, color: 'var(--color-text)' }}>
@@ -131,7 +138,7 @@ export default function WelcomeTour({ onClose }: { onClose: () => void }) {
                   fontSize: 13, fontWeight: 600,
                 }}
               >
-                {isLast ? c.tourFinish : c.tourNext}
+                {isLast ? (finishLabel ?? c.tourFinish) : c.tourNext}
               </button>
             </div>
           </div>

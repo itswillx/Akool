@@ -261,7 +261,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
               type="checkbox"
               checked={point.completed}
               onChange={() => onToggleCheckpoint(point.id)}
-              style={{ marginTop: 3, width: 15, height: 15, accentColor: '#6366f1', cursor: 'pointer', flexShrink: 0 }}
+              style={{ marginTop: 3, width: 15, height: 15, accentColor: 'var(--color-accent)', cursor: 'pointer', flexShrink: 0 }}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
               {editingCheckpointId === point.id ? (
@@ -461,7 +461,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
               onClick={addResource}
               type="button"
               disabled={!normalizeUrl(resourceUrl)}
-              style={{ padding: '7px 13px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: normalizeUrl(resourceUrl) ? 'pointer' : 'default', opacity: normalizeUrl(resourceUrl) ? 1 : 0.5 }}
+              style={{ padding: '7px 13px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: normalizeUrl(resourceUrl) ? 'pointer' : 'default', opacity: normalizeUrl(resourceUrl) ? 1 : 0.5 }}
             >
               {t('study_add_resource')}
             </button>

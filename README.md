@@ -180,6 +180,7 @@ O desenvolvimento segue um quadro de Projetos que funciona como fila, em fases: 
 - [`docs/deploy-coolify.md`](docs/deploy-coolify.md): deploy, variáveis e checagem pós-deploy
 - [`docs/matriz-rls.md`](docs/matriz-rls.md): quem lê e escreve o quê, tabela por tabela
 - [`docs/plano-execucao.md`](docs/plano-execucao.md): roadmap de execução do backlog, por risco
-- [`docs/Design System Akool.md`](<docs/Design System Akool.md>): backlog de system design, no formato de importação
+- [`docs/design-system.md`](docs/design-system.md): tokens de cor, espaçamento, raios e tipografia, e as regras de uso
+- [`docs/imports/backlog-system-design.md`](docs/imports/backlog-system-design.md): backlog de system design, no formato de importação
 - [`docs/imports/`](docs/imports/): backlogs no formato de importação
 - [`src/modules/finance/README.md`](src/modules/finance/README.md): limites e estrutura do módulo financeiro

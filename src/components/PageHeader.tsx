@@ -218,7 +218,7 @@ export default function PageHeader({ page, isMobile = false }: PageHeaderProps) 
               try {
                 const date = localDateKey()
                 const safeTitle = (page.title || 'page').replace(/[^a-zA-Z0-9_-]/g, '_')
-                const { exportPagesToPdf } = await import('../hooks/usePdfExport')
+                const { exportPagesToPdf } = await import('../lib/pdf/exportPages')
                 await exportPagesToPdf([page], `${safeTitle}-${date}.pdf`, t, lang)
               } catch (err) {
                 console.error('[PageHeader] PDF export error:', err)

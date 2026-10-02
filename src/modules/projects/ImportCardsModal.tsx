@@ -369,7 +369,7 @@ export default function ImportCardsModal({
             type="button"
             onClick={handleImport}
             disabled={importing || !parseResult || parseResult.cards.length === 0 || missingColumn}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600, cursor: importing ? 'wait' : 'pointer', opacity: !parseResult || parseResult.cards.length === 0 || missingColumn ? 0.5 : 1 }}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: importing ? 'wait' : 'pointer', opacity: !parseResult || parseResult.cards.length === 0 || missingColumn ? 0.5 : 1 }}
           >
             {importing ? t('projects_importing') : t('projects_import_confirm')}
           </button>
