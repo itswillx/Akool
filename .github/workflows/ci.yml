@@ -54,6 +54,10 @@ jobs:
       - name: Audit (produção)
         run: npm run audit:ci
 
+      # DEV-010: dependência que ninguém importa não fica no package.json.
+      - name: Dependências mortas
+        run: npm run deps:check
+
       - name: Tipos (tsc -b)
         run: npx tsc -b
 

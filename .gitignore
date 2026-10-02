@@ -45,7 +45,6 @@ deploy-out.json
 
 # TestSprite temporários
 testsprite_tests/tmp/
-testsprite_tests\tmp\config.json
 
 # SEC-008: estado local do Supabase CLI (project ref, org, host do pooler) e
 # exports com dados reais — nunca no repositório.

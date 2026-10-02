@@ -90,7 +90,7 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
   os arquivos já existentes redefinem). Nunca aplicar este arquivo via MCP
   `apply_migration` nem `db push`: os objetos já existem no remoto, o arquivo só
   serve para o `supabase db reset` local funcionar. Policies de storage ficam em
-  `20260811120000_sec_storage_policies_baseline.sql` (schema `storage` não entra
+  `20260509000001_sec_storage_policies_baseline.sql` (schema `storage` não entra
   no dump/reconstrução do schema `public`). Auto-promoção de role em
   `page_shares`/`project_shares` foi auditada e está bloqueada pelo RLS (ver
   comentário na policy `project_shares_update`/`page_shares_update` no baseline

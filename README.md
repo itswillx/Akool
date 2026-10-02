@@ -35,9 +35,22 @@ O seletor no topo alterna entre as visões Tudo, Documentos e Financeiro (`src/c
 1. **Node** `^22.13.0 || >=24`. O `.nvmrc` indica o 22, e o `.npmrc` recusa versões fora da faixa.
 2. **Dependências:** `npm ci`, que instala exatamente o `package-lock.json`.
 3. **Configuração:** copie o [`.env.example`](.env.example) para `.env.local` e preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`, que ficam em Project Settings → API no painel do Supabase. Sem elas, o app abre numa tela que diz o que falta.
-4. **App:** `npm run dev` sobe em http://localhost:5173.
+4. **App:** `npm run dev` sobe em http://localhost:5173 (só nesta máquina; ver [Portas](#portas)).
 
 Criar conta exige um código de convite, que é gerado por quem já usa o app (em Configurações).
+
+### Portas
+
+| Porta | O quê | Como sobe |
+|---|---|---|
+| 5173 | Dev server do Vite, só em `localhost` | `npm run dev` (`npm run dev:lan` para expor na rede e testar no celular) |
+| 4173 | Preview do build do staging (TestSprite e conferência manual) | `npm run build:staging && npm run preview:staging` |
+| 54321 | API do Supabase local | `npx supabase start` |
+| 54322 | Postgres do Supabase local | idem |
+| 54323 | Studio do Supabase local | idem |
+| 54324 | Caixa de e-mails de teste do Supabase local | idem |
+
+O CORS das functions em desenvolvimento aceita `http://localhost:5173` e `http://localhost:4173` ([`supabase/functions/.env.example`](supabase/functions/.env.example)).
 
 ## Scripts
 
@@ -46,6 +59,7 @@ Criar conta exige um código de convite, que é gerado por quem já usa o app (e
 | `npm run dev` | Servidor de desenvolvimento do Vite |
 | `npm run dev:staging` | O mesmo, apontando para o staging (ver [Ambientes](#ambientes)) |
 | `npm run dev:localdb` | O mesmo, apontando para o Supabase local (ver [Supabase local](#supabase-local)) |
+| `npm run dev:lan` | O dev server escutando na rede (`--host`), para testar no celular; o `npm run dev` fica só em `localhost` |
 | `npm run build` | Checagem de tipos (`tsc -b`) e build de produção em `dist/` |
 | `npm run build:staging` / `preview:staging` | Build e preview (porta 4173) do staging |
 | `npm run preview` | Serve o `dist/` localmente |
@@ -77,6 +91,7 @@ O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda em todo p
 | Lint sem problemas novos | `npm run lint:ci` |
 | Tipos do banco em dia (com o segredo `SUPABASE_ACCESS_TOKEN`) | `npm run gen:types -- --check` |
 | Vulnerabilidades altas nas dependências de produção, fora das exceções datadas (`scripts/audit-allowlist.json`) | `npm run audit:ci` |
+| Dependência sem uso no `package.json`, fora das exceções com motivo (`scripts/dead-deps-allowlist.json`) | `npm run deps:check` |
 | Testes com cobertura | `npm run test:coverage` |
 | Build | `npx vite build` |
 | E2E contra o staging (job separado, com os secrets do staging) | `npm run test:e2e` |
