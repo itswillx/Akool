@@ -7,6 +7,7 @@ import { useLanguage } from './i18n/LanguageContext'
 import { isLangLoaded, loadLang, toLang } from './i18n/translations'
 import type { Lang } from './i18n/translations'
 import { runLegacyProjectsMigration } from './lib/docsNavigation'
+import { LOCAL_KEYS, migrateLocalKeys } from './lib/localKeys'
 import { installChunkReload } from './lib/chunkReload'
 import { initObservability, reportError } from './lib/observability'
 import { missingEnv } from './lib/env'
@@ -15,6 +16,9 @@ import ConfigErrorScreen from './components/ConfigErrorScreen'
 // Antes do primeiro render: readInitialMode() (inicializador de useState) e o
 // restore do PagesContext leem localStorage direto — precisam ver as chaves da
 // era pós-'projects' já reescritas.
+// QA-006: primeiro os nomes antigos viram `akool:…`; só então a migração do
+// 'projects' lê as chaves já pelo nome novo.
+migrateLocalKeys()
 runLegacyProjectsMigration()
 
 // SEC-009: fontes do Excalidraw servidas pelo próprio app (sem o CDN esm.sh).
@@ -48,7 +52,7 @@ function RootFallback() {
 // PERF-009: só o pt-BR vem no boot. Com outro idioma salvo, o dicionário chega
 // antes do 1º render, para não abrir em português e trocar em seguida. Falhou
 // ou passou de 3 s? Abre em pt-BR, e o LanguageProvider troca quando chegar.
-const savedLang = toLang(localStorage.getItem('excalinotion_auth_lang'))
+const savedLang = toLang(localStorage.getItem(LOCAL_KEYS.authLang))
 const langReady = Promise.race([
   loadLang(savedLang).catch(() => {}),
   new Promise<void>(resolve => setTimeout(resolve, 3000)),

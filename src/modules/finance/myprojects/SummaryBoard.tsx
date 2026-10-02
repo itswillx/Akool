@@ -65,7 +65,7 @@ export function SummaryBoard({ cards, onOpenSection }: {
 
   return (
     <KanbanBoard
-      storageKey="finance_board_summary"
+      storageKey="finance-summary"
       columns={columns}
       items={cards}
       isMobile={isMobile}

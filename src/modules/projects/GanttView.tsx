@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { localKey } from '../../lib/localKeys'
 import { ChevronDown, ChevronRight, GanttChartSquare, Plus, Share2, Wand2 } from 'lucide-react'
 import type { ProjectCard, ProjectColumn, ProjectCardPriority } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
@@ -11,8 +12,6 @@ import { activateProps } from '../../lib/a11y'
 
 type Zoom = 'day' | 'week' | 'month'
 const PX_PER_DAY: Record<Zoom, number> = { day: 34, week: 16, month: 5 }
-const ZOOM_KEY = 'projects_gantt_zoom:'
-const DEADLINE_KEY = 'projects_gantt_target_deadline:'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 function todayISO() {
@@ -42,12 +41,12 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
   const [scheduling, setScheduling] = useState(false)
   const scheduleResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [targetDeadline, setTargetDeadline] = useState<string>(
-    () => localStorage.getItem(DEADLINE_KEY + boardId) ?? '',
+    () => localStorage.getItem(localKey.ganttDeadline(boardId)) ?? '',
   )
   const deadlineInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
-    if (targetDeadline) localStorage.setItem(DEADLINE_KEY + boardId, targetDeadline)
-    else localStorage.removeItem(DEADLINE_KEY + boardId)
+    if (targetDeadline) localStorage.setItem(localKey.ganttDeadline(boardId), targetDeadline)
+    else localStorage.removeItem(localKey.ganttDeadline(boardId))
   }, [targetDeadline, boardId])
 
   const handleGenerateClick = async () => {
@@ -67,7 +66,7 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
   const LEFT_W = NAME_W + META_W
 
   const [zoom, setZoom] = useState<Zoom>(() => {
-    const stored = localStorage.getItem(ZOOM_KEY + boardId)
+    const stored = localStorage.getItem(localKey.ganttZoom(boardId))
     if (stored === 'day' || stored === 'week' || stored === 'month') return stored
     return 'week'
   })
@@ -78,7 +77,7 @@ export default function GanttView({ columns, cards, canEdit, isMobile, priorityL
   const dragState = useRef<{ id: string; mode: DragMode; startX: number; startDate: string | null; dueDate: string | null; days: number; moved: boolean } | null>(null)
   const draggedRef = useRef(false)
 
-  useEffect(() => { localStorage.setItem(ZOOM_KEY + boardId, zoom) }, [zoom, boardId])
+  useEffect(() => { localStorage.setItem(localKey.ganttZoom(boardId), zoom) }, [zoom, boardId])
 
   const pxPerDay = PX_PER_DAY[zoom]
   const today = useMemo(() => todayISO(), [])

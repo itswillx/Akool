@@ -1,5 +1,6 @@
 // ARCH-002: saiu do ProjectsPanel.tsx sem mudança de lógica.
 import type { CollisionDetection } from '@dnd-kit/core'
+import { LOCAL_KEYS, SESSION_KEYS } from '../../lib/localKeys'
 import {
 pointerWithin, rectIntersection
 } from '@dnd-kit/core'
@@ -18,13 +19,12 @@ export const VALID_VIEWS: ViewMode[] = ['kanban', 'compact', 'list', 'overview',
 export { PROJECT_PRIORITY_COLORS as PRIORITY_COLORS } from '../../lib/priorities'
 export const BOARD_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#22c55e', '#06b6d4', '#3b82f6']
 export const BOARD_ICONS = ['📋', '🚀', '🎯', '💡', '🛠️', '📦', '🎨', '🧩', '📈', '🏗️', '🔥', '⭐']
-export const ACTIVE_BOARD_KEY = 'projects_active_board'
-export const VIEW_KEY = 'projects_view'
-export const COMPACT_COLUMN_KEY = 'projects_compact_column:'
-export const CARD_DRAFT_PREFIX = 'projects_card_draft:'
-export const CARD_MODAL_STATE_KEY = 'projects_card_modal_state'
+// QA-006: os nomes vivem em src/lib/localKeys.ts; as chaves por quadro usam os construtores de lá.
+export const ACTIVE_BOARD_KEY = LOCAL_KEYS.projectsActiveBoard
+export const VIEW_KEY = LOCAL_KEYS.projectsView
+export const CARD_MODAL_STATE_KEY = SESSION_KEYS.cardModalState
 // Set by the dashboard (quick-note chips / due-soon list) to deep-open a card.
-export const OPEN_CARD_KEY = 'projects_open_card'
+export const OPEN_CARD_KEY = LOCAL_KEYS.projectsOpenCard
 export const AUTOSAVE_DEBOUNCE_MS = 800
 
 export function todayStr() {

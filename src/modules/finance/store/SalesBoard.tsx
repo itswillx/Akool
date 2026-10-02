@@ -70,7 +70,7 @@ export function SalesBoard({ store, categories, onEdit }: {
   return (
     <>
       <KanbanBoard
-        storageKey="finance_board_sales"
+        storageKey="finance-sales"
         columns={columns}
         items={store.sales}
         isMobile={isMobile}

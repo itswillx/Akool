@@ -132,6 +132,40 @@ http://localhost:5173/**
   estava no `netlify.toml`, como ponto de partida:
   `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src * data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self';`
 
+## 5.1 Preview por PR (DEV-009)
+
+Cada pull request pode ganhar um site próprio, publicado pelo Coolify e apontando
+para o **staging** (nunca para a produção). O repositório não controla isso; é
+configuração do recurso no painel:
+
+1. **Fonte como GitHub App:** em *Sources*, o recurso precisa estar ligado ao
+   repositório por um GitHub App do Coolify (uma deploy key não recebe eventos
+   de pull request).
+2. **Preview Deployments:** no recurso, aba *Preview Deployments* → ligar. Em
+   *Preview URL Template*, usar algo como `pr-{{pr_id}}.preview.<seu-domínio>`
+   (o DNS do subdomínio curinga tem de apontar para o servidor do Coolify).
+3. **Variáveis do preview:** em *Environment Variables*, marcar as variáveis
+   como disponíveis para previews e, nelas, apontar para o staging
+   (`ixqpkmxmgftchgwbrogw`), com *Build Time* ligado:
+
+   ```env
+   VITE_SUPABASE_URL=https://ixqpkmxmgftchgwbrogw.supabase.co
+   VITE_SUPABASE_ANON_KEY=<anon-key do staging>
+   VITE_SENTRY_DSN=
+   ```
+
+   O staging precisa estar montado (`npm run staging:reset`, DEV-002) e com o
+   usuário de teste criado. **Preview contra a produção é proibido**: os scripts
+   do repo recusam o ref de produção, mas o Coolify não sabe disso — confira as
+   variáveis antes de ligar.
+4. **Link no PR:** o workflow [`preview-link.yml`](../.github/workflows/preview-link.yml)
+   comenta a URL quando o PR abre, lendo a variável de repositório
+   `PREVIEW_URL_TEMPLATE` (GitHub → Settings → Secrets and variables → Actions →
+   Variables), por exemplo `https://pr-{number}.preview.<seu-domínio>`. Sem a
+   variável, ele só avisa no log.
+
+Quando o PR fecha, o Coolify apaga o preview.
+
 ## 6. Caddy: cache, 404 de assets e headers
 
 O Nixpacks serve o `dist/` com um Caddyfile próprio (Caddy 2.8.4). O

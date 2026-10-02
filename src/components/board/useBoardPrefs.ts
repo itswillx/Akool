@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { localKey } from '../../lib/localKeys'
 
 // Preferências de visualização de um board, persistidas por `storageKey`.
 // Cada board tem o seu namespace, então esconder "Cancelada" nas Vendas não
@@ -36,7 +37,7 @@ export interface BoardPrefs {
 }
 
 /**
- * @param storageKey namespace, ex.: 'finance_board_sales'
+ * @param storageKey nome do kanban, ex.: 'finance-sales' (vira akool:board.finance-sales.*)
  * @param isMobile   força a lista sem sobrescrever a preferência gravada
  * @param defaultHidden colunas que nascem escondidas (ex.: 'cancelled')
  */
@@ -45,9 +46,8 @@ export function useBoardPrefs(
   isMobile: boolean,
   defaultHidden: string[] = [],
 ): BoardPrefs {
-  const viewKey = `${storageKey}:view`
-  const hiddenKey = `${storageKey}:hidden`
-  const sortKey = `${storageKey}:sort`
+  // QA-006: as três chaves vêm do inventário (akool:board.<nome>.*).
+  const { view: viewKey, hidden: hiddenKey, sort: sortKey } = localKey.boardPrefs(storageKey)
 
   // Kanban é o padrão (decisão de produto): a visão de etapas é o motivo do
   // board existir, a lista é o fallback.

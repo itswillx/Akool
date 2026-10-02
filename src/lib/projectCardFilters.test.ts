@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { localKey } from './localKeys'
 import {
   defaultCardFilters,
   filterProjectCards,
@@ -191,14 +192,14 @@ describe('loadCardFilters / saveCardFilters', () => {
   })
 
   it('merges partial stored data with defaults', () => {
-    store['projects_filters:board-abc'] = JSON.stringify({ search: 'partial' })
+    store[localKey.projectFilters('board-abc')] = JSON.stringify({ search: 'partial' })
     const loaded = loadCardFilters('board-abc')
     expect(loaded.search).toBe('partial')
     expect(loaded.duePreset).toBe('all')
   })
 
   it('returns defaults on invalid JSON', () => {
-    store['projects_filters:board-abc'] = '{not valid json'
+    store[localKey.projectFilters('board-abc')] = '{not valid json'
     expect(loadCardFilters('board-abc')).toEqual(defaultCardFilters())
   })
 })

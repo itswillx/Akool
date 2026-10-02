@@ -1,4 +1,5 @@
 import type { ProjectCard, ProjectCardPriority } from '../types'
+import { localKey } from './localKeys'
 
 export type DueDatePreset = 'all' | 'overdue' | 'today' | 'this_week' | 'no_date' | 'has_date'
 export type CompletionFilter = 'all' | 'open' | 'done'
@@ -13,7 +14,6 @@ export type ProjectCardFilters = {
   completion: CompletionFilter
 }
 
-const FILTERS_KEY_PREFIX = 'projects_filters:'
 
 export function defaultCardFilters(): ProjectCardFilters {
   return {
@@ -124,7 +124,7 @@ export function collectBoardLabels(cards: ProjectCard[]): string[] {
 
 export function loadCardFilters(boardId: string): ProjectCardFilters {
   try {
-    const raw = localStorage.getItem(FILTERS_KEY_PREFIX + boardId)
+    const raw = localStorage.getItem(localKey.projectFilters(boardId))
     if (!raw) return defaultCardFilters()
     const parsed = JSON.parse(raw) as Partial<ProjectCardFilters>
     return { ...defaultCardFilters(), ...parsed }
@@ -135,6 +135,6 @@ export function loadCardFilters(boardId: string): ProjectCardFilters {
 
 export function saveCardFilters(boardId: string, filters: ProjectCardFilters): void {
   try {
-    localStorage.setItem(FILTERS_KEY_PREFIX + boardId, JSON.stringify(filters))
+    localStorage.setItem(localKey.projectFilters(boardId), JSON.stringify(filters))
   } catch { /* ignore */ }
 }

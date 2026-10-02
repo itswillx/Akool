@@ -2,12 +2,14 @@
 // estaticamente pelo FinancePanel — são poucas linhas e a resolução da aba
 // acontece no primeiro render, antes de qualquer lazy chunk carregar.
 
+import { LOCAL_KEYS } from '../../../lib/localKeys'
+
 export const PROJECTS_SECTIONS = ['summary', 'store', 'goals'] as const
 export type ProjectsSection = typeof PROJECTS_SECTIONS[number]
 
 export const MYPROJECTS_TAB_ID = 'myprojects'
-export const MYPROJECTS_SECTION_KEY = 'finance_myprojects_section'
-export const FINANCE_TAB_KEY = 'finance_active_tab'
+export const MYPROJECTS_SECTION_KEY = LOCAL_KEYS.financeMyprojectsSection
+export const FINANCE_TAB_KEY = LOCAL_KEYS.financeTab
 
 /**
  * Abas que existiam antes da unificação → sub-aba equivalente.

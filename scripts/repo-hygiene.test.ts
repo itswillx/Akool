@@ -201,3 +201,23 @@ describe('datas: relógio local e locale do perfil (REL-007, UX-011)', () => {
     expect(offenders(/toLocale(Date|Time)?String\(\)/)).toEqual([])
   })
 })
+
+// QA-006: toda chave de localStorage/sessionStorage vem de src/lib/localKeys.ts.
+// Chave escrita como string no meio do código não entra no inventário, não é
+// migrada e o logout não sabe dela.
+describe('chaves de storage só no inventário (QA-006)', () => {
+  const files = execSync('git ls-files src', { cwd: ROOT, encoding: 'utf8' }).split('\n')
+    .filter(f => /\.(ts|tsx)$/.test(f) && !/\.(test|bench)\.|\/test\//.test(f) && f !== 'src/lib/localKeys.ts')
+  const lines = (re: RegExp) => files.flatMap(f => readFileSync(join(ROOT, f), 'utf8').split('\n')
+    .flatMap((line, i) => (re.test(line) ? [`${f}:${i + 1}`] : [])))
+
+  it('nenhuma chave literal em getItem/setItem/removeItem', () => {
+    expect(lines(/(localStorage|sessionStorage)\.(getItem|setItem|removeItem)\(\s*['"`]/)).toEqual([])
+  })
+
+  it('nenhum nome antigo (excalinotion_*, akool_*) fora do inventário', () => {
+    // Os prefixos projects_/finance_ coincidem com chaves de tradução, então
+    // ficam cobertos só pela regra de cima (chamadas de storage).
+    expect(lines(/['"`](excalinotion_|akool_(workspace_mode|onboarding_seen|recovery_pending))/)).toEqual([])
+  })
+})

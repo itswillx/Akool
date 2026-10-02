@@ -1,0 +1,74 @@
+[
+  {
+    "id": "GHSA-j95f-988m-3j2f",
+    "package": "@tiptap/core",
+    "severity": "high",
+    "title": "Tiptap: Quadratic ReDoS in block and inline Markdown attribute parsing",
+    "motivo": "Aguardando o PR do Dependabot com a versão corrigida (compatível por semver).",
+    "ate": "2026-11-30"
+  },
+  {
+    "id": "GHSA-xvcm-6775-5m9r",
+    "package": "immutable",
+    "severity": "high",
+    "title": "Immutable: Hash-collision algorithmic complexity denial of service in Immutable.Map/Set",
+    "motivo": "Aguardando o PR do Dependabot com a versão corrigida (compatível por semver).",
+    "ate": "2026-11-30"
+  },
+  {
+    "id": "GHSA-v56q-mh7h-f735",
+    "package": "immutable",
+    "severity": "high",
+    "title": "Immutable.js `List` 32-bit trie overflow → unrecoverable DoS",
+    "motivo": "Aguardando o PR do Dependabot com a versão corrigida (compatível por semver).",
+    "ate": "2026-11-30"
+  },
+  {
+    "id": "GHSA-r5fr-rjxr-66jc",
+    "package": "lodash-es",
+    "severity": "high",
+    "title": "lodash vulnerable to Code Injection via `_.template` imports key names",
+    "motivo": "Aguardando o PR do Dependabot com a versão corrigida (compatível por semver).",
+    "ate": "2026-11-30"
+  },
+  {
+    "id": "GHSA-28wg-ghj8-5hjv",
+    "package": "nanoid",
+    "severity": "high",
+    "title": "nanoid: non-secure generators can loop indefinitely with negative size",
+    "motivo": "Só com Excalidraw major (0.17); nanoid gera ids internos com tamanho fixo, fora do caso vulnerável. Reavaliar na próxima versão do Excalidraw.",
+    "ate": "2026-11-30"
+  },
+  {
+    "id": "GHSA-2v37-7h3g-55p8",
+    "package": "nanoid",
+    "severity": "high",
+    "title": "nanoid: custom generators can loop indefinitely when size is zero",
+    "motivo": "Só com Excalidraw major (0.17); nanoid gera ids internos com tamanho fixo, fora do caso vulnerável. Reavaliar na próxima versão do Excalidraw.",
+    "ate": "2026-11-30"
+  },
+  {
+    "id": "GHSA-xwg4-73v4-xw9w",
+    "package": "nanoid",
+    "severity": "high",
+    "title": "nanoid: Integer Overflow or Wraparound",
+    "motivo": "Só com Excalidraw major (0.17); nanoid gera ids internos com tamanho fixo, fora do caso vulnerável. Reavaliar na próxima versão do Excalidraw.",
+    "ate": "2026-11-30"
+  },
+  {
+    "id": "GHSA-chx6-hx7r-mcp5",
+    "package": "react-router",
+    "severity": "high",
+    "title": "React Router: Unauthenticated Denial of Service via Inefficient Route Matching",
+    "motivo": "Aguardando o PR do Dependabot com a versão corrigida (compatível por semver).",
+    "ate": "2026-11-30"
+  },
+  {
+    "id": "GHSA-qwww-vcr4-c8h2",
+    "package": "react-router",
+    "severity": "high",
+    "title": "React Router: RSC Mode CSRF Bypass Allows Action Execution Before 400 Response",
+    "motivo": "Aguardando o PR do Dependabot com a versão corrigida (compatível por semver).",
+    "ate": "2026-11-30"
+  }
+]

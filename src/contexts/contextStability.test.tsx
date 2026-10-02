@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { localKey } from '../lib/localKeys'
 import { act, memo, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
@@ -36,7 +37,7 @@ let container: HTMLDivElement
 let root: Root
 
 beforeEach(() => {
-  localStorage.setItem('akool_onboarding_seen_u1', '1')
+  localStorage.setItem(localKey.onboardingSeen('u1'), '1')
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)

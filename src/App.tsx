@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
+import { LOCAL_KEYS } from './lib/localKeys'
 import { Menu } from 'lucide-react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ToastProvider, useToast } from './contexts/ToastContext'
@@ -98,7 +99,7 @@ function AppInner() {
 
   // Dia que vira com o app aberto: só avisa; o login é pedido no próximo boot.
   useDayRollover(!!user && !loading, () => {
-    const lang = toLang(localStorage.getItem('excalinotion_auth_lang'))
+    const lang = toLang(localStorage.getItem(LOCAL_KEYS.authLang))
     showToast('warning', getT(lang)('daily_login_rollover'), { duration: 0, dedupeKey: 'daily-login-rollover' })
   })
 

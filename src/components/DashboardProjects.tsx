@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import { localDateKey } from '../lib/localDate'
 import { FolderKanban, CalendarClock } from 'lucide-react'
 import { loadDashboardProjects, type DashboardBoardRow, type DashboardCardRow } from '../lib/data/dashboard'
@@ -99,14 +100,14 @@ export default function DashboardProjects({ data, isMobile = false }: { data: Da
   // projects_active_board num inicializador de useState e projects_open_card
   // num efeito de mount — ele monta dentro do DocumentsPanel logo em seguida.
   const openBoard = (boardId: string) => {
-    localStorage.setItem('projects_active_board', boardId)
+    localStorage.setItem(LOCAL_KEYS.projectsActiveBoard, boardId)
     setDocsSelection({ kind: 'projects' })
     setActivePanel('documents')
   }
 
   const openCard = (boardId: string, cardId: string) => {
-    localStorage.setItem('projects_active_board', boardId)
-    localStorage.setItem('projects_open_card', cardId)
+    localStorage.setItem(LOCAL_KEYS.projectsActiveBoard, boardId)
+    localStorage.setItem(LOCAL_KEYS.projectsOpenCard, cardId)
     setDocsSelection({ kind: 'projects' })
     setActivePanel('documents')
   }

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
+import { LOCAL_KEYS } from '../lib/localKeys'
 import type { ReactNode } from 'react'
 import {
   ChevronDown, ChevronRight, Search,
@@ -51,7 +52,7 @@ function SidebarAction({ onClick, children, active }: { onClick: () => void; chi
   )
 }
 
-const FOOTER_EXPANDED_KEY = 'excalinotion_sidebar_footer_expanded'
+const FOOTER_EXPANDED_KEY = LOCAL_KEYS.sidebarFooter
 
 function getFooterExpanded(): boolean {
   try { return localStorage.getItem(FOOTER_EXPANDED_KEY) === 'true' } catch { return false }
@@ -127,7 +128,7 @@ function SidebarFooterMenu({
 }
 
 
-const SECTION_STATE_KEY = 'excalinotion_sidebar_sections'
+const SECTION_STATE_KEY = LOCAL_KEYS.sidebarSections
 
 function getSectionState(): Record<string, boolean> {
   try { return JSON.parse(localStorage.getItem(SECTION_STATE_KEY) ?? '{}') } catch { return {} }

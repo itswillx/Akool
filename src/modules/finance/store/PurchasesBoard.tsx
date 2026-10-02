@@ -127,7 +127,7 @@ export function PurchasesBoard({ store, categories, onEdit }: {
   return (
     <>
       <KanbanBoard
-        storageKey="finance_board_purchases"
+        storageKey="finance-purchases"
         columns={columns}
         items={store.purchases}
         isMobile={isMobile}

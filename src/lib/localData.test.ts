@@ -8,6 +8,7 @@ const removeAllChannels = vi.fn(() => Promise.resolve([]))
 vi.mock('./supabase', () => ({ supabase: { removeAllChannels, storage: { from: () => ({ createSignedUrl }) } } }))
 
 const { KEEP_ON_SIGN_OUT, clearLocalUserData } = await import('./localData')
+const { LOCAL_KEYS, localKey, sessionKey, SESSION_KEYS } = await import('./localKeys')
 const { defaultExpiresIn, resolveSignedUrl } = await import('./storageUrl')
 
 beforeEach(() => {
@@ -19,11 +20,11 @@ beforeEach(() => {
 
 describe('clearLocalUserData', () => {
   it('apaga tudo do localStorage menos as exceções, e o sessionStorage inteiro', () => {
-    for (const key of ['finance_active_tab', 'projects_card_draft:b1', 'excalinotion_expanded_pages', 'akool_onboarding_seen_u1', 'chave_que_ainda_nao_existe']) {
+    for (const key of [LOCAL_KEYS.financeTab, sessionKey.cardDraft('b1', null), LOCAL_KEYS.pagesExpanded, localKey.onboardingSeen('u1'), 'chave_que_ainda_nao_existe']) {
       localStorage.setItem(key, 'x')
     }
     for (const key of KEEP_ON_SIGN_OUT) localStorage.setItem(key, 'fica')
-    sessionStorage.setItem('projects_card_modal_state', '{"cardId":"c1"}')
+    sessionStorage.setItem(SESSION_KEYS.cardModalState, '{"cardId":"c1"}')
 
     clearLocalUserData()
 
