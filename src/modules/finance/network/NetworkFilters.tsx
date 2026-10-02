@@ -52,6 +52,7 @@ export function NetworkFilters({ filters, onChange, accounts, bounds }: {
       </div>
 
       <select
+        aria-label={t('finance_tx_account')}
         style={{ ...inputStyle, width: 'auto', minWidth: 130, cursor: 'pointer' }}
         value={filters.accountId ?? ''}
         onChange={e => onChange({ ...filters, accountId: e.target.value || null })}

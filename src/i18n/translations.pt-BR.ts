@@ -1475,6 +1475,9 @@ export const ptBR = {
   finance_add: 'Adicionar',
   finance_all_categories: 'Todas as categorias',
   finance_selected_count: '{n} selecionado(s)',
+  finance_select_tx: 'Selecionar {desc}',
+  range_min: 'mínimo',
+  range_max: 'máximo',
   finance_clear: 'Limpar',
 
   // Statement import (PDF C6 / OFX)

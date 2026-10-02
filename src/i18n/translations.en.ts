@@ -1476,6 +1476,9 @@ const en: Record<TranslationKey, string> = {
   finance_add: 'Add',
   finance_all_categories: 'All categories',
   finance_selected_count: '{n} selected',
+  finance_select_tx: 'Select {desc}',
+  range_min: 'minimum',
+  range_max: 'maximum',
   finance_clear: 'Clear',
 
   // Statement import (C6 PDF / OFX)
