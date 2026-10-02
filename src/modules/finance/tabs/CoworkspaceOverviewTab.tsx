@@ -10,8 +10,8 @@ import {
   totalsByUser, transactionsInMonth,
   type FinanceTxAgg,
 } from '../../../lib/financeCalc'
-import { Donut } from '../../../components/Charts'
-import { UserAvatar } from '../../../components/UserAvatar'
+import { Donut } from '@/shared/ui/Charts'
+import { UserAvatar } from '@/shared/ui/UserAvatar'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { localeOf } from '../../../i18n/translations'
 import {

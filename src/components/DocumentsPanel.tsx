@@ -1,6 +1,6 @@
 import { lazy, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { LOCAL_KEYS } from '../lib/localKeys'
-import { RailButton } from './RailButton'
+import { RailButton } from '@/shared/ui/RailButton'
 import { Files, FileText, ArrowLeft, StickyNote, GraduationCap, FolderKanban, Waypoints, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import type { Page, PageType } from '../types'
 import { usePages } from '../contexts/PagesContext'

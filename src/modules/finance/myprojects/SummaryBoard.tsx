@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import type { TranslationKey } from '../../../i18n/translations'
-import { useIsMobile } from '../../../hooks/useIsMobile'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { formatBRL } from '../../../lib/money'
 import { FINANCE_PHASES, type FinancePhaseOrCancelled } from '../../../lib/financePhase'
 import { stepIndexOf, type StepDef } from '../../../lib/boardStepper'

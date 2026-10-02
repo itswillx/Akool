@@ -2,7 +2,7 @@
 import { Camera, ChevronDown, Download, Trash2, X } from 'lucide-react'
 import { localDateKey } from '../../../lib/localDate'
 import { useEffect, useRef, useState } from 'react'
-import { Field, FieldGroup } from '../../../components/Field'
+import { Field, FieldGroup } from '@/shared/ui/Field'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { fromCents, toCents } from '../../../lib/money'
 import { resolveSignedUrl } from '../../../lib/storageUrl'

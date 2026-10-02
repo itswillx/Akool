@@ -20,7 +20,7 @@ vi.mock('../contexts/pagesState', () => ({
   usePageNavigation: () => pagesApi,
   usePageActions: () => pagesApi,
 }))
-vi.mock('../hooks/useIsMobile', () => ({ useIsMobile: () => false }))
+vi.mock('@/shared/hooks/useIsMobile', () => ({ useIsMobile: () => false }))
 vi.mock('../i18n/LanguageContext', () => ({ useLanguage: () => ({ lang: 'pt-BR', t: (k: string) => k }) }))
 
 import { PageItem, PageTreeRoot } from './PageTree'

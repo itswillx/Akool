@@ -7,9 +7,9 @@ import {
 } from 'lucide-react'
 import type { Page, PageType } from '../types'
 import { usePageActions, usePageNavigation } from '../contexts/pagesState'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { useLanguage } from '../i18n/LanguageContext'
-import ConfirmDeleteModal from './ConfirmDeleteModal'
+import ConfirmDeleteModal from '@/shared/ui/ConfirmDeleteModal'
 
 const EXPANDED_KEY = LOCAL_KEYS.pagesExpanded
 

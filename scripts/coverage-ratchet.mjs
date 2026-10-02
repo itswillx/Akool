@@ -3,11 +3,15 @@
 // `vitest run --coverage` (coverage/coverage-summary.json) e compara a
 // cobertura de LINHAS de cada pasta com scripts/coverage-baseline.json.
 //
-//   npm run test:coverage                       testes + cobertura + trava
-//   node scripts/coverage-ratchet.mjs --update  regrava a base (recusa se caiu)
+//   npm run test:coverage                            testes + cobertura + trava
+//   node scripts/coverage-ratchet.mjs --update       regrava a base (recusa se caiu)
+//   node scripts/coverage-ratchet.mjs --allow-moves  regrava mesmo com pasta em queda,
+//                                                    desde que o total geral não caia
+//                                                    (ARCH-006: arquivo testado mudou de pasta)
 //
 // Código novo sem teste numa pasta baixa a porcentagem dela: a trava pede
-// teste junto. A folga (TOLERANCE) absorve mudanças pequenas.
+// teste junto. A folga (TOLERANCE) absorve mudanças pequenas. A base guarda
+// também o total geral ("total"), que nunca pode cair além da folga.
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
@@ -39,9 +43,25 @@ export function coverageByGroup(summary, root) {
     g.covered += metrics.lines.covered
     g.total += metrics.lines.total
   }
-  return Object.fromEntries(Object.entries(acc)
+  const out = Object.fromEntries(Object.entries(acc)
     .filter(([, g]) => g.total > 0)
     .map(([group, g]) => [group, Math.round((g.covered / g.total) * 10000) / 100]))
+  // ARCH-006: o total geral entra como "total" e é o que --allow-moves confere.
+  const total = summary.total?.lines
+  if (typeof total?.pct === 'number') out.total = Math.round(total.pct * 100) / 100
+  return out
+}
+
+/**
+ * ARCH-006: com --allow-moves, uma pasta pode cair (arquivo testado mudou de
+ * pasta) desde que o total geral não tenha caído além da folga.
+ */
+export function movesTolerated(baseline, current, worse, tolerance = TOLERANCE) {
+  if (baseline.total === undefined) return { ok: false, reason: 'a base não tem o total geral (rode --update antes de mover)' }
+  if (worse.some(w => w.group === 'total') || current.total < baseline.total - tolerance) {
+    return { ok: false, reason: `o total geral caiu (${baseline.total}% → ${current.total}%)` }
+  }
+  return { ok: true }
 }
 
 /** Pastas que caíram além da folga, as que subiram e as que ainda não têm base. */
@@ -75,15 +95,23 @@ function main() {
     return
   }
   const baseline = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : {}
+  const allowMoves = process.argv.includes('--allow-moves')
   const { worse, better, unbased } = compareCoverage(baseline, current)
 
   if (worse.length > 0) {
-    console.error('✗ Cobertura de linhas caiu (folga de ' + TOLERANCE + ' p.p.):\n')
-    for (const { group, base, now } of worse) console.error(`  ${group}: ${base}% → ${now}%`)
-    console.error(update ? '\nA base não foi regravada.' : '\nEscreva testes para o código novo dessas pastas.')
-    process.exit(1)
+    const moves = allowMoves ? movesTolerated(baseline, current, worse) : { ok: false }
+    if (!moves.ok) {
+      console.error('✗ Cobertura de linhas caiu (folga de ' + TOLERANCE + ' p.p.):\n')
+      for (const { group, base, now } of worse) console.error(`  ${group}: ${base}% → ${now}%`)
+      if (allowMoves) console.error(`\n--allow-moves recusado: ${moves.reason}.`)
+      else console.error(update ? '\nA base não foi regravada.' : '\nEscreva testes para o código novo dessas pastas.')
+      process.exit(1)
+    }
+    writeFileSync(BASELINE, sortedJson(current))
+    console.log(`Base regravada (movimentação): ${worse.map(w => w.group).join(', ')} em queda; total ${baseline.total}% → ${current.total}%.`)
+    return
   }
-  if (update) {
+  if (update || allowMoves) {
     writeFileSync(BASELINE, sortedJson(current))
     console.log('Base de cobertura regravada.')
     return

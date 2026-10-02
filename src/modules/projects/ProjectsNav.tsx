@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { RailButton, RailGroupTitle as GroupTitle } from '../../components/RailButton'
+import { RailButton, RailGroupTitle as GroupTitle } from '@/shared/ui/RailButton'
 import {
   BarChart3, GanttChartSquare, LayoutGrid, List as ListIcon, Pencil, Plus,
   ListOrdered, Share2, Smartphone, Trash2, Upload,

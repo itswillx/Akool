@@ -32,7 +32,7 @@ vi.mock('../../contexts/AuthContext', () => ({
 vi.mock('../../i18n/LanguageContext', () => ({ useLanguage: () => ({ lang: 'pt-BR', t: (k: string) => k }) }))
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ showToast: () => {} }) }))
 vi.mock('../../contexts/OnboardingContext', () => ({ useOnboarding: () => ({ activeTour: null, showTour: false, seen: () => true, startTour: () => {}, finishTour: () => {} }) }))
-vi.mock('../../hooks/useIsMobile', () => ({ useIsMobile: () => false }))
+vi.mock('@/shared/hooks/useIsMobile', () => ({ useIsMobile: () => false }))
 
 import FinancePanel from './FinancePanel'
 

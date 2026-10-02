@@ -1,7 +1,7 @@
 import { Eye, EyeOff } from 'lucide-react'
 import type { TranslationKey } from '../i18n/translations'
 import { MIN_PASSWORD_LENGTH, isPasswordValid } from '../lib/passwordPolicy'
-import type { FieldControlProps } from './Field'
+import type { FieldControlProps } from '@/shared/ui/Field'
 
 // Shared between UserSettingsModal (password tab) and ResetPasswordPage.
 // `t` comes in as a prop because ResetPasswordPage renders outside the

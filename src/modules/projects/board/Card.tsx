@@ -9,7 +9,7 @@ Image,
 Link2
 } from 'lucide-react'
 import { memo, useContext } from 'react'
-import { UserAvatar } from '../../../components/UserAvatar'
+import { UserAvatar } from '@/shared/ui/UserAvatar'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { cardKeyDown } from '../../../lib/dndAccessibility'
 import type { ProjectCard } from '../../../types'

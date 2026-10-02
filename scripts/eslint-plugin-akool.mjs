@@ -3,6 +3,7 @@ import { noDiscardedSupabaseWrite } from './eslint-no-discarded-supabase-write.m
 import { buttonHasName } from './eslint-button-has-name.mjs'
 import { noLiteralJsxText } from './eslint-no-literal-jsx-text.mjs'
 import { noHexColor } from './eslint-no-hex-color.mjs'
+import { noCrossModuleImport } from './eslint-no-cross-module-import.mjs'
 
 export default {
   meta: { name: 'akool' },
@@ -11,5 +12,6 @@ export default {
     'button-has-name': buttonHasName,
     'no-literal-jsx-text': noLiteralJsxText,
     'no-hex-color': noHexColor,
+    'no-cross-module-import': noCrossModuleImport,
   },
 }

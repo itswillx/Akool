@@ -1,8 +1,8 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { Users } from 'lucide-react'
 import { useState } from 'react'
-import { FieldGroup } from '../../../components/Field'
-import { UserAvatar } from '../../../components/UserAvatar'
+import { FieldGroup } from '@/shared/ui/Field'
+import { UserAvatar } from '@/shared/ui/UserAvatar'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { localeOf } from '../../../i18n/translations'

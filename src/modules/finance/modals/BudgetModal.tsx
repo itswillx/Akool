@@ -1,6 +1,6 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { useState } from 'react'
-import { Field } from '../../../components/Field'
+import { Field } from '@/shared/ui/Field'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { fromCents, toCents } from '../../../lib/money'
 import type { FinanceBudget, FinanceCategory, FinanceWorkspace } from '../../../types'

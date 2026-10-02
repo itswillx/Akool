@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { avatarColor, initials, safeHexColor } from '../lib/avatar'
-import { resolveSignedUrl } from '../lib/storageUrl'
+import { avatarColor, initials, safeHexColor } from '@/lib/avatar'
+import { resolveSignedUrl } from '@/lib/storageUrl'
 
 export const AVATAR_BUCKET = 'avatars'
 

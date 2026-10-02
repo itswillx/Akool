@@ -5,7 +5,7 @@ import { X, FileDown, CheckSquare, Square } from 'lucide-react'
 import type { Page } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import { useDialog } from '../hooks/useDialog'
+import { useDialog } from '@/shared/hooks/useDialog'
 
 interface ExportPdfModalProps {
   open: boolean

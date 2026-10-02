@@ -89,10 +89,11 @@ describe('useQuickNotes', () => {
   it('reverts only the edited note when the update is refused', async () => {
     db.results.select = { data: [note('a', 'one'), note('b', 'two')], error: null }
     await render('u1')
-    db.results.update = { data: null, error: { message: 'Failed to fetch' } } satisfies Res
+    // Recusa do banco (não é falta de rede: essa vira rascunho local, REL-012).
+    db.results.update = { data: null, error: { message: 'permission denied for table quick_notes', code: '42501' } } satisfies Res
     await act(async () => { await hook.updateNote('b', { content: 'changed' }) })
     expect(hook.notes.map(n => n.content)).toEqual(['one', 'two'])
-    expect(showToast).toHaveBeenCalledWith('error', 'toast_error_network')
+    expect(showToast).toHaveBeenCalledWith('error', 'toast_error_permission')
   })
 
   it('puts a note back in place when RLS deletes 0 rows', async () => {
@@ -112,5 +113,29 @@ describe('useQuickNotes', () => {
     expect(saved).toBe(false)
     expect(hook.notes).toEqual([])
     expect(showToast).toHaveBeenCalledWith('error', 'toast_error_save')
+  })
+})
+
+// REL-012: sem conexão a edição fica na tela e vira rascunho local; o
+// reenvio acontece quando a conexão volta.
+const offline = vi.hoisted(() => ({ puts: [] as unknown[], drafts: [] as unknown[] }))
+vi.mock('../lib/offlineStore', () => ({
+  listDrafts: async () => offline.drafts,
+  getDraftFor: async () => null,
+  putDraft: async (draft: unknown) => { offline.puts.push(draft) },
+  deleteDraft: async () => {},
+}))
+
+describe('useQuickNotes offline (REL-012)', () => {
+  it('a edição fica na tela quando a rede cai, e vai para o rascunho local', async () => {
+    offline.puts = []
+    db.results.select = { data: [note('n1', 'antes')], error: null }
+    db.results.update = { data: null, error: { message: 'TypeError: Failed to fetch' } }
+    await render('u1')
+    await act(async () => { await hook.updateNote('n1', { content: 'depois' }) })
+    expect(hook.notes[0].content).toBe('depois')
+    expect(showToast).not.toHaveBeenCalled()
+    expect(offline.puts).toHaveLength(1)
+    expect(offline.puts[0]).toMatchObject({ userId: 'u1', table: 'quick_notes', id: 'n1', value: { content: 'depois' } })
   })
 })

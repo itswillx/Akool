@@ -1,4 +1,4 @@
-import { tabularNums, FIN_ACCENT } from './uiTokens'
+import { tabularNums, FIN_ACCENT } from '@/shared/ui/uiTokens'
 
 // Two-thumb range filter over one painted track. Native <input type="range">
 // pairs stacked with pointer-events off (only the thumbs are live) — see the

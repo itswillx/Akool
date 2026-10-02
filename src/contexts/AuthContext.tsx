@@ -240,9 +240,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = useCallback(async () => {
+    const uid = user?.id
     await supabase.auth.signOut()
     setProfile(null)
-  }, [])
+    // REL-012: os rascunhos offline são da conta; num aparelho compartilhado
+    // não ficam para quem entrar depois.
+    if (uid) void import('../lib/offlineStore').then(store => store.clearDrafts(uid))
+  }, [user])
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string): Promise<{ error: string | null }> => {
     if (!user?.email) return { error: authT()('settings_unauthenticated') }

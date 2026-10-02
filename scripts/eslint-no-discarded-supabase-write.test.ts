@@ -96,3 +96,30 @@ jsxTester.run('akool/no-hex-color', noHexColor, {
     { code: "<div style={{ background: `${c}22 #6366f122` }} />", errors: [{ messageId: 'hex' }] },
   ],
 })
+
+// ARCH-006: fronteira entre módulos e a camada src/shared.
+import { noCrossModuleImport } from './eslint-no-cross-module-import.mjs'
+
+const moduleFile = 'src/modules/finance/tabs/AccountsTab.tsx'
+const sharedFile = 'src/shared/ui/Field.tsx'
+tester.run('no-cross-module-import', noCrossModuleImport, {
+  valid: [
+    { code: "import { Field } from '@/shared/ui/Field'", filename: moduleFile },
+    { code: "import { Modal } from '../ui/Modal'", filename: moduleFile },
+    { code: "import { x } from '@/modules/finance/useFinanceData'", filename: moduleFile },
+    { code: "import { emitAppEvent } from '../../../lib/appEvents'", filename: moduleFile },
+    { code: "import { useState } from 'react'", filename: moduleFile },
+    { code: "const P = lazy(() => import('../modules/finance'))", filename: 'src/components/MainContent.tsx' },
+    { code: "import { useLanguage } from '@/i18n/LanguageContext'", filename: sharedFile },
+    { code: "import { safeHref } from '@/lib/safeHref'", filename: sharedFile },
+    { code: "import { Backdrop } from './Backdrop'", filename: sharedFile },
+  ],
+  invalid: [
+    { code: "import { ProjectsNav } from '../../projects/ProjectsNav'", filename: moduleFile, errors: [{ messageId: 'module' }] },
+    { code: "import { StudyNav } from '@/modules/study/StudyNav'", filename: moduleFile, errors: [{ messageId: 'module' }] },
+    { code: "const S = lazy(() => import('../../study'))", filename: moduleFile, errors: [{ messageId: 'module' }] },
+    { code: "export { x } from '@/modules/projects/projectsShared'", filename: moduleFile, errors: [{ messageId: 'module' }] },
+    { code: "import { useAuth } from '@/contexts/AuthContext'", filename: sharedFile, errors: [{ messageId: 'shared' }] },
+    { code: "import { Dashboard } from '../../components/Dashboard'", filename: sharedFile, errors: [{ messageId: 'shared' }] },
+  ],
+})

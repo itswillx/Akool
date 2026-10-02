@@ -1,8 +1,8 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { X } from 'lucide-react'
 import { useCallback, useState } from 'react'
-import { FieldGroup } from '../../../components/Field'
-import { UserAvatar } from '../../../components/UserAvatar'
+import { FieldGroup } from '@/shared/ui/Field'
+import { UserAvatar } from '@/shared/ui/UserAvatar'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useToast } from '../../../contexts/ToastContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
@@ -13,7 +13,7 @@ import {
 inputStyle, labelStyle
 } from '../ui'
 import type { PartnerProfile } from '../useFinanceData'
-import { useDebouncedCallback } from '../../../hooks/useDebounce'
+import { useDebouncedCallback } from '@/shared/hooks/useDebounce'
 
 // ─── Transaction Modal ────────────────────────────────────────────────────────
 

@@ -8,12 +8,12 @@ import { createRoot, type Root } from 'react-dom/client'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-vi.mock('../i18n/LanguageContext', async () => {
-  const { getT } = await import('../i18n/translations')
+vi.mock('@/i18n/LanguageContext', async () => {
+  const { getT } = await import('@/i18n/translations')
   return { useLanguage: () => ({ lang: 'pt-BR', t: getT('pt-BR') }) }
 })
 
-import SplitDivider from './SplitDivider'
+import SplitDivider from '@/shared/ui/SplitDivider'
 
 const onDraggingChange = vi.fn()
 

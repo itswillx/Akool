@@ -1,6 +1,6 @@
 // ARCH-002: saiu do ProjectsPanel.tsx sem mudança de lógica.
-import { AreaTrend, Donut, Legend, SegmentedBar, type ChartDatum } from '../../../components/Charts'
-import { UserAvatar } from '../../../components/UserAvatar'
+import { AreaTrend, Donut, Legend, SegmentedBar, type ChartDatum } from '@/shared/ui/Charts'
+import { UserAvatar } from '@/shared/ui/UserAvatar'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { countByAssignee, countByColumnId, countByPriority, createdPerWeek, dueBuckets, overviewSummary, PRIORITY_ORDER } from '../../../lib/projectStats'
 import type { ProjectCard, ProjectColumn } from '../../../types'

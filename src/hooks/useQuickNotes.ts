@@ -6,9 +6,25 @@ import {
 } from '../lib/optimistic'
 import { useToast } from '../contexts/ToastContext'
 import { useLanguage } from '../i18n/LanguageContext'
+import { isOnline, onReconnect } from '../lib/connectivity'
+import { classifySupabaseError } from '../lib/supabaseErrors'
+import type { Draft } from '../lib/offlineStore'
 import type { QuickNote, QuickNoteColor } from '../types'
 
 type QuickNotePatch = Partial<Pick<QuickNote, 'content' | 'color' | 'linked_items'>>
+
+// REL-012: os rascunhos guardados sem conexão (o IndexedDB carrega sob demanda).
+async function loadQuickDrafts(userId: string): Promise<Draft[]> {
+  const store = await import('../lib/offlineStore')
+  return (await store.listDrafts(userId)).filter(d => d.table === 'quick_notes')
+}
+
+async function persistQuickDraft(userId: string, id: string, patch: QuickNotePatch & { updated_at: string }): Promise<void> {
+  const store = await import('../lib/offlineStore')
+  const current = await store.getDraftFor(userId, 'quick_notes', id)
+  const merged = { ...((current?.value as object | null) ?? {}), ...patch }
+  await store.putDraft({ userId, table: 'quick_notes', id, value: merged, version: null, savedAt: Date.now() })
+}
 
 function normalize(row: QuickNote): QuickNote {
   return { ...row, linked_items: (row.linked_items ?? []) }
@@ -51,6 +67,31 @@ export function useQuickNotes(userId: string | undefined) {
       })
   }, [userId])
 
+  // REL-012: rascunhos guardados sem conexão entram por cima da lista e são
+  // reenviados agora e sempre que a conexão voltar.
+  const applyDrafts = useCallback((pending: Draft[]) => {
+    if (pending.length === 0) return
+    setNotes(prev => prev.map(n => {
+      const d = pending.find(p => p.id === n.id)
+      return d ? { ...n, ...(d.value as QuickNotePatch) } : n
+    }))
+  }, [])
+
+  useEffect(() => {
+    if (!userId || loadedFor !== userId) return
+    let cancelled = false
+    const sync = () => {
+      void loadQuickDrafts(userId).then(async pending => {
+        if (cancelled) return
+        applyDrafts(pending)
+        if (pending.length > 0 && isOnline()) await (await import('../lib/offlineSync')).flushDrafts(userId, 'quick_notes')
+      })
+    }
+    sync()
+    const stop = onReconnect(sync)
+    return () => { cancelled = true; stop() }
+  }, [userId, loadedFor, applyDrafts])
+
   /** `true` quando a nota foi gravada; na falha, avisa e o chamador mantém o rascunho. */
   const createNote = useCallback(async (input: { content: string; color: QuickNoteColor }): Promise<boolean> => {
     if (!userId) return false
@@ -77,14 +118,21 @@ export function useQuickNotes(userId: string | undefined) {
     if (!before) return
     const applied = { ...patch, updated_at: new Date().toISOString() }
     const previous = pickFields(before, applied)
+    // REL-012: sem conexão a edição fica na tela e num rascunho local, e volta
+    // a ser enviada quando a conexão voltar (ver o efeito acima).
+    const offline = (error: WriteError) => classifySupabaseError(error) === 'network' || !isOnline()
     await runOptimistic({
       apply: () => setNotes(prev => prev.map(n => (n.id === id ? { ...n, ...applied } : n))),
       write: async () => requireRows(await supabase.from('quick_notes').update(applied).eq('id', id).select('id')),
       revert: () => setNotes(prev => revertFields(prev, id, previous, { onlyIf: cur => fieldsUnchanged(cur, applied) })),
-      onError: reverted,
+      keepOnError: offline,
+      onError: error => {
+        if (offline(error) && userId) void persistQuickDraft(userId, id, applied)
+        else reverted(error)
+      },
       label: 'quick note update',
     })
-  }, [reverted])
+  }, [reverted, userId])
 
   const deleteNote = useCallback(async (id: string) => {
     const index = notesRef.current.findIndex(n => n.id === id)

@@ -4,10 +4,10 @@ import { useAuth } from '../../contexts/AuthContext'
 import { usePages } from '../../contexts/PagesContext'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { localeOf, type Lang, type TranslationKey } from '../../i18n/translations'
-import { useIsMobile } from '../../hooks/useIsMobile'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { useSiteBackup, formatBackupSize, mapBackupError } from './useSiteBackup'
 import type { SiteBackup } from '../../types'
-import ConfirmDeleteModal from '../../components/ConfirmDeleteModal'
+import ConfirmDeleteModal from '@/shared/ui/ConfirmDeleteModal'
 
 type TFn = (key: TranslationKey, vars?: Record<string, string | number>) => string
 

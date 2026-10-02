@@ -1,5 +1,6 @@
 import { cpSync, createReadStream, existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { loadEnv, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -84,6 +85,8 @@ export default defineConfig(({ mode }) => {
       __APP_RELEASE__: JSON.stringify(release),
       __EXCALIDRAW_ASSET_PATH__: JSON.stringify(EXCALIDRAW_ASSET_PATH),
     },
+    // ARCH-006: `@/` = src, para app e testes (o tsconfig.app.json tem o mesmo `paths`).
+    resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
     server: {
       // DEV-011: só localhost por padrão (em Wi-Fi público, 0.0.0.0 expunha o
       // dev server a qualquer aparelho da rede). Para testar no celular:

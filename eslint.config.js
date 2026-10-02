@@ -67,7 +67,17 @@ export default defineConfig([
       'akool/no-literal-jsx-text': 'error',
       // UX-015: cor é token, não hex solto (paletas de dados liberadas abaixo).
       'akool/no-hex-color': 'error',
+      // ARCH-006: módulos não se importam entre si; src/shared só importa lib/i18n.
+      'akool/no-cross-module-import': 'error',
+      // ARCH-006: arquivo acima de 600 linhas (sem brancos e comentários) é
+      // aviso; os atuais estão na catraca e nenhum novo passa. Dados (traduções,
+      // Ajuda, tipos) e testes ficam fora.
+      'max-lines': ['warn', { max: 600, skipBlankLines: true, skipComments: true }],
     },
+  },
+  {
+    files: ['src/i18n/translations.*.ts', 'src/i18n/helpContent.ts', 'src/types/index.ts'],
+    rules: { 'max-lines': 'off' },
   },
   {
     // UX-015: paletas de dados (escolha do usuário, gravada no banco), cores dos
@@ -76,7 +86,7 @@ export default defineConfig([
       'src/lib/priorities.ts', 'src/lib/avatar.ts', 'src/lib/importProjectCards.ts', 'src/lib/financePdf.ts',
       'src/modules/projects/projectsShared.ts', 'src/modules/projects/QueueModal.tsx', 'src/modules/study/studyUi.ts',
       'src/modules/finance/modals/AccountModal.tsx', 'src/modules/finance/modals/GoalModals.tsx', 'src/modules/finance/modals/CategoryModal.tsx',
-      'src/modules/projects/modals/BoardModals.tsx', 'src/i18n/tourContent.ts', 'src/i18n/helpContent.ts', 'src/components/uiTokens.ts',
+      'src/modules/projects/modals/BoardModals.tsx', 'src/i18n/tourContent.ts', 'src/i18n/helpContent.ts', 'src/shared/ui/uiTokens.ts',
     ],
     rules: { 'akool/no-hex-color': 'off' },
   },
@@ -91,6 +101,7 @@ export default defineConfig([
     rules: {
       'akool/no-literal-jsx-text': 'off',
       'akool/no-hex-color': 'off',
+      'max-lines': 'off',
       // Mocks async sem await imitam a API real; e expect(obj.metodo) com
       // vi.fn() não tem `this` para perder.
       '@typescript-eslint/require-await': 'off',

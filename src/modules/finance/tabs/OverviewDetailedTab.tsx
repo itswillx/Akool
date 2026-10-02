@@ -11,7 +11,7 @@ import {
   pendingRecurringTotal, savingsRate, topCategories, totalsByCategory, transactionsInMonth,
   type FinanceTxAgg,
 } from '../../../lib/financeCalc'
-import { Donut, DualAreaTrend } from '../../../components/Charts'
+import { Donut, DualAreaTrend } from '@/shared/ui/Charts'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { localeOf } from '../../../i18n/translations'

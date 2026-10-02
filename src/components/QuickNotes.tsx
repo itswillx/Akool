@@ -10,7 +10,7 @@ import { activateProps } from '../lib/a11y'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import ItemPicker, { type PickedItem } from './ItemPicker'
-import ConfirmDeleteModal from './ConfirmDeleteModal'
+import ConfirmDeleteModal from '@/shared/ui/ConfirmDeleteModal'
 
 const COLORS: QuickNoteColor[] = ['yellow', 'green', 'pink', 'blue', 'purple']
 

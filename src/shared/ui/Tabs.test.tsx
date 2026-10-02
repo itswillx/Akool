@@ -2,9 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { Tabs } from './Tabs'
-import { tabPanelProps } from '../lib/tabs'
-import { expectNoAxeViolations } from '../test/axe'
+import { Tabs } from '@/shared/ui/Tabs'
+import { tabPanelProps } from '@/lib/tabs'
+import { expectNoAxeViolations } from '@/test/axe'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { usePagePresence, type PresenceUser } from '../hooks/usePagePresence'
 import { usePageShared } from '../hooks/usePageShared'
 import { useLanguage } from '../i18n/LanguageContext'
-import { UserAvatar } from './UserAvatar'
+import { UserAvatar } from '@/shared/ui/UserAvatar'
 
 // PERF-009: compartilhar só baixa quando abre.
 const SharePageModal = lazy(() => import('./SharePageModal'))

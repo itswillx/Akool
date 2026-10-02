@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { DocsGraph } from '../../lib/docsGraph'
 import { listIsolated, rankByDegree } from '../../lib/docsGraph'
 import { useLanguage } from '../../i18n/LanguageContext'
-import { cardSurfaceStyle, sectionCaptionStyle, segBtnStyle, segTrackStyle, tabularNums } from '../../components/uiTokens'
+import { cardSurfaceStyle, sectionCaptionStyle, segBtnStyle, segTrackStyle, tabularNums } from '@/shared/ui/uiTokens'
 
 // Ranking lateral, calculado sobre o grafo JÁ filtrado — acompanha os filtros.
 // O modo "Isolados" é o acionável: página que ninguém linka, card sem vínculo.

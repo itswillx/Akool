@@ -5,8 +5,8 @@ import { X, ChevronLeft, ChevronRight, Search, Check, FolderKanban } from 'lucid
 import type { ProjectBoard, ProjectCard, ProjectColumn } from '../types'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import { useIsMobile } from '../hooks/useIsMobile'
-import { useDialog } from '../hooks/useDialog'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
+import { useDialog } from '@/shared/hooks/useDialog'
 import { fetchAccessibleBoards, fetchBoardCards } from '../lib/projectImport'
 
 

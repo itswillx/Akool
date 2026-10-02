@@ -1,14 +1,17 @@
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertTriangle, Loader2, WifiOff } from 'lucide-react'
 import { useLanguage } from '../i18n/LanguageContext'
 import type { SaveStatus } from '../lib/contentPersistence'
 
 // Selo discreto de autosave (REL-002): "Salvando…" ou "Não salvo · Tentar de
-// novo". Some quando está tudo salvo, para não poluir o editor.
+// novo". REL-012: "Sem conexão: guardado neste aparelho" enquanto a rede não
+// volta (o reenvio é automático). Some quando está tudo salvo.
 export default function SaveStatusBadge({ status, onRetry }: { status: SaveStatus; onRetry: () => void }) {
   const { t } = useLanguage()
-  if (status !== 'saving' && status !== 'error') return null
+  if (status !== 'saving' && status !== 'error' && status !== 'offline') return null
 
   const error = status === 'error'
+  const offline = status === 'offline'
+  const tone = error ? 'var(--color-error)' : offline ? 'var(--color-warning)' : null
   return (
     <div
       role={error ? 'alert' : 'status'}
@@ -16,18 +19,18 @@ export default function SaveStatusBadge({ status, onRetry }: { status: SaveStatu
         position: 'absolute', top: 10, right: 14, zIndex: 5,
         display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999,
         fontSize: 12, fontWeight: 600, pointerEvents: 'auto',
-        backgroundColor: error ? '#ef444418' : 'var(--color-surface)',
-        border: `1px solid ${error ? '#ef444466' : 'var(--color-border)'}`,
-        color: error ? '#ef4444' : 'var(--color-text-muted)',
+        backgroundColor: tone ? `color-mix(in srgb, ${tone} 10%, transparent)` : 'var(--color-surface)',
+        border: `1px solid ${tone ? `color-mix(in srgb, ${tone} 40%, transparent)` : 'var(--color-border)'}`,
+        color: tone ?? 'var(--color-text-muted)',
       }}
     >
-      {error ? <AlertTriangle size={12} /> : <Loader2 size={12} className="animate-spin" />}
-      {error ? t('editor_save_error') : t('editor_saving')}
+      {error ? <AlertTriangle size={12} /> : offline ? <WifiOff size={12} /> : <Loader2 size={12} className="animate-spin" />}
+      {error ? t('editor_save_error') : offline ? t('editor_save_offline') : t('editor_saving')}
       {error && (
         <button
           type="button"
           onClick={onRetry}
-          style={{ border: 'none', background: 'none', padding: 0, color: '#ef4444', fontSize: 12, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
+          style={{ border: 'none', background: 'none', padding: 0, color: 'var(--color-error)', fontSize: 12, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
         >
           {t('editor_retry')}
         </button>

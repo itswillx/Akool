@@ -3,7 +3,7 @@ import { StickyNote, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import NoteEditor from './NoteEditor'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { useLanguage } from '../i18n/LanguageContext'
 
 interface LinkedNotePanelProps {

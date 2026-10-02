@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { Backdrop } from '../../components/Backdrop'
+import { Backdrop } from '@/shared/ui/Backdrop'
 import { X } from 'lucide-react'
-import { useDialog } from '../../hooks/useDialog'
+import { useDialog } from '@/shared/hooks/useDialog'
 import { useLanguage } from '../../i18n/LanguageContext'
 
 // Casca dos modais do módulo (importar cards, fila): bottom sheet no mobile,

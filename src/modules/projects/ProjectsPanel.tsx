@@ -14,7 +14,7 @@ import {
     Upload
 } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useRef } from 'react'
-import ConfirmDeleteModal from '../../components/ConfirmDeleteModal'
+import ConfirmDeleteModal from '@/shared/ui/ConfirmDeleteModal'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { dndAccessibility } from '../../lib/dndAccessibility'
 import type { Page, ProjectCard, ProjectColumn } from '../../types'

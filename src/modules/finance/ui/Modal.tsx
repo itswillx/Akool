@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
-import { Backdrop } from '../../../components/Backdrop'
+import { Backdrop } from '@/shared/ui/Backdrop'
 import { useFinanceMobile } from './mobileContext'
-import { useDialog } from '../../../hooks/useDialog'
+import { useDialog } from '@/shared/hooks/useDialog'
 import { useLanguage } from '../../../i18n/LanguageContext'
 
 // Bottom-sheet on mobile, centered dialog on desktop. Relies on

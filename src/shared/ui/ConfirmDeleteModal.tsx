@@ -1,7 +1,7 @@
 import { useRef, useId } from 'react'
-import { Backdrop } from './Backdrop'
-import { useLanguage } from '../i18n/LanguageContext'
-import { useDialog } from '../hooks/useDialog'
+import { Backdrop } from '@/shared/ui/Backdrop'
+import { useLanguage } from '@/i18n/LanguageContext'
+import { useDialog } from '@/shared/hooks/useDialog'
 
 interface Props {
   open: boolean

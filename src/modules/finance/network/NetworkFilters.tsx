@@ -3,7 +3,7 @@ import type { FinanceAccount } from '../../../types'
 import type { GraphFilters } from '../../../lib/financeGraph'
 import { formatBRL } from '../../../lib/money'
 import { useLanguage } from '../../../i18n/LanguageContext'
-import { DualRange } from '../../../components/DualRange'
+import { DualRange } from '@/shared/ui/DualRange'
 import { cardSurfaceStyle, inputStyle, segBtnStyle, segTrackStyle } from '../ui/tokens'
 
 // Barra de filtros do grafo: busca, período, tipo, conta e faixa de valores.

@@ -15,13 +15,15 @@ import MfaChallengePage from './pages/MfaChallengePage'
 import Sidebar from './components/Sidebar'
 import MainContent from './components/MainContent'
 import WorkspaceModeSwitch from './components/WorkspaceModeSwitch'
-import { UserAvatar } from './components/UserAvatar'
-import { useIsMobile } from './hooks/useIsMobile'
-import { useDialog } from './hooks/useDialog'
+import { UserAvatar } from '@/shared/ui/UserAvatar'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
+import { useDialog } from '@/shared/hooks/useDialog'
 import { useDayRollover } from './hooks/useDayRollover'
 import { mustReLogin } from './lib/dailyLogin'
 import { localDateKey } from './lib/localDate'
 import { setObservabilityUser } from './lib/observability'
+import { onReconnect } from './lib/connectivity'
+import OfflineBanner from './components/OfflineBanner'
 
 // PERF-009: fora do boot (leva o AvatarCropModal e o react-easy-crop junto).
 const UserSettingsModal = lazy(() => import('./components/UserSettingsModal'))
@@ -97,6 +99,16 @@ function AppInner() {
   // REL-011: eventos do Sentry levam só o id da conta (nada de e-mail).
   useEffect(() => { setObservabilityUser(user?.id ?? null) }, [user?.id])
 
+  // REL-012: rascunhos guardados sem conexão voltam para o servidor logo após
+  // o login e sempre que a conexão volta (páginas abertas cuidam das suas).
+  useEffect(() => {
+    const userId = user?.id
+    if (!userId) return
+    const send = () => { void import('./lib/offlineSync').then(sync => sync.flushDrafts(userId)) }
+    send()
+    return onReconnect(send)
+  }, [user?.id])
+
   // Dia que vira com o app aberto: só avisa; o login é pedido no próximo boot.
   useDayRollover(!!user && !loading, () => {
     const lang = toLang(localStorage.getItem(LOCAL_KEYS.authLang))
@@ -139,6 +151,7 @@ function AppInner() {
         <SidebarDrawer open={sidebarOpen} onClose={closeSidebar} />
 
         <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <OfflineBanner />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)', flexShrink: 0 }}>
               <SidebarToggle open={sidebarOpen} onOpen={() => setSidebarOpen(true)} />
               <div style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: 'var(--color-logo-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-logo-text)', fontWeight: 700, fontSize: 13 }}>A</div>
