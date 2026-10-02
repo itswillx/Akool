@@ -12,9 +12,6 @@ import ConfirmDeleteModal from './ConfirmDeleteModal'
 
 const EXPANDED_KEY = 'excalinotion_expanded_pages'
 
-export function flattenPages(ps: Page[]): Page[] {
-  return ps.flatMap(p => [p, ...flattenPages(p.children ?? [])])
-}
 
 function getExpandedMap(): Record<string, boolean> {
   try { return JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? '{}') } catch { return {} }

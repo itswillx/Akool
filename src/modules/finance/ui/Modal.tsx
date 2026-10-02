@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { Backdrop } from '../../../components/Backdrop'
 import { useFinanceMobile } from './mobileContext'
 import { useDialog } from '../../../hooks/useDialog'
 import { useLanguage } from '../../../i18n/LanguageContext'
@@ -26,11 +27,7 @@ export function Modal({ title, onClose, children, dismissOnBackdrop = false, wid
 
   if (isMobile) {
     return (
-      <div role="presentation"
-        className="finance-sheet-overlay"
-        onClick={handleBackdrop}
-        style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
-      >
+      <Backdrop align="bottom" className="finance-sheet-overlay" onClick={handleBackdrop}>
         <div
           {...dialogProps}
           className="finance-sheet-panel finance-safe-bottom"
@@ -49,16 +46,12 @@ export function Modal({ title, onClose, children, dismissOnBackdrop = false, wid
           </div>
           {children}
         </div>
-      </div>
+      </Backdrop>
     )
   }
 
   return (
-    <div role="presentation"
-      className="finance-sheet-overlay"
-      onClick={handleBackdrop}
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}
-    >
+    <Backdrop className="finance-sheet-overlay" onClick={handleBackdrop}>
       <div
         {...dialogProps}
         className="finance-modal-panel"
@@ -73,6 +66,6 @@ export function Modal({ title, onClose, children, dismissOnBackdrop = false, wid
         </div>
         {children}
       </div>
-    </div>
+    </Backdrop>
   )
 }

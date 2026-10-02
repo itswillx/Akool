@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Backdrop } from '../../components/Backdrop'
 import { X } from 'lucide-react'
 import { useDialog } from '../../hooks/useDialog'
 import { useLanguage } from '../../i18n/LanguageContext'
@@ -20,10 +21,7 @@ export default function ModalShell({
   const { titleId, dialogProps } = useDialog({ onClose, closeOnEsc: true })
   if (isMobile) {
     return (
-      <div role="presentation"
-        onClick={dismissOnBackdrop ? onClose : undefined}
-        style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
-      >
+      <Backdrop align="bottom" zIndex={1100} onClick={dismissOnBackdrop ? onClose : undefined}>
         <div
           {...dialogProps}
           onClick={e => e.stopPropagation()}
@@ -37,15 +35,12 @@ export default function ModalShell({
           </div>
           {children}
         </div>
-      </div>
+      </Backdrop>
     )
   }
 
   return (
-    <div role="presentation"
-      onClick={dismissOnBackdrop ? onClose : undefined}
-      style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 16 }}
-    >
+    <Backdrop zIndex={1100} padding={16} onClick={dismissOnBackdrop ? onClose : undefined}>
       <div
         {...dialogProps}
         onClick={e => e.stopPropagation()}
@@ -59,6 +54,6 @@ export default function ModalShell({
         </div>
         {children}
       </div>
-    </div>
+    </Backdrop>
   )
 }

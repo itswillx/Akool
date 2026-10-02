@@ -14,7 +14,8 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { useDocsSelection } from '../hooks/useDocsSelection'
 import { setDocsSelection } from '../lib/docsNavigation'
 import { useLanguage } from '../i18n/LanguageContext'
-import { PageItem, PageTreeRoot, CreateNewDropdown, flattenPages } from './PageTree'
+import { PageItem, PageTreeRoot, CreateNewDropdown } from './PageTree'
+import { flattenPages } from '../lib/pageTree'
 
 // PERF-009: o modal de exportar PDF só baixa quando abre.
 const ExportPdfModal = lazy(() => import('./ExportPdfModal'))

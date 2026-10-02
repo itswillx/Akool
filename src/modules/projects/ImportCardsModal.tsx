@@ -1,18 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { projectPriorityLabelKey } from '../../lib/priorities'
 import { Upload, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { parseBacklogMarkdown } from '../../lib/backlogMarkdownParser'
 import { ensureTopicColumns, importParsedCards, planTopicColumns } from '../../lib/importProjectCards'
 import { supabase } from '../../lib/supabase'
-import type { ProjectCardPriority, ProjectColumn } from '../../types'
+import type { ProjectColumn } from '../../types'
 import ModalShell from './ModalShell'
 
-const PRIORITY_LABELS: Record<ProjectCardPriority, 'projects_priority_low' | 'projects_priority_medium' | 'projects_priority_high' | 'projects_priority_urgent'> = {
-  low: 'projects_priority_low',
-  medium: 'projects_priority_medium',
-  high: 'projects_priority_high',
-  urgent: 'projects_priority_urgent',
-}
 
 // Quantos IDs pulados listar antes do "e mais N".
 const MAX_LISTED_IDS = 20
@@ -314,7 +309,7 @@ export default function ImportCardsModal({
                     <tr key={card.externalId} style={{ borderTop: '1px solid var(--color-border)' }}>
                       <td style={{ padding: '7px 10px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{card.externalId}</td>
                       <td style={{ padding: '7px 10px', color: 'var(--color-text)' }}>{card.title}</td>
-                      <td style={{ padding: '7px 10px', color: 'var(--color-text-muted)' }}>{t(PRIORITY_LABELS[card.priority])}</td>
+                      <td style={{ padding: '7px 10px', color: 'var(--color-text-muted)' }}>{t(projectPriorityLabelKey(card.priority))}</td>
                       <td style={{ padding: '7px 10px', color: 'var(--color-text-muted)' }}>{card.checklist.length}</td>
                     </tr>
                   ))}

@@ -1,4 +1,5 @@
 import { useRef, useId } from 'react'
+import { Backdrop } from './Backdrop'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useDialog } from '../hooks/useDialog'
 
@@ -27,10 +28,7 @@ export default function ConfirmDeleteModal({ open, pageTitle, title, message, co
   if (!open) return null
 
   return (
-    <div role="presentation"
-      onClick={onCancel}
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-    >
+    <Backdrop color="rgba(0,0,0,0.4)" onClick={onCancel}>
       <div
         {...dialogProps}
         aria-describedby={messageId}
@@ -61,6 +59,6 @@ export default function ConfirmDeleteModal({ open, pageTitle, title, message, co
           </button>
         </div>
       </div>
-    </div>
+    </Backdrop>
   )
 }

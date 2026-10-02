@@ -1,11 +1,13 @@
 import { lazy, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { RailButton } from './RailButton'
 import { Files, FileText, ArrowLeft, StickyNote, GraduationCap, FolderKanban, Waypoints, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import type { Page, PageType } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { setDocsSelection, type DocsSelection } from '../lib/docsNavigation'
 import { useDocsSelection } from '../hooks/useDocsSelection'
-import { PageItem, PageTreeRoot, CreateNewDropdown, flattenPages } from './PageTree'
+import { PageItem, PageTreeRoot, CreateNewDropdown } from './PageTree'
+import { flattenPages } from '../lib/pageTree'
 import PageEditor, { Lazy } from './PageEditor'
 import QuickNotes from './QuickNotes'
 import ErrorBoundary from './ErrorBoundary'
@@ -22,29 +24,6 @@ const COLLAPSED_KEY = 'excalinotion_docs_rail_collapsed'
 
 function readCollapsed(): boolean {
   try { return localStorage.getItem(COLLAPSED_KEY) === '1' } catch { return false }
-}
-
-function RailItem({ icon, label, active, onClick }: {
-  icon: ReactNode; label: string; active: boolean; onClick: () => void
-}) {
-  const [hov, setHov] = useState(false)
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      type="button"
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 8px',
-        borderRadius: 6, border: 'none', cursor: 'pointer', textAlign: 'left',
-        backgroundColor: active ? 'var(--color-active)' : hov ? 'var(--color-hover)' : 'transparent',
-        color: 'var(--color-text)', fontSize: 13.5, fontWeight: 500,
-      }}
-    >
-      <span style={{ display: 'flex', color: 'var(--color-text-muted)' }}>{icon}</span>
-      <span>{label}</span>
-    </button>
-  )
 }
 
 interface DocumentsPanelProps {
@@ -119,25 +98,25 @@ export default function DocumentsPanel({ isMobile = false }: DocumentsPanelProps
         <CreateNewDropdown onNewPage={handleNewPage} />
       </div>
       <div style={{ padding: '0 8px 8px', flexShrink: 0, borderBottom: '1px solid var(--color-border)', marginBottom: 8 }}>
-        <RailItem
+        <RailButton compact
           icon={<FolderKanban size={14} />}
           label={t('docs_section_projects')}
           active={selection?.kind === 'projects'}
           onClick={() => select({ kind: 'projects' })}
         />
-        <RailItem
+        <RailButton compact
           icon={<StickyNote size={14} />}
           label={t('docs_section_quick_notes')}
           active={selection?.kind === 'quick-notes'}
           onClick={() => select({ kind: 'quick-notes' })}
         />
-        <RailItem
+        <RailButton compact
           icon={<GraduationCap size={14} />}
           label={t('docs_section_studies')}
           active={selection?.kind === 'studies'}
           onClick={() => select({ kind: 'studies' })}
         />
-        <RailItem
+        <RailButton compact
           icon={<Waypoints size={14} />}
           label={t('docs_section_network')}
           active={selection?.kind === 'network'}

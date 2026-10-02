@@ -158,10 +158,42 @@ export function createDebouncedSaver<T>({ delayMs, save, onStatus, onSaved, vers
 
 // ── REL-009: save condicional pela versão ────────────────────────────────────
 
-/** O cliente do supabase, só com o que o save versionado usa (testável com um falso). */
-interface VersionedClient {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  from(table: string): any
+// QA-005: o cliente do supabase, só com o encadeamento que o save versionado
+// usa, tipado por estrutura (o cliente real e o falso dos testes cabem aqui).
+type ContentRow = { updated_at: string | null }
+type DbError = { code?: string; message: string }
+interface VersionedResult<T> { data: T | null; error: DbError | null }
+/** Só o `then` que o `await` usa; cabe o PostgrestBuilder real e o falso dos testes. */
+interface VersionedThenable<T> {
+  then(onfulfilled: (value: VersionedResult<T>) => unknown, onrejected?: (reason: unknown) => unknown): PromiseLike<unknown>
+}
+// Colunas como literais, e não `string`: com `string`, o TypeScript tenta
+// instanciar o parser de select do PostgREST para qualquer texto e estoura
+// ("type instantiation is excessively deep").
+type ContentColumn = 'page_id' | 'updated_at'
+interface VersionedQuery extends VersionedThenable<ContentRow[]> {
+  eq(column: ContentColumn, value: string): VersionedQuery
+  select(columns: 'updated_at'): VersionedQuery
+  single(): VersionedThenable<ContentRow>
+  maybeSingle(): VersionedThenable<ContentRow>
+}
+interface VersionedTable {
+  insert(values: object): VersionedQuery
+  update(values: object): VersionedQuery
+  select(columns: 'updated_at'): VersionedQuery
+}
+export interface VersionedClient {
+  from(table: ContentTable): VersionedTable
+}
+
+/**
+ * O cliente real visto pela interface estrutural. Comparar o SupabaseClient
+ * inteiro com a VersionedClient faz o TypeScript instanciar os genéricos do
+ * PostgREST até estourar; apagando o retorno de `from` para `unknown` antes, a
+ * conversão é rasa. Os testes passam um cliente falso direto.
+ */
+export function asVersionedClient(client: { from(table: ContentTable): unknown }): VersionedClient {
+  return client as VersionedClient
 }
 
 type ContentTable = 'note_contents' | 'drawing_contents'

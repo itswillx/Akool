@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Backdrop } from '../../components/Backdrop'
 import { CalendarClock, X } from 'lucide-react'
 import type { StudyTopic, StudyTopicStatus } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
@@ -86,9 +87,7 @@ export function ModalShell({ title, onClose, children, isMobile }: {
   const { titleId, dialogProps } = useDialog({ onClose, closeOnEsc: false })
   if (isMobile) {
     return (
-      <div
-        style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
-      >
+      <Backdrop align="bottom" zIndex={1100}>
         <div
           {...dialogProps}
           style={{ backgroundColor: 'var(--color-bg)', borderTop: '1px solid var(--color-border)', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: '16px 20px 24px', maxHeight: '95vh', overflowY: 'auto' }}
@@ -101,14 +100,12 @@ export function ModalShell({ title, onClose, children, isMobile }: {
           </div>
           {children}
         </div>
-      </div>
+      </Backdrop>
     )
   }
 
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 16 }}
-    >
+    <Backdrop zIndex={1100} padding={16}>
       <div
         {...dialogProps}
         style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 24, width: 680, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
@@ -121,6 +118,6 @@ export function ModalShell({ title, onClose, children, isMobile }: {
         </div>
         {children}
       </div>
-    </div>
+    </Backdrop>
   )
 }

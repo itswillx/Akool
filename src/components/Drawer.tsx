@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { Backdrop } from './Backdrop'
 import { useDialog } from '../hooks/useDialog'
 import { useLanguage } from '../i18n/LanguageContext'
 
@@ -13,10 +14,7 @@ export function Drawer({ title, onClose, children, footer }: { title: string; on
   const { t } = useLanguage()
   const { titleId, dialogProps } = useDialog({ onClose, closeOnEsc: false })
   return (
-    <div
-      className="finance-drawer-overlay"
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(16,20,24,0.4)', display: 'flex', justifyContent: 'flex-end' }}
-    >
+    <Backdrop align="right" className="finance-drawer-overlay" color="rgba(16,20,24,0.4)">
       <div
         {...dialogProps}
         className="finance-drawer-panel"
@@ -33,6 +31,6 @@ export function Drawer({ title, onClose, children, footer }: { title: string; on
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid var(--color-border)', flexShrink: 0 }}>{footer}</div>
         )}
       </div>
-    </div>
+    </Backdrop>
   )
 }

@@ -191,10 +191,11 @@ function fakeClient(script: {
         single: () => b,
         maybeSingle: () => b,
         eq: (column: string, value: string) => { filters.push(`${column}=${value}`); return b },
-        then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => {
+        // Genérico: o `then` do VersionedThenable (QA-005) tipa o valor pelo resultado.
+        then: <T,>(resolve: (v: T) => unknown, reject?: (e: unknown) => unknown) => {
           calls.push(`${op} ${table} ${filters.join('&')}`.trim())
           const result = script[op as 'update' | 'insert' | 'read'] ?? { data: null, error: null }
-          return Promise.resolve(result).then(resolve, reject)
+          return Promise.resolve(result as T).then(resolve, reject)
         },
       }
       return b

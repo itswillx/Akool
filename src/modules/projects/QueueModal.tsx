@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { PROJECT_PRIORITIES as PRIORITIES, PROJECT_PRIORITY_COLORS as PRIORITY_COLORS } from '../../lib/priorities'
 import { ArrowDown, ArrowUp, Check, ListOrdered, RotateCcw, Search, X } from 'lucide-react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import {
@@ -14,13 +15,9 @@ import {
   type CardQueueStatus,
   type QueueFilter,
 } from '../../lib/cardQueue'
-import type { ProjectCard, ProjectCardPriority, ProjectColumn } from '../../types'
+import type { ProjectCard, ProjectColumn } from '../../types'
 import ModalShell from './ModalShell'
 
-const PRIORITIES: ProjectCardPriority[] = ['urgent', 'high', 'medium', 'low']
-const PRIORITY_COLORS: Record<ProjectCardPriority, string> = {
-  low: '#94a3b8', medium: '#3b82f6', high: '#f59e0b', urgent: '#ef4444',
-}
 const STATUS_COLORS: Record<CardQueueStatus, string> = {
   queued: '#6366f1', in_progress: '#f59e0b', review: '#0891b2', done: '#22c55e', blocked: '#dc2626', cancelled: '#94a3b8',
 }

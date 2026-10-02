@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
+import { PROJECT_PRIORITY_COLORS as PRIORITY_COLORS } from '../lib/priorities'
 import { createPortal } from 'react-dom'
 import { X, ChevronLeft, ChevronRight, Search, Check, FolderKanban } from 'lucide-react'
-import type { ProjectBoard, ProjectCard, ProjectColumn, ProjectCardPriority } from '../types'
+import type { ProjectBoard, ProjectCard, ProjectColumn } from '../types'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { useDialog } from '../hooks/useDialog'
 import { fetchAccessibleBoards, fetchBoardCards } from '../lib/projectImport'
 
-const PRIORITY_COLORS: Record<ProjectCardPriority, string> = {
-  low: '#94a3b8', medium: '#3b82f6', high: '#f59e0b', urgent: '#ef4444',
-}
 
 interface Props {
   open: boolean
