@@ -874,6 +874,7 @@ export const ptBR = {
   admin_err_self_action: 'Você não pode executar esta ação na sua própria conta.',
   admin_err_invalid_role: 'Função inválida.',
   admin_err_forbidden: 'Acesso restrito a administradores.',
+  admin_err_mfa_required: 'Confirme o segundo fator (código do autenticador) e tente de novo.',
   admin_err_user_not_found: 'Usuário não encontrado.',
 
   // Invite system — UserManagementPanel

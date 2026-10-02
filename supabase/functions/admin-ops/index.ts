@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { allowedOrigins, corsHeaders } from "../_shared/cors.ts";
+import { MFA_REQUIRED, mfaRequired } from "../_shared/aal.ts";
 import { captureException } from "../_shared/sentry.ts";
 import {
   AUDITED_ACTIONS, checkSetRole, checkTarget, isDemotingAdmin, leftNoAdmin, revokesSessionsAfterRoleChange,
@@ -103,6 +104,10 @@ Deno.serve(async (req: Request) => {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // SEC-004 (etapa B): quem já ativou o MFA precisa de sessão AAL2 aqui (decisão testada em _shared/aal.ts).
+    if (await mfaRequired(adminClient, user.id, authHeader.replace(/^Bearer\s+/i, "").trim()))
+      return new Response(JSON.stringify({ error: MFA_REQUIRED }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     audit.actorId = user.id;
     audit.actorLabel = profile.email ?? null;
