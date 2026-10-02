@@ -1,8 +1,6 @@
 # Akool
 
-<!-- Badge do CI (DEV-001): troque OWNER/REPO pelo repositório no GitHub.
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
--->
+[![CI](https://github.com/itswillx/Akool/actions/workflows/ci.yml/badge.svg)](https://github.com/itswillx/Akool/actions/workflows/ci.yml)
 
 Espaço de trabalho pessoal e colaborativo: páginas com notas, desenhos e tarefas, projetos em kanban e Gantt, finanças e estudos, num só app. Frontend em React, com o Supabase cuidando de login, banco (com RLS), arquivos e edge functions. A interface fala português e inglês.
 
