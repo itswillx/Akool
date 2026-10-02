@@ -1,4 +1,5 @@
-import { tabularNums, FIN_ACCENT } from './uiTokens'
+import { tabularNums, FIN_ACCENT } from '@/shared/ui/uiTokens'
+import { useLanguage } from '@/i18n/LanguageContext'
 
 // Two-thumb range filter over one painted track. Native <input type="range">
 // pairs stacked with pointer-events off (only the thumbs are live) — see the
@@ -21,6 +22,7 @@ export function DualRange({ label, bounds, min, max, onChange, format }: {
   onChange: (min: number, max: number | null) => void
   format: (v: number) => string
 }) {
+  const { t } = useLanguage()
   const span = Math.max(1, bounds.max - bounds.min)
   const toStep = (v: number) => Math.round(((v - bounds.min) / span) * STEPS)
   const fromStep = (step: number) => Math.round(bounds.min + (step / STEPS) * span)
@@ -52,9 +54,10 @@ export function DualRange({ label, bounds, min, max, onChange, format }: {
           position: 'absolute', top: '50%', transform: 'translateY(-50%)', height: 4, borderRadius: 999, background: FIN_ACCENT,
           left: `${minStep}%`, width: `${Math.max(0, maxStep - minStep)}%`,
         }} />
-        <input type="range" className="dualrange" min={0} max={STEPS} step={1}
+        {/* UX-008: cada thumb tem nome próprio para o leitor de tela. */}
+        <input type="range" className="dualrange" min={0} max={STEPS} step={1} aria-label={`${label}: ${t('range_min')}`}
           value={minStep} onChange={e => setMinStep(Number(e.target.value))} />
-        <input type="range" className="dualrange" min={0} max={STEPS} step={1}
+        <input type="range" className="dualrange" min={0} max={STEPS} step={1} aria-label={`${label}: ${t('range_max')}`}
           value={maxStep} onChange={e => setMaxStep(Number(e.target.value))} />
       </div>
     </div>

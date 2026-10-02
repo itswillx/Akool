@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useDebouncedCallback, useDebouncedValue } from './useDebounce'
+import { useDebouncedCallback, useDebouncedValue } from '@/shared/hooks/useDebounce'
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })

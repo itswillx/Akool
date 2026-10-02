@@ -10,7 +10,7 @@ X
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { SignedImage } from '../../../components/SignedImage'
-import { useDialog } from '../../../hooks/useDialog'
+import { useDialog } from '@/shared/hooks/useDialog'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { linkDisplay, normalizeLinkUrl } from '../../../lib/cardLinks'
 import { safeWebHref } from '../../../lib/safeHref'

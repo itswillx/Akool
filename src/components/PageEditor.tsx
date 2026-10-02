@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useRef } from 'react'
 import type { ReactNode } from 'react'
 import type { Page, PageType } from '../types'
-import SplitDivider from './SplitDivider'
+import SplitDivider from '@/shared/ui/SplitDivider'
 import PageHeader from './PageHeader'
 
 const NoteEditor = lazy(() => import('./NoteEditor'))

@@ -11,7 +11,7 @@ import { expectNoAxeViolations } from '../test/axe'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../lib/supabase', () => ({ supabase: {}, recoveryLinkError: null }))
-vi.mock('../hooks/useIsMobile', () => ({ useIsMobile: () => false }))
+vi.mock('@/shared/hooks/useIsMobile', () => ({ useIsMobile: () => false }))
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({
     user: { id: 'u1', email: 'eu@example.com' },

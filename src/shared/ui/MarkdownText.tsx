@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { safeHref } from '../lib/safeHref'
+import { safeHref } from '@/lib/safeHref'
 
 // Lightweight Markdown → React renderer. Covers the subset that appears in card
 // descriptions and that the formatting toolbar produces: bold, italic, inline

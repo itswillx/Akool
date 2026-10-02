@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
-import { Backdrop } from '../../components/Backdrop'
+import { Backdrop } from '@/shared/ui/Backdrop'
 import { CalendarClock, X } from 'lucide-react'
 import type { StudyTopic, StudyTopicStatus } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { isTopicOverdue } from '../../lib/studyProgress'
-import { useDialog } from '../../hooks/useDialog'
+import { useDialog } from '@/shared/hooks/useDialog'
 import { avatarBg, formatDateISO, initialsOf, STATUS_COLOR, STATUS_LABEL_KEY } from './studyUi'
 
 // Shared presentational pieces of the study module. Pure helpers/constants

@@ -3,7 +3,7 @@ import { LOCAL_KEYS } from '../lib/localKeys'
 import { Lock } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { PasswordInput, PasswordStrengthMeter } from '../components/PasswordFields'
-import { Field } from '../components/Field'
+import { Field } from '@/shared/ui/Field'
 import { isPasswordValid } from '../lib/passwordPolicy'
 import { getT, toLang } from '../i18n/translations'
 

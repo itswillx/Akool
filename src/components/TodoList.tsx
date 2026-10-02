@@ -11,7 +11,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { usePages } from '../contexts/PagesContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 
 interface TodoListProps {
   pageId: string

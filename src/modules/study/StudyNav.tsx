@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { RailButton, RailGroupTitle as GroupTitle } from '../../components/RailButton'
+import { RailButton, RailGroupTitle as GroupTitle } from '@/shared/ui/RailButton'
 import { BarChart3, BookOpen, CalendarClock, History, LayoutDashboard, PlusCircle } from 'lucide-react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { TranslationKey } from '../../i18n/translations'

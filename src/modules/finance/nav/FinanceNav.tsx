@@ -1,6 +1,6 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { BarChart2, List, MoreHorizontal, Plus, Target, Wallet } from 'lucide-react'
-import { RailButton } from '../../../components/RailButton'
+import { RailButton } from '@/shared/ui/RailButton'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import type { TabId } from '../financeFormat'
 import { fmt } from '../financeFormat'

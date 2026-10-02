@@ -734,6 +734,7 @@ export const ptBR = {
   admin_col_status: 'Status',
   admin_col_last_access: 'Último acesso',
   admin_col_actions: 'Ações',
+  admin_col_daily_login: 'Login diário',
   admin_loading: 'Carregando usuários...',
   admin_no_users: 'Nenhum usuário encontrado.',
   admin_you: 'você',
@@ -802,6 +803,8 @@ export const ptBR = {
   editor_saving: 'Salvando…',
   editor_save_error: 'Não salvo',
   editor_retry: 'Tentar de novo',
+  editor_save_offline: 'Sem conexão: guardado neste aparelho',
+  offline_banner: 'Sem conexão. O que você editar fica guardado neste aparelho e é enviado quando a conexão voltar.',
   editor_load_error: 'Não foi possível carregar o conteúdo desta página. Nada foi alterado.',
   // REL-009: outra pessoa salvou enquanto você editava.
   password_show: 'Mostrar senha',
@@ -1472,6 +1475,9 @@ export const ptBR = {
   finance_add: 'Adicionar',
   finance_all_categories: 'Todas as categorias',
   finance_selected_count: '{n} selecionado(s)',
+  finance_select_tx: 'Selecionar {desc}',
+  range_min: 'mínimo',
+  range_max: 'máximo',
   finance_clear: 'Limpar',
 
   // Statement import (PDF C6 / OFX)

@@ -10,9 +10,9 @@ import type { Lang, TranslationKey } from '../i18n/translations'
 import { tourSteps } from '../i18n/tourContent'
 import type { HelpIcon } from '../i18n/helpContent'
 import { HelpGlyph } from '../components/helpIcons'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { isPasswordValid } from '../lib/passwordPolicy'
-import { Field } from '../components/Field'
+import { Field } from '@/shared/ui/Field'
 import { PasswordStrengthMeter } from '../components/PasswordFields'
 
 const HIGHLIGHTS: { icon: HelpIcon; key: TranslationKey }[] = [

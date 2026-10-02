@@ -280,3 +280,68 @@ describe('sceneVersion (REL-009)', () => {
     expect(sceneVersion([])).toBe(0)
   })
 })
+
+// REL-012: sem conexão (ou com a rede caindo no meio), o pendente vai para o
+// rascunho local e o status é `offline`; a volta da conexão envia e limpa.
+import { chooseInitialContent } from './contentPersistence'
+
+describe('createDebouncedSaver: sem conexão (REL-012)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  function offlineSetup(results: SaveResult[], online: { value: boolean }) {
+    const persist = vi.fn(async () => {})
+    const clear = vi.fn(async () => {})
+    const statuses: string[] = []
+    const save = vi.fn(async () => results.shift() ?? { ok: true as const, at: 'v1' })
+    const saver = createDebouncedSaver<string>({
+      delayMs: 100, save, version: 'v0', onStatus: s => statuses.push(s),
+      draft: { persist, clear }, offline: () => !online.value,
+    })
+    return { saver, save, persist, clear, statuses }
+  }
+
+  it('sem conexão não chama o save: guarda o rascunho com a versão e fica em offline; a volta envia e limpa', async () => {
+    const online = { value: false }
+    const o = offlineSetup([], online)
+    o.saver.schedule('a')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(o.save).not.toHaveBeenCalled()
+    expect(o.persist).toHaveBeenCalledWith('a', 'v0')
+    expect(o.statuses).toEqual(['dirty', 'offline'])
+
+    online.value = true
+    await o.saver.flush()
+    expect(o.save).toHaveBeenCalledWith('a', { force: false, version: 'v0' })
+    expect(o.clear).toHaveBeenCalledTimes(1)
+    expect(o.statuses.at(-1)).toBe('saved')
+  })
+
+  it('erro de rede com a conexão "ligada" também vira offline com rascunho; outro erro fica em error', async () => {
+    const o = offlineSetup([{ ok: false, error: 'TypeError: Failed to fetch' }, { ok: false, error: 'permission denied' }], { value: true })
+    o.saver.schedule('a')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(o.statuses.at(-1)).toBe('offline')
+    expect(o.persist).toHaveBeenCalledTimes(1)
+    await o.saver.flush()
+    expect(o.statuses.at(-1)).toBe('error')
+    expect(o.persist).toHaveBeenCalledTimes(1)
+    expect(o.clear).not.toHaveBeenCalled()
+  })
+
+  it('discard ("carregar a versão salva") apaga o rascunho', () => {
+    const o = offlineSetup([], { value: false })
+    o.saver.schedule('a')
+    o.saver.discard()
+    expect(o.clear).toHaveBeenCalledTimes(1)
+    expect(o.statuses.at(-1)).toBe('idle')
+  })
+})
+
+describe('chooseInitialContent (REL-012)', () => {
+  it('sem rascunho abre o remoto; com rascunho abre o rascunho e a versão sobre a qual ele foi feito', () => {
+    expect(chooseInitialContent({ value: 'remoto', version: 'v2' }, null)).toEqual({ value: 'remoto', version: 'v2', fromDraft: false })
+    expect(chooseInitialContent({ value: 'remoto', version: 'v2' }, { value: 'meu', version: 'v1' })).toEqual({ value: 'meu', version: 'v1', fromDraft: true })
+    expect(chooseInitialContent({ value: [], version: null }, { value: ['novo'], version: null })).toEqual({ value: ['novo'], version: null, fromDraft: true })
+  })
+})

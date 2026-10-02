@@ -2,8 +2,8 @@ import { EyeOff, RefreshCw, Search } from 'lucide-react'
 import type { ProjectBoard } from '../../types'
 import type { DocsGraphFilters, DocsNodeKind } from '../../lib/docsGraph'
 import { useLanguage } from '../../i18n/LanguageContext'
-import { DualRange } from '../../components/DualRange'
-import { cardSurfaceStyle, ghostBtnStyle, inputStyle } from '../../components/uiTokens'
+import { DualRange } from '@/shared/ui/DualRange'
+import { cardSurfaceStyle, ghostBtnStyle, inputStyle } from '@/shared/ui/uiTokens'
 import { docsKindLabelKey } from './DocsGraphView'
 
 // Barra de filtros da Rede. Os tipos de nó são chips de múltipla escolha (não

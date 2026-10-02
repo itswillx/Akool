@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type RefObject } from 'react'
-import { useLanguage } from '../i18n/LanguageContext'
+import { useLanguage } from '@/i18n/LanguageContext'
 
 export const SPLIT_MIN = 20
 export const SPLIT_MAX = 80

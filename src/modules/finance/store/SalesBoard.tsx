@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useLanguage } from '../../../i18n/LanguageContext'
-import { useIsMobile } from '../../../hooks/useIsMobile'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { formatBRL } from '../../../lib/money'
 import { saleNetReceived, saleProfit } from '../../../lib/financeStoreCalc'
 import { stepIndexOf, type StepDef } from '../../../lib/boardStepper'

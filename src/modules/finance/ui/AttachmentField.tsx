@@ -5,7 +5,7 @@ import { useLanguage } from '../../../i18n/LanguageContext'
 import { supabase } from '../../../lib/supabase'
 import { resolveSignedUrl } from '../../../lib/storageUrl'
 import { prepareUpload } from '../../../lib/uploadValidation'
-import { useDialog } from '../../../hooks/useDialog'
+import { useDialog } from '@/shared/hooks/useDialog'
 import type { FinanceAttachment } from '../../../types'
 import { ghostBtnStyle, labelStyle } from './tokens'
 

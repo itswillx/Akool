@@ -5,7 +5,7 @@ import type { FinanceGraph, GraphNode } from '../../../lib/financeGraph'
 import { neighborsOf, nodeMonthlySeries, nodeTransactions } from '../../../lib/financeGraph'
 import { accountBalance, daysUntil, goalProgress } from '../../../lib/financeCalc'
 import { formatBRL } from '../../../lib/money'
-import { AreaTrend, DualAreaTrend } from '../../../components/Charts'
+import { AreaTrend, DualAreaTrend } from '@/shared/ui/Charts'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { badgeStyle, cardSurfaceStyle, sectionCaptionStyle, tabularNums, FIN_NEG, FIN_POS, FIN_WARN } from '../ui/tokens'
 

@@ -6,7 +6,7 @@ import { neighborKindCounts, pageAncestors, pageNodeId } from '../../lib/docsGra
 import { neighborsOf } from '../../lib/graph'
 import { daysUntil } from '../../lib/financeCalc'
 import { useLanguage } from '../../i18n/LanguageContext'
-import { badgeStyle, cardSurfaceStyle, ghostBtnStyle, primaryBtnStyle, sectionCaptionStyle, tabularNums, FIN_NEG, FIN_POS } from '../../components/uiTokens'
+import { badgeStyle, cardSurfaceStyle, ghostBtnStyle, primaryBtnStyle, sectionCaptionStyle, tabularNums, FIN_NEG, FIN_POS } from '@/shared/ui/uiTokens'
 import { docsKindLabelKey } from './DocsGraphView'
 
 // Detalhe do nó selecionado. Desktop: ocupa a coluna direita no lugar do

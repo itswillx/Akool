@@ -3,7 +3,7 @@ import { Minus, Plus, Maximize2, Minimize2, Crosshair } from 'lucide-react'
 import type { GraphEdgeBase, GraphNodeBase, GraphShape } from '../../lib/graph'
 import type { LayoutNode } from '../../lib/forceLayout'
 import { layoutBounds } from '../../lib/forceLayout'
-import { ghostBtnStyle } from '../uiTokens'
+import { ghostBtnStyle } from '@/shared/ui/uiTokens'
 
 // Domain-agnostic SVG canvas for a "Rede" view: pan/zoom via viewBox, hover
 // tooltip (desktop), click-to-select with neighbor highlight, label

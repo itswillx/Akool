@@ -1,7 +1,7 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { Field, FieldGroup } from '../../../components/Field'
+import { Field, FieldGroup } from '@/shared/ui/Field'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import {
 type FinanceTxAgg

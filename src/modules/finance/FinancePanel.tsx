@@ -2,10 +2,10 @@ import { ChevronLeft, ChevronRight, FileDown, PanelLeft, PanelTop, Plus, Users, 
 import { useModuleTour } from '../../hooks/useModuleTour'
 import { onAppEvent } from '../../lib/appEvents'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { Tabs } from '../../components/Tabs'
+import { Tabs } from '@/shared/ui/Tabs'
 import { useAuth } from '../../contexts/AuthContext'
 import { useToast } from '../../contexts/ToastContext'
-import { useIsMobile } from '../../hooks/useIsMobile'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { useLanguage } from '../../i18n/LanguageContext'
 import {
     balancesByAccount,

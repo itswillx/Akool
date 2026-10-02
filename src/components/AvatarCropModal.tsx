@@ -3,7 +3,7 @@ import Cropper from 'react-easy-crop'
 import type { Area, Point } from 'react-easy-crop'
 import { X, ZoomIn } from 'lucide-react'
 import { useLanguage } from '../i18n/LanguageContext'
-import { useDialog } from '../hooks/useDialog'
+import { useDialog } from '@/shared/hooks/useDialog'
 import { cropImageToBlob } from '../lib/imageCrop'
 
 // Round, 1:1 crop step shown between picking/opening a photo and uploading

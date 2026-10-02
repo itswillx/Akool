@@ -63,6 +63,11 @@ export interface OptimisticRun {
   onError?: (error: WriteError) => void
   /** Prefixo do console.error; mantem a falha grepavel em producao. */
   label?: string
+  /**
+   * REL-012: `true` mantém a mudança local em vez de reverter (sem conexão, o
+   * chamador guarda um rascunho e reenvia depois). `onError` é chamado igual.
+   */
+  keepOnError?: (error: WriteError) => boolean
 }
 
 /** Aplica, persiste e — so em falha — reverte e reporta. `true` = write gravou. */
@@ -79,7 +84,7 @@ export async function runOptimistic(run: OptimisticRun): Promise<boolean> {
   }
   if (!error) return true
   if (run.label) console.error(`[optimistic] ${run.label}`, error)
-  await run.revert(error)
+  if (!run.keepOnError?.(error)) await run.revert(error)
   run.onError?.(error)
   return false
 }

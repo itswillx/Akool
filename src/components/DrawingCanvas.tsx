@@ -10,7 +10,9 @@ import { usePages } from '../contexts/PagesContext'
 import { useCollaborativeContent } from '../hooks/useCollaborativeContent'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import { asVersionedClient, classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, sceneVersion, type SaveStatus } from '../lib/contentPersistence'
+import { asVersionedClient, chooseInitialContent, classifyLoad, contentDraft, createDebouncedSaver, isNewer, loadContentDraft, markContentOpen, saveVersionedContent, sceneVersion, type SaveStatus } from '../lib/contentPersistence'
+import { onReconnect } from '../lib/connectivity'
+import { useAuth } from '../contexts/AuthContext'
 import SaveStatusBadge, { EditConflictBanner, EditorLoadError } from './SaveStatusBadge'
 
 interface DrawingCanvasProps {
@@ -25,12 +27,35 @@ interface Scene {
   files: BinaryFiles
 }
 
+/** A linha como vai para o banco (e como o rascunho offline é guardado). */
+type DrawingRow = Pick<TableRow<'drawing_contents'>, 'elements' | 'app_state' | 'files'>
+
+/** O que o saver recebe a cada mudança. */
+type SaverScene = { elements: ExcalidrawElement[]; appState: AppState; files: BinaryFiles }
+
+/** Só o que vale guardar do appState (nada de seleção, cursor, UI). */
+function safeAppState(appState: AppState) {
+  return {
+    viewBackgroundColor: appState.viewBackgroundColor,
+    currentItemStrokeColor: appState.currentItemStrokeColor,
+    currentItemBackgroundColor: appState.currentItemBackgroundColor,
+    gridSize: appState.gridSize,
+    zoom: appState.zoom,
+    scrollX: appState.scrollX,
+    scrollY: appState.scrollY,
+  }
+}
+
 export default function DrawingCanvas({ pageId, showLinkedNotePanel }: DrawingCanvasProps) {
   const { userShareRole } = usePages()
   const { theme } = useTheme()
   const { t } = useLanguage()
+  const { user } = useAuth()
+  const userId = user?.id
   const [initialData, setInitialData] = useState<Scene | null>(null)
   const [initialUpdatedAt, setInitialUpdatedAt] = useState<string | null>(null)
+  // REL-012: abriu com um rascunho guardado sem conexão (ainda não enviado).
+  const [fromDraft, setFromDraft] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -61,19 +86,29 @@ export default function DrawingCanvas({ pageId, showLinkedNotePanel }: DrawingCa
         return
       }
       const data = result.kind === 'ok' ? result.data : null
+      // REL-012: edição guardada sem conexão (a linha como iria para o banco)?
+      // Abre com ela; o primeiro save grava ou mostra o aviso de conflito.
+      const draft = await loadContentDraft(userId, 'drawing_contents', pageId)
+      if (cancelled) return
+      const chosen = chooseInitialContent<DrawingRow | null>(
+        { value: data ? { elements: data.elements, app_state: data.app_state, files: data.files } : null, version: data?.updated_at ?? null },
+        draft ? { value: draft.value as DrawingRow, version: draft.version } : null,
+      )
+      const row = chosen.value
       // O jsonb é gravado só por este componente, no formato do próprio Excalidraw.
       setInitialData({
-        elements: (data?.elements ?? []) as ExcalidrawElement[],
-        appState: data?.app_state ?? {},
-        files: (data?.files ?? {}) as BinaryFiles,
+        elements: (row?.elements ?? []) as ExcalidrawElement[],
+        appState: row?.app_state ?? {},
+        files: (row?.files ?? {}) as BinaryFiles,
       })
-      setInitialUpdatedAt(data?.updated_at ?? null)
+      setInitialUpdatedAt(chosen.version)
+      setFromDraft(chosen.fromDraft)
       setLoading(false)
     }
 
     void load()
     return () => { cancelled = true }
-  }, [pageId, reloadKey])
+  }, [pageId, reloadKey, userId])
 
   if (loadError) return <EditorLoadError onRetry={() => setReloadKey(k => k + 1)} />
 
@@ -88,8 +123,10 @@ export default function DrawingCanvas({ pageId, showLinkedNotePanel }: DrawingCa
   return (
     <CanvasInner
       pageId={pageId}
+      userId={userId}
       initialData={initialData}
       initialUpdatedAt={initialUpdatedAt}
+      fromDraft={fromDraft}
       isCollaborative={isCollaborative}
       readOnly={!canEdit}
       showLinkedNotePanel={showLinkedNotePanel}
@@ -99,10 +136,13 @@ export default function DrawingCanvas({ pageId, showLinkedNotePanel }: DrawingCa
   )
 }
 
-function CanvasInner({ pageId, initialData, initialUpdatedAt, isCollaborative, readOnly, showLinkedNotePanel, appTheme, onReloadFromServer }: {
+function CanvasInner({ pageId, userId, initialData, initialUpdatedAt, fromDraft, isCollaborative, readOnly, showLinkedNotePanel, appTheme, onReloadFromServer }: {
   pageId: string
+  userId: string | undefined
   initialData: Scene
   initialUpdatedAt: string | null
+  /** REL-012: a cena inicial é um rascunho local ainda não enviado. */
+  fromDraft: boolean
   isCollaborative: boolean
   readOnly: boolean
   showLinkedNotePanel?: boolean
@@ -113,7 +153,8 @@ function CanvasInner({ pageId, initialData, initialUpdatedAt, isCollaborative, r
   // langCode (padrão "en"); com o idioma do app, o <html lang> não muda.
   const { lang } = useLanguage()
   const lastSaveAt = useRef<string | null>(initialUpdatedAt)
-  const isDirty = useRef(false)
+  // Um rascunho restaurado conta como edição: o realtime não o substitui.
+  const isDirty = useRef(fromDraft)
   const localSavedAt = useRef<number>(0)
   // REL-009: a última versão da cena salva ou aplicada. O onChange da carga,
   // do pan/zoom e do updateScene remoto chega com a mesma versão e não grava.
@@ -128,26 +169,20 @@ function CanvasInner({ pageId, initialData, initialUpdatedAt, isCollaborative, r
   // isDirty/localSavedAt eram zerados ao *chamar* o save). Em erro, a edição
   // fica guardada ("Não salvo · Tentar de novo") e o pendente é salvo ao sair.
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
-  const [saver] = useState(() => createDebouncedSaver<{ elements: ExcalidrawElement[]; appState: AppState; files: BinaryFiles }>({
+  const [saver] = useState(() => createDebouncedSaver<SaverScene>({
     delayMs: 2000,
     onStatus: setSaveStatus,
     version: initialUpdatedAt,
+    // REL-012: sem conexão, o pendente vai para o rascunho local, já no
+    // formato da linha (é o que o reenvio e a próxima abertura usam).
+    draft: contentDraft<SaverScene>(userId, 'drawing_contents', pageId, ({ elements, appState, files }) => ({ elements, app_state: safeAppState(appState), files })),
     save: async ({ elements, appState, files }, { force, version }) => {
-      const safeAppState = {
-        viewBackgroundColor: appState.viewBackgroundColor,
-        currentItemStrokeColor: appState.currentItemStrokeColor,
-        currentItemBackgroundColor: appState.currentItemBackgroundColor,
-        gridSize: appState.gridSize,
-        zoom: appState.zoom,
-        scrollX: appState.scrollX,
-        scrollY: appState.scrollY,
-      }
       // REL-009: só grava sobre a versão conhecida (lastSaveAt); se outra
       // pessoa salvou antes, o saver para em `conflict` e o aviso pede a escolha.
       return saveVersionedContent(asVersionedClient(supabase), {
         table: 'drawing_contents',
         pageId,
-        values: { elements, app_state: safeAppState, files },
+        values: { elements, app_state: safeAppState(appState), files },
         expected: version,
         force,
       })
@@ -187,6 +222,15 @@ function CanvasInner({ pageId, initialData, initialUpdatedAt, isCollaborative, r
       if (!stillDirty) isDirty.current = false
     })
   }, [saver])
+
+  // REL-012: a página aberta reenvia o rascunho sozinha quando a conexão volta;
+  // o reenvio global (offlineSync) pula as páginas abertas.
+  useEffect(() => markContentOpen('drawing_contents', pageId), [pageId])
+  useEffect(() => onReconnect(() => { void saver.flush() }), [saver])
+  // Abriu com o rascunho local: manda já (grava, ou cai no aviso de conflito).
+  useEffect(() => {
+    if (fromDraft) saver.schedule({ elements: [...initialData.elements], appState: initialData.appState as AppState, files: initialData.files })
+  }, [fromDraft, saver, initialData])
 
   useEffect(() => {
     const flush = () => { void saver.flush() }

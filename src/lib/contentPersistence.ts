@@ -1,3 +1,7 @@
+import { isOnline } from './connectivity'
+import { classifySupabaseError } from './supabaseErrors'
+import type { Draft, DraftTable } from './offlineStore'
+
 // Leitura e autosave seguros para o NoteEditor e o DrawingCanvas (REL-002).
 //
 // Antes, um erro de rede na leitura virava "conteúdo vazio" e o próximo
@@ -26,13 +30,23 @@ export function classifyLoad<T>({ data, error }: {
   return data == null ? { kind: 'empty' } : { kind: 'ok', data }
 }
 
-export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict'
+export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict' | 'offline'
 
 export type SaveResult =
   | { ok: true; at: string | null }
   | { ok: false; error: string; conflict?: false }
   /** REL-009: outra pessoa salvou depois da versão que este editor conhece. */
   | { ok: false; error: string; conflict: true }
+
+/**
+ * REL-012: rascunho local do conteúdo pendente. Em erro de rede ou sem
+ * conexão, o valor vai para `persist` (status `offline`) e sai com `clear`
+ * no próximo save que dá certo (ou no discard).
+ */
+export interface DraftHooks<T> {
+  persist: (value: T, version: string | null) => void | Promise<void>
+  clear: () => void | Promise<void>
+}
 
 export interface DebouncedSaver<T> {
   /** Guarda o valor mais recente e (re)agenda o save. */
@@ -65,13 +79,17 @@ export interface DebouncedSaver<T> {
  * `flush()`. `onSaved(at, stillDirty)` avisa se já há uma edição mais nova
  * esperando — o modo colaborativo não pode se considerar "limpo" nesse caso.
  */
-export function createDebouncedSaver<T>({ delayMs, save, onStatus, onSaved, version: initialVersion = null }: {
+export function createDebouncedSaver<T>({ delayMs, save, onStatus, onSaved, version: initialVersion = null, draft, offline = () => !isOnline() }: {
   delayMs: number
   save: (value: T, options: { force: boolean; version: string | null }) => Promise<SaveResult>
   /** A versão carregada do banco (REL-009). */
   version?: string | null
   onStatus?: (status: SaveStatus) => void
   onSaved?: (at: string | null, stillDirty: boolean) => void
+  /** REL-012: rascunho local para o que não chegou ao servidor. */
+  draft?: DraftHooks<T>
+  /** Sem conexão agora? (padrão: navigator.onLine) */
+  offline?: () => boolean
 }): DebouncedSaver<T> {
   let timer: ReturnType<typeof setTimeout> | null = null
   let pending: { value: T } | null = null
@@ -97,6 +115,15 @@ export function createDebouncedSaver<T>({ delayMs, save, onStatus, onSaved, vers
 
     const { value } = pending
     pending = null
+
+    // REL-012: sem conexão não vale tentar. Guarda o rascunho e espera a
+    // conexão voltar (quem usa o saver chama flush() no `online`).
+    if (offline()) {
+      if (!pending) pending = { value }
+      await draft?.persist(value, version)
+      setStatus('offline')
+      return
+    }
     setStatus('saving')
 
     let result = { ok: false, error: 'unknown' } as SaveResult
@@ -120,6 +147,7 @@ export function createDebouncedSaver<T>({ delayMs, save, onStatus, onSaved, vers
 
     if (result.ok) {
       if (result.at) version = result.at
+      void draft?.clear()
       onSavedCb?.(result.at, pending !== null)
       if (pending) {
         setStatus('dirty')
@@ -131,7 +159,13 @@ export function createDebouncedSaver<T>({ delayMs, save, onStatus, onSaved, vers
     } else {
       // Mantém o valor para o retry; uma edição mais nova (se houver) vence.
       if (!pending) pending = { value }
-      setStatus('error')
+      // REL-012: a rede caiu no meio: é "sem conexão", com rascunho local.
+      if (classifySupabaseError({ message: result.error }) === 'network' || offline()) {
+        await draft?.persist(value, version)
+        setStatus('offline')
+      } else {
+        setStatus('error')
+      }
     }
   }
 
@@ -149,11 +183,67 @@ export function createDebouncedSaver<T>({ delayMs, save, onStatus, onSaved, vers
     discard() {
       if (timer) { clearTimeout(timer); timer = null }
       pending = null
+      void draft?.clear()
       setStatus('idle')
     },
     setVersion(next) { version = next },
     get status() { return status },
   }
+}
+
+// ── REL-012: rascunho local (sem conexão) ────────────────────────────────────
+
+/**
+ * Com um rascunho local da página, o editor abre com ele e com a versão sobre
+ * a qual ele foi feito: o primeiro save grava normalmente se nada mudou no
+ * servidor, ou cai no aviso de conflito (REL-009) se alguém salvou depois.
+ * Sem rascunho, abre o conteúdo do servidor.
+ */
+export function chooseInitialContent<T>(
+  remote: { value: T; version: string | null },
+  draft: { value: T; version: string | null } | null,
+): { value: T; version: string | null; fromDraft: boolean } {
+  if (!draft) return { value: remote.value, version: remote.version, fromDraft: false }
+  return { value: draft.value, version: draft.version, fromDraft: true }
+}
+
+/**
+ * Os ganchos de rascunho de um conteúdo; o IndexedDB (offlineStore) carrega
+ * sob demanda. `toStored` converte o valor do saver no formato guardado (o
+ * desenho guarda a linha como vai para o banco).
+ */
+export function contentDraft<T>(userId: string | undefined, table: DraftTable, id: string, toStored: (value: T) => unknown = v => v): DraftHooks<T> | undefined {
+  if (!userId) return undefined
+  return {
+    persist: async (value, version) => {
+      const store = await import('./offlineStore')
+      await store.putDraft({ userId, table, id, value: toStored(value), version, savedAt: Date.now() })
+    },
+    clear: async () => {
+      const store = await import('./offlineStore')
+      await store.deleteDraftFor(userId, table, id)
+    },
+  }
+}
+
+export async function loadContentDraft(userId: string | undefined, table: DraftTable, id: string): Promise<Draft | null> {
+  if (!userId) return null
+  const store = await import('./offlineStore')
+  return store.getDraftFor(userId, table, id)
+}
+
+// Páginas abertas reenviam o próprio rascunho ao voltar a conexão; o reenvio
+// global (offlineSync) pula estas, para os dois não gravarem a mesma edição.
+const openContents = new Set<string>()
+
+export function markContentOpen(table: DraftTable, id: string): () => void {
+  const key = `${table}:${id}`
+  openContents.add(key)
+  return () => { openContents.delete(key) }
+}
+
+export function isContentOpen(table: DraftTable, id: string): boolean {
+  return openContents.has(`${table}:${id}`)
 }
 
 // ── REL-009: save condicional pela versão ────────────────────────────────────
@@ -196,7 +286,7 @@ export function asVersionedClient(client: { from(table: ContentTable): unknown }
   return client as VersionedClient
 }
 
-type ContentTable = 'note_contents' | 'drawing_contents'
+export type ContentTable = 'note_contents' | 'drawing_contents'
 
 /**
  * Grava o conteúdo só se a linha ainda estiver na versão (`updated_at`) que

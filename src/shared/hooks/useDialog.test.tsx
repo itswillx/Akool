@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { useDialog } from './useDialog'
+import { useDialog } from '@/shared/hooks/useDialog'
 
 // UX-003: comportamento comum dos modais.
 

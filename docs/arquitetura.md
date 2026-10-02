@@ -64,9 +64,9 @@ Cada ramo tem o seu `ErrorBoundary` com `key` (REL-005), e o título da aba segu
 | Estudos | Tópicos, cards, roteiros e diário | `src/modules/study/` |
 | Backup | Backups manuais e automáticos | `src/modules/backup/` |
 | Auditoria | Log das ações administrativas | `src/modules/audit/` |
-| Usuários | Contas, convites e cotas (admin) | `src/components/UserManagementPanel.tsx` |
+| Usuários | Contas, convites e cotas (admin) | `src/components/UserManagementPanel.tsx` (casca), `src/components/admin/` (hooks e abas), `src/lib/data/admin.ts` |
 
-Módulos não importam uns dos outros: o que é comum vive em `src/components` (ex.: `RailButton`, `Backdrop`) e `src/lib` (ex.: `pageTree`, `priorities`, `appEvents`).
+Módulos não importam uns dos outros (regra de lint `akool/no-cross-module-import`, ARCH-006): o que é comum vive em `src/shared` (UI e hooks genéricos: `Field`, `Backdrop`, `RailButton`, `ConfirmDeleteModal`, `useDialog`, `useIsMobile`…) e `src/lib` (ex.: `pageTree`, `priorities`, `appEvents`). `src/shared` só importa `src/lib` e `src/i18n`. O alias `@/` aponta para `src/` (tsconfig e Vite); os imports do `src/shared` usam `@/shared/ui/...` e `@/shared/hooks/...`.
 
 ## Fluxo de autenticação
 
@@ -85,6 +85,7 @@ Módulos não importam uns dos outros: o que é comum vive em `src/components` (
 - **Cache:** só o Dashboard usa react-query (`src/lib/queryClient.ts`, provider no chunk do Dashboard, PERF-015); os outros painéis guardam estado local e recarregam pelo realtime.
 - **Escritas:** `runGuarded`/`runOptimistic` (`src/lib/optimistic.ts`): nenhuma escrita descarta o resultado (regra de lint `akool/no-discarded-supabase-write`, REL-004); updates e deletes conferem `.select('id')` porque o RLS recusa com 0 linhas.
 - **Conteúdo de nota e desenho:** autosave com debounce e save condicional pela versão (`saveVersionedContent`, REL-009); conflito mostra "carregar a versão salva / manter a minha"; o desenho só grava quando a soma das versões dos elementos muda.
+- **Sem conexão (REL-012):** `src/lib/connectivity.ts` (estado da rede, banner no App, evento de volta), `src/lib/offlineStore.ts` (rascunhos em IndexedDB, por conta; carregado sob demanda) e `src/lib/offlineSync.ts` (reenvio ao voltar a conexão e logo após o login). O saver de notas e desenhos guarda o pendente como rascunho em erro de rede (status `offline`); a página abre com o rascunho e o primeiro save grava ou cai no aviso de conflito. Quick notes não revertem sem rede: o patch vira rascunho e é reenviado. Projetos, financeiro e tarefas continuam com reversão + toast. Sair da conta apaga os rascunhos.
 - **Realtime:** publication com `pages`, `todos`, `notifications`, `project_card_queue`, `note_contents`, `drawing_contents`, `project_cards`, `project_columns`. Canais por página (`useCollaborativeContent`), por quadro (`project-board:<id>`) e por usuário (notificações, cache do Dashboard). DELETE não é assinado (o Postgres Changes não aplica RLS nele).
 - **Arquivos:** buckets privados com limite e MIME (SEC-011); imagens comprimidas antes de subir (PERF-010); signed URLs com cache, dedupe e lote (`storageUrl.ts`, PERF-014).
 - **Entre módulos:** eventos tipados em `src/lib/appEvents.ts` (ARCH-007); hoje só `finance_transactions_changed`.
@@ -93,4 +94,4 @@ Módulos não importam uns dos outros: o que é comum vive em `src/components` (
 
 ## Travas que mantêm isto verdadeiro
 
-`scripts/provider-order.test.ts` (ordem dos providers = este doc), `scripts/data-layer.test.ts`, `scripts/module-size.test.ts` (≤ 600 linhas por arquivo nos módulos), `scripts/supabase-drift.test.ts` (retrato do schema), `scripts/bundle-budget.mjs` (boot ≤ orçamento) e as catracas de lint e cobertura.
+`scripts/provider-order.test.ts` (ordem dos providers = este doc), `scripts/data-layer.test.ts`, `scripts/module-size.test.ts` (≤ 600 linhas por arquivo nos módulos) e a regra `max-lines` (600 linhas sem brancos e comentários, aviso na catraca, em todo o `src/`), `scripts/supabase-drift.test.ts` (retrato do schema), `scripts/bundle-budget.mjs` (boot ≤ orçamento), a regra `akool/no-cross-module-import` (fronteira entre módulos e camada `src/shared`) e as catracas de lint e cobertura (a de cobertura guarda o total geral e aceita `--allow-moves` quando um arquivo testado muda de pasta).

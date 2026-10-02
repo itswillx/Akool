@@ -1,10 +1,10 @@
 {
   "src": 0,
-  "src/components": 17.62,
-  "src/contexts": 54.97,
-  "src/hooks": 96.98,
+  "src/components": 23.06,
+  "src/contexts": 54.75,
+  "src/hooks": 95.63,
   "src/i18n": 87.5,
-  "src/lib": 78.44,
+  "src/lib": 78.97,
   "src/modules/audit": 0,
   "src/modules/backup": 5.52,
   "src/modules/docsnetwork": 0,
@@ -12,8 +12,10 @@
   "src/modules/projects": 40.51,
   "src/modules/study": 16.16,
   "src/pages": 62.91,
+  "src/shared": 82.18,
   "supabase/functions/_shared": 98.21,
   "supabase/functions/admin-ops": 12.87,
   "supabase/functions/cards-api": 0,
-  "supabase/functions/site-backup": 5.24
+  "supabase/functions/site-backup": 5.24,
+  "total": 42.52
 }

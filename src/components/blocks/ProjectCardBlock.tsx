@@ -7,7 +7,7 @@ import type { ProjectCardSnapshot } from '../../lib/projectImport'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { usePages } from '../../contexts/PagesContext'
 import { setDocsSelection } from '../../lib/docsNavigation'
-import { MarkdownText } from '../MarkdownText'
+import { MarkdownText } from '@/shared/ui/MarkdownText'
 
 const ACTIVE_BOARD_KEY = LOCAL_KEYS.projectsActiveBoard
 

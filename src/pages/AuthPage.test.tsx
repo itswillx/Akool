@@ -13,7 +13,7 @@ const auth = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/supabase', () => ({ supabase: { rpc: auth.rpc }, recoveryLinkError: false }))
-vi.mock('../hooks/useIsMobile', () => ({ useIsMobile: () => true }))
+vi.mock('@/shared/hooks/useIsMobile', () => ({ useIsMobile: () => true }))
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({ signIn: auth.signIn, signUp: auth.signUp, sendPasswordReset: auth.sendPasswordReset }),
 }))

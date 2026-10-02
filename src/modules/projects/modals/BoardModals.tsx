@@ -4,10 +4,10 @@ Search,
 Trash2
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { UserAvatar } from '../../../components/UserAvatar'
+import { UserAvatar } from '@/shared/ui/UserAvatar'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useToast } from '../../../contexts/ToastContext'
-import { useIsMobile } from '../../../hooks/useIsMobile'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import {
 addBoardShare,
@@ -22,7 +22,7 @@ import type { ProjectBoard, ProjectColumn, ProjectShare, ProjectShareRole } from
 import type { Member } from '../projectsShared'
 import { BOARD_COLORS, BOARD_ICONS, inputStyle, labelStyle } from '../projectsShared'
 import { GhostBtn, Modal, PrimaryBtn } from '../ui'
-import { useDebouncedCallback } from '../../../hooks/useDebounce'
+import { useDebouncedCallback } from '@/shared/hooks/useDebounce'
 
 // ─── Board modal ────────────────────────────────────────────────────────────
 

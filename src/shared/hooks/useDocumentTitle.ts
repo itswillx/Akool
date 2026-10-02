@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { TranslationKey } from '../i18n/translations'
+import type { TranslationKey } from '@/i18n/translations'
 
 const APP_NAME = 'Akool'
 

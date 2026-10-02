@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Backdrop } from './Backdrop'
+import { Backdrop } from '@/shared/ui/Backdrop'
 
 // QA-004: a camada de fundo dos modais, folhas e gavetas.
 describe('Backdrop', () => {

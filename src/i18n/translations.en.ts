@@ -737,6 +737,7 @@ const en: Record<TranslationKey, string> = {
   admin_col_status: 'Status',
   admin_col_last_access: 'Last access',
   admin_col_actions: 'Actions',
+  admin_col_daily_login: 'Daily login',
   admin_loading: 'Loading users...',
   admin_no_users: 'No users found.',
   admin_you: 'you',
@@ -805,6 +806,8 @@ const en: Record<TranslationKey, string> = {
   editor_saving: 'Saving…',
   editor_save_error: 'Not saved',
   editor_retry: 'Try again',
+  editor_save_offline: 'Offline: kept on this device',
+  offline_banner: "You're offline. Your edits are kept on this device and sent when the connection returns.",
   editor_load_error: 'Could not load this page’s content. Nothing was changed.',
   password_show: 'Show password',
   password_hide: 'Hide password',
@@ -1473,6 +1476,9 @@ const en: Record<TranslationKey, string> = {
   finance_add: 'Add',
   finance_all_categories: 'All categories',
   finance_selected_count: '{n} selected',
+  finance_select_tx: 'Select {desc}',
+  range_min: 'minimum',
+  range_max: 'maximum',
   finance_clear: 'Clear',
 
   // Statement import (C6 PDF / OFX)

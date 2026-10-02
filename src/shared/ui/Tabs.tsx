@@ -1,5 +1,5 @@
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
-import { tabId, tabPanelId } from '../lib/tabs'
+import { tabId, tabPanelId } from '@/lib/tabs'
 
 // UX-008: abas no padrão WAI-ARIA (tablist/tab/tabpanel). O app não tinha
 // nenhuma: as abas eram botões soltos, e o leitor de tela não dizia qual estava

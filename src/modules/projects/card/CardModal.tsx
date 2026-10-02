@@ -9,7 +9,7 @@ Trash2,
 X
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MarkdownText } from '../../../components/MarkdownText'
+import { MarkdownText } from '@/shared/ui/MarkdownText'
 import { RichTextEditor } from '../../../components/RichTextEditor'
 import { useToast } from '../../../contexts/ToastContext'
 import { useLanguage } from '../../../i18n/LanguageContext'

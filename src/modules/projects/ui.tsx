@@ -6,8 +6,8 @@ ListOrdered,
 UserRound,
 X
 } from 'lucide-react'
-import { Backdrop } from '../../components/Backdrop'
-import { useDialog } from '../../hooks/useDialog'
+import { Backdrop } from '@/shared/ui/Backdrop'
+import { useDialog } from '@/shared/hooks/useDialog'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { type QueueBadge } from '../../lib/cardQueue'
 import type { ProjectCardPriority } from '../../types'

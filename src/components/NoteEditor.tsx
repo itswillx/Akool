@@ -19,7 +19,9 @@ import { useCollaborativeContent } from '../hooks/useCollaborativeContent'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useToast } from '../contexts/ToastContext'
-import { asVersionedClient, classifyLoad, createDebouncedSaver, isNewer, saveVersionedContent, type SaveStatus } from '../lib/contentPersistence'
+import { asVersionedClient, chooseInitialContent, classifyLoad, contentDraft, createDebouncedSaver, isNewer, loadContentDraft, markContentOpen, saveVersionedContent, type SaveStatus } from '../lib/contentPersistence'
+import { onReconnect } from '../lib/connectivity'
+import { useAuth } from '../contexts/AuthContext'
 import SaveStatusBadge, { EditConflictBanner, EditorLoadError } from './SaveStatusBadge'
 
 interface NoteEditorProps {
@@ -29,8 +31,12 @@ interface NoteEditorProps {
 export default function NoteEditor({ pageId }: NoteEditorProps) {
   const { userShareRole } = usePages()
   const { t } = useLanguage()
+  const { user } = useAuth()
+  const userId = user?.id
   const [initialContent, setInitialContent] = useState<unknown[] | null>(null)
   const [initialUpdatedAt, setInitialUpdatedAt] = useState<string | null>(null)
+  // REL-012: abriu com um rascunho guardado sem conexão (ainda não enviado).
+  const [fromDraft, setFromDraft] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -61,14 +67,21 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
         return
       }
       const data = result.kind === 'ok' ? result.data : null
-      setInitialContent(data?.content && Array.isArray(data.content) && data.content.length > 0 ? data.content : [])
-      setInitialUpdatedAt(data?.updated_at ?? null)
+      const remote = { value: data?.content && Array.isArray(data.content) && data.content.length > 0 ? data.content : [], version: data?.updated_at ?? null }
+      // REL-012: edição guardada sem conexão? Abre com ela; o primeiro save
+      // grava ou, se alguém salvou depois, mostra o aviso de conflito.
+      const draft = await loadContentDraft(userId, 'note_contents', pageId)
+      if (cancelled) return
+      const chosen = chooseInitialContent(remote, draft && Array.isArray(draft.value) ? { value: draft.value, version: draft.version } : null)
+      setInitialContent(chosen.value)
+      setInitialUpdatedAt(chosen.version)
+      setFromDraft(chosen.fromDraft)
       setLoading(false)
     }
 
     void load()
     return () => { cancelled = true }
-  }, [pageId, reloadKey])
+  }, [pageId, reloadKey, userId])
 
   if (loadError) return <EditorLoadError onRetry={() => setReloadKey(k => k + 1)} />
 
@@ -83,8 +96,10 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
   return (
     <EditorInner
       pageId={pageId}
+      userId={userId}
       initialContent={initialContent}
       initialUpdatedAt={initialUpdatedAt}
+      fromDraft={fromDraft}
       isCollaborative={isCollaborative}
       readOnly={!canEdit}
       onReloadFromServer={() => setReloadKey(k => k + 1)}
@@ -102,22 +117,28 @@ type NoteBlock = typeof schema.PartialBlock
 
 function EditorInner({
   pageId,
+  userId,
   initialContent,
   initialUpdatedAt,
+  fromDraft,
   isCollaborative,
   readOnly,
   onReloadFromServer,
 }: {
   pageId: string
+  userId: string | undefined
   initialContent: unknown[]
   initialUpdatedAt: string | null
+  /** REL-012: o conteúdo inicial é um rascunho local ainda não enviado. */
+  fromDraft: boolean
   isCollaborative: boolean
   readOnly: boolean
   onReloadFromServer: () => void
 }) {
   const { theme } = useTheme()
   const lastSaveAt = useRef<string | null>(initialUpdatedAt)
-  const isDirty = useRef(false)
+  // Um rascunho restaurado conta como edição: o realtime não o substitui.
+  const isDirty = useRef(fromDraft)
   const localSavedAt = useRef<number>(0)
   const [remoteKey, setRemoteKey] = useState(0)
 
@@ -146,9 +167,11 @@ function EditorInner({
     <EditorCore
       key={`${pageId}-${remoteKey}`}
       pageId={pageId}
+      userId={userId}
       initialContent={currentContent}
       readOnly={readOnly}
       initialVersion={currentVersion}
+      restoredDraft={fromDraft && remoteKey === 0}
       onReloadFromServer={onReloadFromServer}
       onSave={(at, stillDirty) => {
         if (at) lastSaveAt.current = at
@@ -162,12 +185,15 @@ function EditorInner({
   )
 }
 
-function EditorCore({ pageId, initialContent, readOnly, initialVersion, onReloadFromServer, onSave, onDirty, appTheme }: {
+function EditorCore({ pageId, userId, initialContent, readOnly, initialVersion, restoredDraft, onReloadFromServer, onSave, onDirty, appTheme }: {
   pageId: string
+  userId: string | undefined
   initialContent: unknown[]
   readOnly: boolean
   /** REL-009: a versão (`updated_at`) do conteúdo inicial; o save só grava sobre ela. */
   initialVersion: string | null
+  /** REL-012: montou com o rascunho local; manda já. */
+  restoredDraft: boolean
   onReloadFromServer: () => void
   onSave: (at: string | null, stillDirty: boolean) => void
   onDirty?: () => void
@@ -224,6 +250,8 @@ function EditorCore({ pageId, initialContent, readOnly, initialVersion, onReload
     delayMs: 1000,
     onStatus: setSaveStatus,
     version: initialVersion,
+    // REL-012: sem conexão, o pendente vai para o rascunho local.
+    draft: contentDraft<unknown[]>(userId, 'note_contents', pageId),
     save: (content, { force, version }) => saveVersionedContent(asVersionedClient(supabase), {
       table: 'note_contents', pageId, values: { content }, expected: version, force,
     }),
@@ -239,6 +267,15 @@ function EditorCore({ pageId, initialContent, readOnly, initialVersion, onReload
   }
 
   useEffect(() => { saver.setOnSaved(onSave) }, [saver, onSave])
+
+  // REL-012: a página aberta reenvia o rascunho sozinha quando a conexão volta;
+  // o reenvio global (offlineSync) pula as páginas abertas.
+  useEffect(() => markContentOpen('note_contents', pageId), [pageId])
+  useEffect(() => onReconnect(() => { void saver.flush() }), [saver])
+  // Abriu com o rascunho local: manda já (grava, ou cai no aviso de conflito).
+  useEffect(() => {
+    if (restoredDraft) saver.schedule(editor.document)
+  }, [restoredDraft, saver, editor])
 
   useEffect(() => {
     const flush = () => { void saver.flush() }

@@ -1,8 +1,8 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
 import { useState } from 'react'
 import { localDateKey } from '../../../lib/localDate'
-import { Field, FieldGroup } from '../../../components/Field'
-import { UserAvatar } from '../../../components/UserAvatar'
+import { Field, FieldGroup } from '@/shared/ui/Field'
+import { UserAvatar } from '@/shared/ui/UserAvatar'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { fromCents, toCents } from '../../../lib/money'
 import type { FinanceAccount, FinanceGoal, FinanceGoalShare } from '../../../types'

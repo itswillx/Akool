@@ -3,7 +3,7 @@ import type { FinanceAccount } from '../../../types'
 import type { GraphFilters } from '../../../lib/financeGraph'
 import { formatBRL } from '../../../lib/money'
 import { useLanguage } from '../../../i18n/LanguageContext'
-import { DualRange } from '../../../components/DualRange'
+import { DualRange } from '@/shared/ui/DualRange'
 import { cardSurfaceStyle, inputStyle, segBtnStyle, segTrackStyle } from '../ui/tokens'
 
 // Barra de filtros do grafo: busca, período, tipo, conta e faixa de valores.
@@ -52,6 +52,7 @@ export function NetworkFilters({ filters, onChange, accounts, bounds }: {
       </div>
 
       <select
+        aria-label={t('finance_tx_account')}
         style={{ ...inputStyle, width: 'auto', minWidth: 130, cursor: 'pointer' }}
         value={filters.accountId ?? ''}
         onChange={e => onChange({ ...filters, accountId: e.target.value || null })}

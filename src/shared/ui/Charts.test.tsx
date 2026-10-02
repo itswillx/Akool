@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Donut, Legend, SegmentedBar, AreaTrend, type ChartDatum } from './Charts'
+import { Donut, Legend, SegmentedBar, AreaTrend, type ChartDatum } from '@/shared/ui/Charts'
 
 const data: ChartDatum[] = [
   { label: 'A', value: 3, color: '#ff0000' },

@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
-import { Backdrop } from './Backdrop'
-import { useDialog } from '../hooks/useDialog'
-import { useLanguage } from '../i18n/LanguageContext'
+import { Backdrop } from '@/shared/ui/Backdrop'
+import { useDialog } from '@/shared/hooks/useDialog'
+import { useLanguage } from '@/i18n/LanguageContext'
 
 // Right-side drawer used on desktop for create/edit flows that are too tall for
 // a centered modal (transaction, quote comparison).

@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react'
 import { useToast } from '../../../contexts/ToastContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { localeOf } from '../../../i18n/translations'
-import { activateProps } from '../../../lib/a11y'
 import { downloadTransactionsCsv } from '../../../lib/financeCsv'
 import { toCents } from '../../../lib/money'
 import type { FinanceAccount, FinanceCategory, FinanceTransaction, FinanceTxType, FinanceWorkspace } from '../../../types'
@@ -137,15 +136,16 @@ export function TransactionsTab({ transactions, partnerTransactions, partnerProf
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('finance_search_placeholder')}
             style={{ ...fieldStyle, padding: '8px 10px 8px 32px', width: isMobile ? '100%' : 210 }} />
         </div>
-        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={{ ...fieldStyle, cursor: 'pointer' }}>
+        <select aria-label={t('finance_tx_category')} value={filterCat} onChange={e => setFilterCat(e.target.value)} style={{ ...fieldStyle, cursor: 'pointer' }}>
           <option value="">{t('finance_all_categories')}</option>
           {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
         </select>
         <div style={{ flex: 1 }} />
-        <button onClick={onImport} style={ghostBtnStyle}>
+        {/* UX-008: no celular só o ícone aparece; o nome fica no aria-label. */}
+        <button onClick={onImport} aria-label={t('finance_import')} title={isMobile ? t('finance_import') : undefined} style={ghostBtnStyle}>
           <Upload size={16} />{!isMobile && t('finance_import')}
         </button>
-        <button onClick={() => downloadTransactionsCsv(filtered, [...categories, ...workspaceCategories], [...accounts, ...workspaceAccounts], month)} style={ghostBtnStyle}>
+        <button onClick={() => downloadTransactionsCsv(filtered, [...categories, ...workspaceCategories], [...accounts, ...workspaceAccounts], month)} aria-label={t('finance_export')} title={isMobile ? t('finance_export') : undefined} style={ghostBtnStyle}>
           <Download size={16} />{!isMobile && t('finance_export')}
         </button>
         <button onClick={onAdd} style={primaryBtnStyle}>
@@ -181,10 +181,10 @@ export function TransactionsTab({ transactions, partnerTransactions, partnerProf
             <input value={qaAmount} onChange={e => setQaAmount(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitQuickAdd() }} inputMode="decimal" placeholder="0,00"
               style={{ ...fieldStyle, width: 118, padding: '8px 10px 8px 32px', ...tabularNums }} />
           </div>
-          <select value={qaCat || qaCats[0]?.id || ''} onChange={e => setQaCat(e.target.value)} style={{ ...fieldStyle, cursor: 'pointer', maxWidth: 150 }}>
+          <select aria-label={t('finance_tx_category')} value={qaCat || qaCats[0]?.id || ''} onChange={e => setQaCat(e.target.value)} style={{ ...fieldStyle, cursor: 'pointer', maxWidth: 150 }}>
             {qaCats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
           </select>
-          <select value={qaAcc || qaAccounts[0]?.id || ''} onChange={e => setQaAcc(e.target.value)} style={{ ...fieldStyle, cursor: 'pointer' }}>
+          <select aria-label={t('finance_tx_account')} value={qaAcc || qaAccounts[0]?.id || ''} onChange={e => setQaAcc(e.target.value)} style={{ ...fieldStyle, cursor: 'pointer' }}>
             {qaAccounts.map(a => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
           </select>
           <button onClick={submitQuickAdd} disabled={qaSaving} style={{ ...primaryBtnStyle, opacity: qaSaving ? 0.6 : 1 }}>
@@ -227,34 +227,40 @@ export function TransactionsTab({ transactions, partnerTransactions, partnerProf
                   const acc = tx.account_id ? accMap.get(tx.account_id) : null
                   const isSel = selected.includes(tx.id)
                   return (
-                    <div key={tx.id} {...activateProps(() => onEdit(tx))} onClick={() => onEdit(tx)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--color-border)', cursor: 'pointer', background: isSel ? 'var(--color-hover)' : 'transparent', transition: 'background 0.1s' }}
+                    // UX-008: a linha é um botão nativo (abre a edição) com o checkbox e
+                    // os botões de editar/excluir como irmãos, não como filhos: um
+                    // controle dentro de outro é erro do axe (nested-interactive).
+                    <div key={tx.id}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--color-border)', background: isSel ? 'var(--color-hover)' : 'transparent', transition: 'background 0.1s' }}
                       onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = 'var(--color-bg-secondary)' }}
                       onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = 'transparent' }}>
-                      <input type="checkbox" checked={isSel} onClick={e => e.stopPropagation()} onChange={() => toggleSel(tx.id)}
+                      <input type="checkbox" aria-label={t('finance_select_tx', { desc: tx.description })} checked={isSel} onChange={() => toggleSel(tx.id)}
                         style={{ width: 15, height: 15, accentColor: 'var(--color-text)', cursor: 'pointer', flexShrink: 0 }} />
-                      <span style={{ width: 34, height: 34, borderRadius: 9, background: cat ? `${cat.color}22` : 'var(--color-bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, flexShrink: 0 }}>
-                        {cat ? cat.icon : (tx.type === 'income' ? '💰' : '💸')}
-                      </span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {tx.description || (cat?.name ?? (tx.type === 'income' ? t('finance_tx_income') : t('finance_tx_expense')))}
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{cat?.name ?? t('finance_tx_none_category')}</div>
-                      </div>
-                      {acc && <span style={{ fontSize: 11.5, color: 'var(--color-text-subtle)', background: 'var(--color-bg-secondary)', borderRadius: 6, padding: '3px 8px', flexShrink: 0, whiteSpace: 'nowrap' }}>{acc.icon} {acc.name}</span>}
-                      {tx.workspace_id && !isMobile && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--color-text-subtle)', background: 'var(--color-active)', borderRadius: 10, padding: '2px 8px', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                          <Users size={10} />{t('finance_scope_workspace')}
+                      <button type="button" onClick={() => onEdit(tx)} title={t('finance_edit')}
+                        style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 12, background: 'none', border: 'none', padding: 0, margin: 0, font: 'inherit', color: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+                        <span style={{ width: 34, height: 34, borderRadius: 9, background: cat ? `${cat.color}22` : 'var(--color-bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, flexShrink: 0 }}>
+                          {cat ? cat.icon : (tx.type === 'income' ? '💰' : '💸')}
                         </span>
-                      )}
-                      {tx.photo_url && <Camera size={13} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />}
-                      <span style={{ fontSize: 14, fontWeight: 600, color: tx.type === 'income' ? FIN_POS : FIN_NEG, textAlign: 'right', flexShrink: 0, ...tabularNums }}>
-                        {tx.type === 'income' ? '+' : '−'}{fmt(tx.amount)}
-                      </span>
+                        <span style={{ flex: 1, minWidth: 0, display: 'block' }}>
+                          <span style={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {tx.description || (cat?.name ?? (tx.type === 'income' ? t('finance_tx_income') : t('finance_tx_expense')))}
+                          </span>
+                          <span style={{ display: 'block', fontSize: 12, color: 'var(--color-text-muted)' }}>{cat?.name ?? t('finance_tx_none_category')}</span>
+                        </span>
+                        {acc && <span style={{ fontSize: 11.5, color: 'var(--color-text-subtle)', background: 'var(--color-bg-secondary)', borderRadius: 6, padding: '3px 8px', flexShrink: 0, whiteSpace: 'nowrap' }}>{acc.icon} {acc.name}</span>}
+                        {tx.workspace_id && !isMobile && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--color-text-subtle)', background: 'var(--color-active)', borderRadius: 10, padding: '2px 8px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                            <Users size={10} />{t('finance_scope_workspace')}
+                          </span>
+                        )}
+                        {tx.photo_url && <Camera size={13} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />}
+                        <span style={{ fontSize: 14, fontWeight: 600, color: tx.type === 'income' ? FIN_POS : FIN_NEG, textAlign: 'right', flexShrink: 0, ...tabularNums }}>
+                          {tx.type === 'income' ? '+' : '−'}{fmt(tx.amount)}
+                        </span>
+                      </button>
                       <div style={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-                        <button title={t('finance_edit')} onClick={e => { e.stopPropagation(); onEdit(tx) }} style={iconActionStyle}><Pencil size={15} /></button>
-                        <button title={t('finance_delete')} onClick={e => { e.stopPropagation(); onBulkDelete([tx.id]) }} style={iconActionStyle}><Trash2 size={15} /></button>
+                        <button title={t('finance_edit')} aria-label={t('finance_edit')} onClick={() => onEdit(tx)} style={iconActionStyle}><Pencil size={15} /></button>
+                        <button title={t('finance_delete')} aria-label={t('finance_delete')} onClick={() => onBulkDelete([tx.id])} style={iconActionStyle}><Trash2 size={15} /></button>
                       </div>
                     </div>
                   )

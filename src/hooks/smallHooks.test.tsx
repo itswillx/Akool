@@ -38,7 +38,7 @@ vi.mock('../lib/data/pages', () => ({
 
 import { useCollaborativeContent } from './useCollaborativeContent'
 import { useDocsSelection } from './useDocsSelection'
-import { useIsMobile } from './useIsMobile'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { setDocsSelection } from '../lib/docsNavigation'
 
 let container: HTMLDivElement

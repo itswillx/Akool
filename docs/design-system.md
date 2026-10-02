@@ -1,6 +1,6 @@
 # Design system do Akool
 
-Os tokens que o app usa, com o papel de cada um, e as regras para não sair deles. A fonte é `src/index.css` (`:root` claro, `html.dark` escuro); os aliases para código ficam em `src/components/uiTokens.ts`. O lint (`akool/no-hex-color`, UX-015) recusa cor hex nova fora das paletas de dados.
+Os tokens que o app usa, com o papel de cada um, e as regras para não sair deles. A fonte é `src/index.css` (`:root` claro, `html.dark` escuro); os aliases para código ficam em `src/shared/ui/uiTokens.ts`. O lint (`akool/no-hex-color`, UX-015) recusa cor hex nova fora das paletas de dados.
 
 ## Cores
 

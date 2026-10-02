@@ -9,9 +9,9 @@ import { mapWriteError, requireRows, runGuarded } from '../lib/optimistic'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { useLanguage } from '../i18n/LanguageContext'
-import { useDialog } from '../hooks/useDialog'
-import { UserAvatar } from './UserAvatar'
-import { useDebouncedCallback } from '../hooks/useDebounce'
+import { useDialog } from '@/shared/hooks/useDialog'
+import { UserAvatar } from '@/shared/ui/UserAvatar'
+import { useDebouncedCallback } from '@/shared/hooks/useDebounce'
 
 interface UserProfile {
   id: string

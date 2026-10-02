@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 // UX-007: trava para labels soltos. Um <label> sem htmlFor que não envolve o
 // campo não rotula nada: o leitor de tela anuncia só "caixa de texto". Novos
-// formulários usam o <Field> (src/components/Field.tsx). Os labels antigos
+// formulários usam o <Field> (src/shared/ui/Field.tsx). Os labels antigos
 // estão contados por arquivo em scripts/label-baseline.json: o número não pode
 // subir, e quando cair, rode `UPDATE_LABEL_BASELINE=1 npx vitest run scripts/labels.test.ts`.
 
@@ -66,7 +66,7 @@ describe('labels soltos (UX-007)', () => {
     const worse = Object.entries(current)
       .filter(([file, n]) => n > (baseline[file] ?? 0))
       .map(([file, n]) => `${file}: ${baseline[file] ?? 0} → ${n}`)
-    expect(worse, 'use o <Field> (src/components/Field.tsx) nos labels novos').toEqual([])
+    expect(worse, 'use o <Field> (src/shared/ui/Field.tsx) nos labels novos').toEqual([])
   })
 
   it('os fluxos migrados continuam sem label solto', () => {
