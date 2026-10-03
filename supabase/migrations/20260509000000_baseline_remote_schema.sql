@@ -1198,6 +1198,32 @@ end;
 $function$;
 
 -- =============================================================================
+-- PASSE 2b — stubs para banco novo (DEV-002)
+-- O retrato foi tirado depois de migrations de julho que criaram estas
+-- funções, e as policies e triggers do PASSE 3 as referenciam. Num banco novo
+-- (staging) o Postgres recusa a policy se a função não existe. As migrations
+-- 20260708120000 (finance_guard_*), 20260708150000 (profile_is_related),
+-- 20260708170000 (is_admin) e 20260708180000 (prevent_profile_privilege_
+-- escalation) as substituem com `create or replace` e as mesmas assinaturas.
+-- Em produção este arquivo nunca roda de novo (o ledger é por nome).
+-- =============================================================================
+
+create or replace function public.is_admin() returns boolean
+language sql stable as $$ select false $$;
+
+create or replace function public.profile_is_related(p_other uuid) returns boolean
+language sql stable as $$ select false $$;
+
+create or replace function public.finance_guard_invite_update() returns trigger
+language plpgsql as $$ begin return new; end $$;
+
+create or replace function public.finance_guard_workspace() returns trigger
+language plpgsql as $$ begin return new; end $$;
+
+create or replace function public.prevent_profile_privilege_escalation() returns trigger
+language plpgsql as $$ begin return new; end $$;
+
+-- =============================================================================
 -- PASSE 3 — RLS enable + policies + triggers + grants
 -- =============================================================================
 

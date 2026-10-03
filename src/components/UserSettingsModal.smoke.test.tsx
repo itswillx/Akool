@@ -3,13 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '../test/rtl'
 
 // ARCH-008: as Configurações montadas inteiras: abre na aba de perfil, salva o
-// nome, troca a senha (com a validação local) e lista os convites.
+// nome, troca a senha (com a validação local) e lista os convites. A casca tem
+// o mesmo tamanho em todas as abas, inclusive nas de admin. O happy-dom descarta
+// alturas com min()/dvh, então aqui só a largura é comparada; a altura fica no
+// teste de settingsShellSize (settings/settingsTokens.test.ts).
 
 const auth = vi.hoisted(() => ({
   updateProfile: vi.fn(),
   changePassword: vi.fn(),
   signOut: vi.fn(),
   refreshProfile: vi.fn(),
+  isAdmin: false,
 }))
 const invites = vi.hoisted(() => ({ listMyInviteCodes: vi.fn(), profileEmailsById: vi.fn(), generateInviteCode: vi.fn() }))
 
@@ -17,7 +21,6 @@ vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({
     user: { id: 'u1', email: 'eu@example.com' },
     profile: { id: 'u1', email: 'eu@example.com', display_name: 'Eu', language: 'pt-BR', role: 'standard', invite_slots_remaining: 0, avatar_emoji: null, avatar_color: null, avatar_url: null, finance_dashboard_view: 'detailed' },
-    isAdmin: false,
     ...auth,
   }),
 }))
@@ -31,11 +34,15 @@ vi.mock('../lib/data/invites', async importOriginal => ({
 vi.mock('./ApiTokensSection', () => ({ default: () => <div>api-section</div> }))
 vi.mock('./MfaSection', () => ({ default: () => <div>mfa-section</div> }))
 vi.mock('./AvatarCropModal', () => ({ default: () => null }))
+vi.mock('./UserManagementPanel', () => ({ default: () => <div>users-panel</div> }))
+vi.mock('../modules/backup', () => ({ default: () => <div>backup-panel</div> }))
+vi.mock('../modules/audit', () => ({ default: () => <div>audit-panel</div> }))
 
 const { default: UserSettingsModal } = await import('./UserSettingsModal')
 
 beforeEach(() => {
   vi.clearAllMocks()
+  auth.isAdmin = false
   auth.updateProfile.mockResolvedValue({ error: null })
   auth.changePassword.mockResolvedValue({ error: null })
   invites.listMyInviteCodes.mockResolvedValue({ data: [], error: null })
@@ -80,4 +87,36 @@ describe('UserSettingsModal (montagem completa)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'dialog_close' }))
     expect(onClose).toHaveBeenCalledOnce()
   })
+
+  it('conta comum: as 5 abas com o mesmo tamanho (640 px)', () => {
+    render(<UserSettingsModal open onClose={() => {}} />)
+    const dialog = screen.getByRole('dialog')
+    const first = dialog.getAttribute('style')
+    expect(dialog.style.maxWidth).toBe('640px')
+    for (const name of ACCOUNT_TABS) {
+      fireEvent.click(screen.getByRole('button', { name }))
+      expect(dialog.getAttribute('style')).toBe(first)
+    }
+    expect(screen.queryByRole('button', { name: 'sidebar_backup' })).toBeNull()
+  })
+
+  it('admin: as 8 abas com o mesmo tamanho (980 px), painéis de admin incluídos', async () => {
+    auth.isAdmin = true
+    render(<UserSettingsModal open onClose={() => {}} />)
+    const dialog = screen.getByRole('dialog')
+    const first = dialog.getAttribute('style')
+    expect(dialog.style.maxWidth).toBe('980px')
+    for (const [name, content] of ADMIN_TABS) {
+      fireEvent.click(screen.getByRole('button', { name }))
+      expect(await screen.findByText(content)).toBeTruthy()
+      expect(dialog.getAttribute('style')).toBe(first)
+    }
+    for (const name of ACCOUNT_TABS) {
+      fireEvent.click(screen.getByRole('button', { name }))
+      expect(dialog.getAttribute('style')).toBe(first)
+    }
+  })
 })
+
+const ACCOUNT_TABS = ['settings_tab_password', 'settings_tab_security', 'settings_tab_invites', 'settings_tab_api', 'settings_tab_profile']
+const ADMIN_TABS = [['sidebar_users', 'users-panel'], ['sidebar_backup', 'backup-panel'], ['sidebar_audit', 'audit-panel']] as const

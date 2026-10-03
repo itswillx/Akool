@@ -876,6 +876,7 @@ const en: Record<TranslationKey, string> = {
   admin_err_self_action: 'You cannot perform this action on your own account.',
   admin_err_invalid_role: 'Invalid role.',
   admin_err_forbidden: 'Access restricted to administrators.',
+  admin_err_mfa_required: 'Confirm your second factor (authenticator code) and try again.',
   admin_err_user_not_found: 'User not found.',
 
   admin_tab_users: 'Users',

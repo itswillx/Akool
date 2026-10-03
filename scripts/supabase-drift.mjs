@@ -5,15 +5,18 @@
 //   • migrations: nomes dos arquivos × ledger remoto (o fluxo é MCP-only, então as
 //     versões antigas não batem por desenho; ver supabase/migrations/README.md);
 //   • schema: supabase/checks/schema-snapshot.sql × supabase/schema-snapshot.json;
+//   • policies: nenhuma policy fora de public.profiles lê profiles direto (use
+//     is_admin() ou outra função SECURITY DEFINER; ver policiesReadingProfiles);
 //   • advisors de segurança e performance (só relatório).
 //
 //   npm run drift                          produção
 //   npm run drift -- --project-ref=<ref>   outro projeto (ex.: staging)
+//   npm run drift -- --write               regrava supabase/schema-snapshot.json a
+//                                          partir da produção (depois de uma migration)
 //
 // Sai com erro se houver drift. Lê SUPABASE_ACCESS_TOKEN do ambiente/.env.local.
-// Depois de uma migration, o retrato é regravado pelo MCP com a mesma consulta.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { PRODUCTION_REF, migrationFiles, verifyJwtFor } from './staging-reset.mjs'
@@ -75,6 +78,20 @@ export function diffSnapshot(expected, actual) {
   return problems
 }
 
+/**
+ * Policies fora de public.profiles que leem profiles direto. Elas rodam com o
+ * privilégio de quem consulta, e profiles só tem grants POR COLUNA: uma coluna
+ * restrita (role, is_active…) quebra a consulta inteira com "permission denied
+ * for table profiles", mesmo para admin (SEC-013, 03/10/2026). O teste de
+ * papel fica em funções SECURITY DEFINER como public.is_admin().
+ */
+export function policiesReadingProfiles(rows) {
+  return rows
+    .filter(r => !(r.schemaname === 'public' && r.tablename === 'profiles'))
+    .filter(r => /\bprofiles\b/.test(`${r.qual ?? ''} ${r.with_check ?? ''}`))
+    .map(r => `policy ${r.schemaname}.${r.tablename}.${r.policyname}: lê profiles direto (use is_admin() ou uma função SECURITY DEFINER)`)
+}
+
 /** Advisors por nível (ERROR/WARN/INFO), com os nomes das regras de ERROR. */
 export function summarizeAdvisors(lints) {
   const byLevel = {}
@@ -103,6 +120,8 @@ async function main() {
   const token = process.env.SUPABASE_ACCESS_TOKEN
   if (!token) throw new Error('SUPABASE_ACCESS_TOKEN não definido.')
   const ref = process.argv.find(a => a.startsWith('--project-ref='))?.split('=')[1] ?? PRODUCTION_REF
+  const write = process.argv.includes('--write')
+  if (write && ref !== PRODUCTION_REF) throw new Error('--write regrava o retrato versionado, que é o da produção: use sem --project-ref.')
   const allowlist = JSON.parse(readFileSync(join(ROOT, 'supabase/drift-allowlist.json'), 'utf8'))
   const toml = readFileSync(join(ROOT, 'supabase/config.toml'), 'utf8')
   const functionsDir = join(ROOT, 'supabase/functions')
@@ -111,12 +130,16 @@ async function main() {
   })))
   const repoMigrations = migrationFiles(readdirSync(join(ROOT, 'supabase/migrations'))).map(m => m.name)
 
-  const [functions, migrations, snapshotRows, security, performance] = await Promise.all([
+  const [functions, migrations, snapshotRows, policyRows, security, performance] = await Promise.all([
     api(token, `/projects/${ref}/functions`),
     api(token, `/projects/${ref}/database/migrations`),
     api(token, `/projects/${ref}/database/query`, {
       method: 'POST',
       body: JSON.stringify({ query: readFileSync(join(ROOT, 'supabase/checks/schema-snapshot.sql'), 'utf8') }),
+    }),
+    api(token, `/projects/${ref}/database/query`, {
+      method: 'POST',
+      body: JSON.stringify({ query: "select schemaname, tablename, policyname, qual, with_check from pg_policies where schemaname in ('public', 'private', 'storage')" }),
     }),
     api(token, `/projects/${ref}/advisors/security`).catch(err => ({ lints: [], error: String(err) })),
     api(token, `/projects/${ref}/advisors/performance`).catch(err => ({ lints: [], error: String(err) })),
@@ -125,11 +148,18 @@ async function main() {
   const problems = [
     ...compareFunctions(slugs, functions, toml, allowlist),
     ...compareMigrations(repoMigrations, migrations, allowlist),
+    ...policiesReadingProfiles(policyRows ?? []),
   ]
   // O retrato versionado é o da produção; em outro projeto ele só vale se o
   // schema for o mesmo (é o caso do staging recriado pelo staging:reset).
-  const expected = JSON.parse(readFileSync(join(ROOT, 'supabase/schema-snapshot.json'), 'utf8'))
   const actual = snapshotRows?.[0]?.snapshot ?? {}
+  if (write) {
+    // Ordem natural do jsonb (chaves por tamanho e depois bytes): é como a API
+    // devolve, e a comparação acima é por JSON.stringify.
+    writeFileSync(join(ROOT, 'supabase/schema-snapshot.json'), JSON.stringify(actual, null, 2) + '\n')
+    console.log('Retrato regravado em supabase/schema-snapshot.json a partir da produção.')
+  }
+  const expected = JSON.parse(readFileSync(join(ROOT, 'supabase/schema-snapshot.json'), 'utf8'))
   // O staging desliga o cron de backup de propósito (staging:reset).
   if (ref !== PRODUCTION_REF) { delete expected.cron; delete actual.cron }
   problems.push(...diffSnapshot(expected, actual))

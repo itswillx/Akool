@@ -13,11 +13,21 @@ alter table public.profile_secrets enable row level security;
 -- Sem policies: acesso apenas via service role / funcoes SECURITY DEFINER.
 revoke all on table public.profile_secrets from anon, authenticated;
 
--- Migrar dados existentes
-insert into public.profile_secrets (user_id, ai_provider, ai_api_key)
-select id, ai_provider, ai_api_key
-from public.profiles
-where (ai_api_key is not null and ai_api_key <> '') or ai_provider is not null;
+-- Migrar dados existentes. Só onde as colunas ainda existem: num banco novo
+-- montado a partir do retrato (staging, DEV-002) profiles já nasce sem elas,
+-- e a consulta nem é analisada.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'profiles' and column_name = 'ai_api_key'
+  ) then
+    insert into public.profile_secrets (user_id, ai_provider, ai_api_key)
+    select id, ai_provider, ai_api_key
+    from public.profiles
+    where (ai_api_key is not null and ai_api_key <> '') or ai_provider is not null;
+  end if;
+end $$;
 
 -- Recriar RPC para gravar na nova tabela (mantem profiles.ai_has_key para a UI)
 create or replace function public.set_ai_credentials(p_provider text, p_api_key text)

@@ -29,6 +29,7 @@ export const ADMIN_OPS_ERROR_KEYS: Record<string, TranslationKey> = {
   'Cannot perform this action on yourself': 'admin_err_self_action',
   'Invalid role': 'admin_err_invalid_role',
   'Forbidden: admin only': 'admin_err_forbidden',
+  mfa_required: 'admin_err_mfa_required',
   'User not found': 'admin_err_user_not_found',
 }
 

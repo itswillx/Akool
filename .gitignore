@@ -56,3 +56,6 @@ supabase/backups/
 
 # Mapas gerados por npm run generate:maps (ARCH-009): regerar, não versionar.
 docs/*.excalidraw
+
+# Cache do Supabase CLI (DEV-002)
+supabase/.temp/
