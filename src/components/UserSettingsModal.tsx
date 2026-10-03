@@ -10,6 +10,7 @@ import ProfileTab from './settings/ProfileTab'
 import PasswordTab from './settings/PasswordTab'
 import MyInvitesTab from './settings/MyInvitesTab'
 import { PanelFallback, TabBtn } from './settings/settingsUi'
+import { SETTINGS_FORM_MAX_WIDTH, settingsShellSize } from './settings/settingsTokens'
 
 // ARCH-008: a casca das Configurações (cabeçalho, abas, rodapé). Cada aba é
 // um componente em settings/; os painéis de admin carregam sob demanda.
@@ -46,9 +47,10 @@ export default function UserSettingsModal({ open, onClose }: Props) {
     if (e.target === overlayRef.current) onClose()
   }
 
-  // Os painéis de admin precisam de uma casca bem mais larga e alta do que as
-  // abas da conta, que ficam compactas.
-  const wideTab = tab === 'users' || tab === 'backup' || tab === 'audit'
+  // Um tamanho só para todas as abas: settingsShellSize não recebe a aba. Os
+  // painéis de admin cuidam da própria rolagem; as abas da conta rolam aqui,
+  // com os formulários limitados a SETTINGS_FORM_MAX_WIDTH.
+  const adminPanel = tab === 'users' || tab === 'backup' || tab === 'audit'
 
   return (
     <div role="presentation"
@@ -56,7 +58,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
       onClick={handleOverlayClick}
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? 12 : 24 }}
     >
-      <div {...dialogProps} style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.24)', width: '100%', maxWidth: wideTab ? (isMobile ? '100%' : 980) : 460, height: wideTab ? 'calc(100dvh - 48px)' : undefined, maxHeight: 'calc(100dvh - 48px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div {...dialogProps} style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.24)', width: '100%', ...settingsShellSize(isAdmin, isMobile), display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px 0' }}>
           <div>
             <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--color-text)' }}>{t('settings_title')}</h2>
@@ -80,17 +82,21 @@ export default function UserSettingsModal({ open, onClose }: Props) {
 
         <div style={{ height: 1, backgroundColor: 'var(--color-border)', margin: '12px 0 0' }} />
 
-        <div style={wideTab
+        <div style={adminPanel
           ? { flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }
           : { padding: '20px 24px 24px', overflowY: 'auto', minHeight: 0, flex: 1 }}>
           {tab === 'users' && <Suspense fallback={<PanelFallback />}><UserManagementPanel /></Suspense>}
           {tab === 'backup' && <Suspense fallback={<PanelFallback />}><BackupPanel /></Suspense>}
           {tab === 'audit' && <Suspense fallback={<PanelFallback />}><AuditLogPanel /></Suspense>}
-          {tab === 'api' && <ApiTokensSection />}
-          {tab === 'security' && <MfaSection />}
-          {tab === 'profile' && <ProfileTab />}
-          {tab === 'password' && <PasswordTab />}
-          {tab === 'invites' && <MyInvitesTab />}
+          {!adminPanel && (
+            <div style={{ maxWidth: SETTINGS_FORM_MAX_WIDTH }}>
+              {tab === 'api' && <ApiTokensSection />}
+              {tab === 'security' && <MfaSection />}
+              {tab === 'profile' && <ProfileTab />}
+              {tab === 'password' && <PasswordTab />}
+              {tab === 'invites' && <MyInvitesTab />}
+            </div>
+          )}
         </div>
 
         {/* Rodapé fixo, fora do corpo que rola: sair fica junto da conta. */}
