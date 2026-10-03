@@ -15,247 +15,296 @@
     "public.pages": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.todos": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.profiles": {
       "acl": "43772084a4782080f33473bf9347ede6",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "33cbffadba3f368ea7fa2df897b04ca1"
     },
     "public.audit_log": {
       "acl": "1fa1b7fdfa2b82107739bf14e6174c76",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.api_tokens": {
       "acl": "2af9fa25160aec6c57f7b8bfe18af4dc",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "9132d97feb3d4655b1b54795b949be01"
     },
     "public.study_logs": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.page_shares": {
       "acl": "62d4e1c8a0002d9a3d54eec0050ae869",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "a38d975c86b98e62a196e6785c4a8e81"
     },
     "public.quick_notes": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.study_cards": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "private.rate_limits": {
       "acl": "6344fa4d30dafa727ebc453b6f9ff22a",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.invite_codes": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.site_backups": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.study_topics": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_goals": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_loans": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.note_contents": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.notifications": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.page_presence": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.project_cards": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.project_boards": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.project_shares": {
       "acl": "62d4e1c8a0002d9a3d54eec0050ae869",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "a38d975c86b98e62a196e6785c4a8e81"
     },
     "public.finance_budgets": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.profile_secrets": {
       "acl": "2af9fa25160aec6c57f7b8bfe18af4dc",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.project_columns": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.drawing_contents": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_accounts": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.mindmap_contents": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_recurring": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_suppliers": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_categories": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_statements": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_workspaces": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.project_card_queue": {
       "acl": "5efc402acb7c4a92f74c8d86a57a54ee",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.study_lookup_cache": {
       "acl": "2af9fa25160aec6c57f7b8bfe18af4dc",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_goal_shares": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_store_sales": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_transactions": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.site_backup_settings": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_loan_payments": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_loan_borrowers": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_store_products": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_store_customers": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_store_purchases": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_loan_collaterals": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_store_sale_items": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_recurring_entries": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_workspace_invites": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_workspace_members": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.finance_goal_contributions": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
       "rls": true,
-      "kind": "r"
+      "kind": "r",
+      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     }
   },
   "buckets": {
@@ -864,7 +913,7 @@
     "storage.objects.owner_upload_tx_photos": "c58b0e5278d25d3029d504d52dbb49ef",
     "storage.objects.store_files_owner_read": "fcce24c16d6c5a15665f90ab4e851393",
     "public.api_tokens.api_tokens_select_own": "27b6204bdac9c8423728635df0fde026",
-    "public.invite_codes.invite_codes_select": "14ea24a30b9df6d8ea02fe30da309962",
+    "public.invite_codes.invite_codes_select": "2377a7e19b875b4431450e8f94430568",
     "public.notifications.notif_owner_delete": "cd2d82e34a5645931f17b2987e4ba47f",
     "public.notifications.notif_owner_select": "2b2b065d90f8ac506c1b1a9b88643ffe",
     "public.notifications.notif_owner_update": "4b77b9d8dd2d7db60d99c4fb803b927e",
@@ -898,7 +947,7 @@
     "public.project_cards.project_cards_insert": "e55fb054c86932dc75fa2331f7aca4d6",
     "public.project_cards.project_cards_select": "023e4bfc2361ef5bf5a1dd5c0cfffa32",
     "public.project_cards.project_cards_update": "f2184e0d237dd327132c292c13e397bf",
-    "public.audit_log.Admins can read audit_log": "4aca936f116562dc77d243893780fbbe",
+    "public.audit_log.Admins can read audit_log": "e037ddfa16ec4704eb9f75096b6075ab",
     "storage.objects.avatars_authenticated_read": "1dadd24849a577861ae1decbd47a43de",
     "storage.objects.owner_read_bank_statements": "ed91dfe8750859c837bb45f4c5ba11f2",
     "storage.objects.project_card_images_delete": "eb32079d95d353677741a4ede977af34",
@@ -919,7 +968,7 @@
     "public.finance_budgets.finance_budgets_insert": "81d05871dd725e9f211fe37cf9cc186b",
     "public.finance_budgets.finance_budgets_select": "d0b7b224e0d747ce37a91858dfbf91f6",
     "public.finance_budgets.finance_budgets_update": "31d5231c15aa206dcc9146f72a28c97b",
-    "public.invite_codes.invite_codes_delete_admin": "9c7cc5c15e5d980dbdce0f072084c20f",
+    "public.invite_codes.invite_codes_delete_admin": "6e8aacb6bc772f78b63091161bb06d06",
     "public.profiles.profiles_authenticated_select": "7dcbc9ec33f77040ae5d7bf474c65626",
     "public.project_columns.project_columns_delete": "bc5681739eeec5f2389e533d9029c04d",
     "public.project_columns.project_columns_insert": "e55fb054c86932dc75fa2331f7aca4d6",
@@ -939,7 +988,7 @@
     "public.mindmap_contents.mindmap_contents_select": "742b490f3eeb0a6a257fb4b6821dd2dd",
     "public.mindmap_contents.mindmap_contents_update": "12772870afff3e8ad806a88a77af5f2d",
     "public.finance_workspace_members.wm_owner_delete": "6217d5006545f8f5a5d30e6fe8b2dc8b",
-    "public.site_backups.Admins can read site_backups": "4aca936f116562dc77d243893780fbbe",
+    "public.site_backups.Admins can read site_backups": "e037ddfa16ec4704eb9f75096b6075ab",
     "storage.objects.note_images_owner_or_shared_read": "4619dd4d00e39374d071b0de3fc06a6e",
     "storage.objects.project_expense_files_owner_read": "546bcdcc868b74b97863f6949d4bd671",
     "public.finance_recurring.finance_recurring_delete": "9ff9165d208495b3e1afb2ae1e45c50d",
@@ -1008,7 +1057,7 @@
     "public.finance_store_sale_items.finance_store_sale_items_insert": "2b51a90909381f7417dfa3363bfdedee",
     "public.finance_store_sale_items.finance_store_sale_items_select": "d81e54a87ae81b7f0e18bf1962c1d96d",
     "public.finance_store_sale_items.finance_store_sale_items_update": "286d88d3a211fc34a238fcd6a927d5b8",
-    "public.site_backup_settings.Admins can read site_backup_settings": "4aca936f116562dc77d243893780fbbe",
+    "public.site_backup_settings.Admins can read site_backup_settings": "e037ddfa16ec4704eb9f75096b6075ab",
     "storage.objects.Authenticated users can delete their note images": "de8e14791b7f2f61d4a31ed133efd39f",
     "storage.objects.Authenticated users can update their note images": "8d7b84f9eb31c249fe6c438877caf912",
     "public.finance_recurring_entries.finance_recurring_entries_delete": "9ff9165d208495b3e1afb2ae1e45c50d",
