@@ -135,7 +135,7 @@ export default function BackupPanel() {
 
   if (!isAdmin) {
     return (
-      <div style={{ flex: 1, overflow: 'auto', backgroundColor: 'var(--color-bg-tertiary)' }}>
+      <div style={{ flex: 1, overflow: 'auto', scrollbarGutter: 'stable both-edges', backgroundColor: 'var(--color-bg-tertiary)' }}>
         <div style={{ maxWidth: 800, margin: '0 auto', padding: isMobile ? '24px 16px 60px' : '32px 24px 80px', textAlign: 'center' }}>
           <AlertTriangle size={40} style={{ color: 'var(--color-text-muted)', marginBottom: 16 }} />
           <p style={{ color: 'var(--color-text-muted)', fontSize: 15 }}>{t('backup_access_denied')}</p>
@@ -145,26 +145,24 @@ export default function BackupPanel() {
   }
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', backgroundColor: 'var(--color-bg-tertiary)' }}>
+    <div style={{ flex: 1, overflow: 'auto', scrollbarGutter: 'stable both-edges', backgroundColor: 'var(--color-bg-tertiary)' }}>
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: isMobile ? '24px 12px 80px' : '40px 32px 80px' }}>
         {/* Header */}
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 20, textAlign: 'center' }}>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 500 }}>{t('admin_label')}</p>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 4 }}>
-            <h1 style={{ margin: 0, fontSize: isMobile ? 22 : 28, fontWeight: 700, color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Database size={isMobile ? 22 : 26} />
-              {t('backup_title')}
-            </h1>
-            <button
-              onClick={() => refreshList().catch(showError)}
-              disabled={isBusy}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 13, fontWeight: 500, cursor: isBusy ? 'not-allowed' : 'pointer', opacity: isBusy ? 0.6 : 1 }}
-            >
-              <RefreshCw size={13} style={{ animation: loading || isBusy ? 'spin 1s linear infinite' : 'none' }} />
-              {!isMobile && t('backup_refresh')}
-            </button>
-          </div>
+          <h1 style={{ margin: '4px 0 0', fontSize: isMobile ? 22 : 28, fontWeight: 700, color: 'var(--color-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <Database size={isMobile ? 22 : 26} />
+            {t('backup_title')}
+          </h1>
           <p style={{ margin: '6px 0 0', fontSize: 14, color: 'var(--color-text-muted)' }}>{t('backup_subtitle')}</p>
+          <button
+            onClick={() => refreshList().catch(showError)}
+            disabled={isBusy}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 14, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 13, fontWeight: 500, cursor: isBusy ? 'not-allowed' : 'pointer', opacity: isBusy ? 0.6 : 1 }}
+          >
+            <RefreshCw size={13} style={{ animation: loading || isBusy ? 'spin 1s linear infinite' : 'none' }} />
+            {!isMobile && t('backup_refresh')}
+          </button>
         </div>
 
         {feedback && (
@@ -194,17 +192,19 @@ export default function BackupPanel() {
 
         {/* Actions + automatic backup */}
         <div style={{ padding: 20, borderRadius: 12, backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-          <button
-            onClick={handleCreate}
-            disabled={actionsDisabled}
-            className="backup-primary-btn"
-            style={{
-              padding: '10px 18px', borderRadius: 8, border: 'none', cursor: actionsDisabled ? 'not-allowed' : 'pointer',
-              backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', fontSize: 14, fontWeight: 600, opacity: actionsDisabled ? 0.6 : 1,
-            }}
-          >
-            {t('backup_create_now')}
-          </button>
+          <div style={{ textAlign: 'center' }}>
+            <button
+              onClick={handleCreate}
+              disabled={actionsDisabled}
+              className="backup-primary-btn"
+              style={{
+                padding: '10px 18px', borderRadius: 8, border: 'none', cursor: actionsDisabled ? 'not-allowed' : 'pointer',
+                backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', fontSize: 14, fontWeight: 600, opacity: actionsDisabled ? 0.6 : 1,
+              }}
+            >
+              {t('backup_create_now')}
+            </button>
+          </div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 0 12px', marginTop: 16, borderTop: '1px solid var(--color-border)' }}>
             <div>
@@ -241,7 +241,7 @@ export default function BackupPanel() {
           </div>
         </div>
 
-        <h2 style={{ margin: '28px 0 12px', fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>{t('backup_restore_points')}</h2>
+        <h2 style={{ margin: '28px 0 12px', fontSize: 16, fontWeight: 700, color: 'var(--color-text)', textAlign: 'center' }}>{t('backup_restore_points')}</h2>
 
         <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: 12, border: '1px solid var(--color-border)', overflow: 'hidden' }}>
           {!isMobile && !loading && backups.length > 0 && (

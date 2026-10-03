@@ -50,7 +50,7 @@ function ObservabilityRow({ t }: { t: TFn }) {
   const [sent, setSent] = useState(false)
   const dot = status === 'on' ? '#16a34a' : status === 'failed' ? '#dc2626' : '#9ca3af'
   return (
-    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 10, fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 10, marginTop: 10, fontSize: 12.5, color: 'var(--color-text-muted)' }}>
       <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: dot, flexShrink: 0 }} />
       <span>{t(SENTRY_STATUS_KEYS[status])}</span>
       {status === 'on' && (
@@ -141,7 +141,7 @@ export default function AuditLogPanel() {
   // A RLS já barra não-admin, mas o painel avisa em vez de mostrar lista vazia.
   if (!isAdmin) {
     return (
-      <div style={{ flex: 1, overflow: 'auto', backgroundColor: 'var(--color-bg-tertiary)' }}>
+      <div style={{ flex: 1, overflow: 'auto', scrollbarGutter: 'stable both-edges', backgroundColor: 'var(--color-bg-tertiary)' }}>
         <div style={{ maxWidth: 800, margin: '0 auto', padding: isMobile ? '24px 16px 60px' : '32px 24px 80px', textAlign: 'center' }}>
           <AlertTriangle size={40} style={{ color: 'var(--color-text-muted)', marginBottom: 16 }} />
           <p style={{ color: 'var(--color-text-muted)', fontSize: 15 }}>{t('audit_access_denied')}</p>
@@ -151,27 +151,25 @@ export default function AuditLogPanel() {
   }
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', backgroundColor: 'var(--color-bg-tertiary)' }}>
+    <div style={{ flex: 1, overflow: 'auto', scrollbarGutter: 'stable both-edges', backgroundColor: 'var(--color-bg-tertiary)' }}>
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: isMobile ? '24px 12px 80px' : '40px 32px 80px' }}>
         {/* Header */}
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 20, textAlign: 'center' }}>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 500 }}>{t('admin_label')}</p>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 4 }}>
-            <h1 style={{ margin: 0, fontSize: isMobile ? 22 : 28, fontWeight: 700, color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <ScrollText size={isMobile ? 22 : 26} />
-              {t('audit_title')}
-            </h1>
-            <button
-              onClick={() => fetchPage(null)}
-              disabled={loading || loadingMore}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 13, fontWeight: 500, cursor: (loading || loadingMore) ? 'not-allowed' : 'pointer', opacity: (loading || loadingMore) ? 0.6 : 1 }}
-            >
-              <RefreshCw size={13} style={{ animation: (loading || loadingMore) ? 'spin 1s linear infinite' : 'none' }} />
-              {!isMobile && t('audit_refresh')}
-            </button>
-          </div>
+          <h1 style={{ margin: '4px 0 0', fontSize: isMobile ? 22 : 28, fontWeight: 700, color: 'var(--color-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <ScrollText size={isMobile ? 22 : 26} />
+            {t('audit_title')}
+          </h1>
           <p style={{ margin: '6px 0 0', fontSize: 14, color: 'var(--color-text-muted)' }}>{t('audit_subtitle')}</p>
           <ObservabilityRow t={t} />
+          <button
+            onClick={() => fetchPage(null)}
+            disabled={loading || loadingMore}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 14, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 13, fontWeight: 500, cursor: (loading || loadingMore) ? 'not-allowed' : 'pointer', opacity: (loading || loadingMore) ? 0.6 : 1 }}
+          >
+            <RefreshCw size={13} style={{ animation: (loading || loadingMore) ? 'spin 1s linear infinite' : 'none' }} />
+            {!isMobile && t('audit_refresh')}
+          </button>
         </div>
 
         {feedback && (
@@ -181,7 +179,7 @@ export default function AuditLogPanel() {
         )}
 
         {/* Filtro por ação */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
           {ACTION_FILTERS.map(f => (
             <button
               key={f}
