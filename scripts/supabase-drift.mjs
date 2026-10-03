@@ -5,6 +5,8 @@
 //   • migrations: nomes dos arquivos × ledger remoto (o fluxo é MCP-only, então as
 //     versões antigas não batem por desenho; ver supabase/migrations/README.md);
 //   • schema: supabase/checks/schema-snapshot.sql × supabase/schema-snapshot.json;
+//   • policies: nenhuma policy fora de public.profiles lê profiles direto (use
+//     is_admin() ou outra função SECURITY DEFINER; ver policiesReadingProfiles);
 //   • advisors de segurança e performance (só relatório).
 //
 //   npm run drift                          produção
@@ -76,6 +78,20 @@ export function diffSnapshot(expected, actual) {
   return problems
 }
 
+/**
+ * Policies fora de public.profiles que leem profiles direto. Elas rodam com o
+ * privilégio de quem consulta, e profiles só tem grants POR COLUNA: uma coluna
+ * restrita (role, is_active…) quebra a consulta inteira com "permission denied
+ * for table profiles", mesmo para admin (SEC-013, 03/10/2026). O teste de
+ * papel fica em funções SECURITY DEFINER como public.is_admin().
+ */
+export function policiesReadingProfiles(rows) {
+  return rows
+    .filter(r => !(r.schemaname === 'public' && r.tablename === 'profiles'))
+    .filter(r => /\bprofiles\b/.test(`${r.qual ?? ''} ${r.with_check ?? ''}`))
+    .map(r => `policy ${r.schemaname}.${r.tablename}.${r.policyname}: lê profiles direto (use is_admin() ou uma função SECURITY DEFINER)`)
+}
+
 /** Advisors por nível (ERROR/WARN/INFO), com os nomes das regras de ERROR. */
 export function summarizeAdvisors(lints) {
   const byLevel = {}
@@ -114,12 +130,16 @@ async function main() {
   })))
   const repoMigrations = migrationFiles(readdirSync(join(ROOT, 'supabase/migrations'))).map(m => m.name)
 
-  const [functions, migrations, snapshotRows, security, performance] = await Promise.all([
+  const [functions, migrations, snapshotRows, policyRows, security, performance] = await Promise.all([
     api(token, `/projects/${ref}/functions`),
     api(token, `/projects/${ref}/database/migrations`),
     api(token, `/projects/${ref}/database/query`, {
       method: 'POST',
       body: JSON.stringify({ query: readFileSync(join(ROOT, 'supabase/checks/schema-snapshot.sql'), 'utf8') }),
+    }),
+    api(token, `/projects/${ref}/database/query`, {
+      method: 'POST',
+      body: JSON.stringify({ query: "select schemaname, tablename, policyname, qual, with_check from pg_policies where schemaname in ('public', 'private', 'storage')" }),
     }),
     api(token, `/projects/${ref}/advisors/security`).catch(err => ({ lints: [], error: String(err) })),
     api(token, `/projects/${ref}/advisors/performance`).catch(err => ({ lints: [], error: String(err) })),
@@ -128,6 +148,7 @@ async function main() {
   const problems = [
     ...compareFunctions(slugs, functions, toml, allowlist),
     ...compareMigrations(repoMigrations, migrations, allowlist),
+    ...policiesReadingProfiles(policyRows ?? []),
   ]
   // O retrato versionado é o da produção; em outro projeto ele só vale se o
   // schema for o mesmo (é o caso do staging recriado pelo staging:reset).
