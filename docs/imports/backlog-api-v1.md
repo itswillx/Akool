@@ -30,9 +30,9 @@ Esforço: 9 S, 38 M, 16 L.
 
 | Lote | Cards |
 | --- | --- |
-| 01 | API-001 Escopos por subseção no token: catálogo, colunas, RPCs e cards-api conferindo a permissão (P0/L) · API-002 Sonda no staging: papéis custom, login pelo pooler e claim de reautenticação (P0/S) · API-003 Notas rápidas: updated_at no servidor e fim da sobrescrita offline (P1/M) |
-| 02 | API-004 Papéis do executor (akool_api), claims e barreiras no banco (P0/M) · API-005 Núcleo puro da API: validador de JSON Schema, erros padronizados, tsconfig das functions e guarda de imports (P0/M) · API-006 Restore e cron sem usuário: guarda de workspace segura e convenção para gatilhos novos (P1/M) |
-| 03 | API-007 Guardas no banco: escopo do token fail-closed, funções SECURITY DEFINER classificadas e portão de validação (P0/L) · API-008 Registro de ações, catálogo composto e manifesto de cobertura do sistema (P0/M) · API-009 Configurações → API: permissões por seção e subseção, validade e edição do token (P0/M) |
+| 01 | API-001 Escopos por subseção no token: catálogo, colunas, RPCs (inclusive exclusão) e cards-api conferindo a permissão (P0/L) · API-002 Sonda no staging: papéis custom, login pelo pooler e claim de reautenticação (P0/S) · API-003 Notas rápidas: updated_at no servidor e fim da sobrescrita offline (P1/M) |
+| 02 | API-004 Papéis do executor (akool_api), claims e barreiras no banco (P0/M) · API-005 Núcleo puro da API: validador de JSON Schema, erros padronizados, tsconfig das functions e guarda de imports (P0/M) · API-009 Configurações → API: tokens ativos com permissões por seção e subseção, edição e exclusão (P0/M) |
+| 03 | API-006 Restore e cron sem usuário: guarda de workspace segura e convenção para gatilhos novos (P1/M) · API-007 Guardas no banco: escopo do token fail-closed, funções SECURITY DEFINER classificadas e portão de validação (P0/L) · API-008 Registro de ações, catálogo composto e manifesto de cobertura do sistema (P0/M) |
 | 04 | API-010 Gateway: edge function api, executor em Deno e REST /v1 (só no staging) (P0/L) · API-011 Ciclo de vida do token: reautenticação recente, avisos, troca de senha e ações de admin (P0/M) · API-012 Metas: correção do compartilhamento, aporte atômico, goal_id travado e bootstrap de categorias (P1/M) |
 | 05 | API-013 Regras de cards no servidor: integridade, updated_at, ordem, rótulos e caminhos de anexos (P1/L) · API-014 Auditoria por chamada, limites por token e idempotência (schema api_rt) (P0/M) · API-015 Servidor MCP remoto sem estado gerado do registro (P0/M) |
 | 06 | API-016 Recorrentes no servidor: materialização por pg_cron, marcar como paga atômico e orçamentos automáticos (P1/L) · API-017 OpenAPI 3.1 e declarações de função para Gemini geradas do registro (P1/M) · API-018 Storage na API: autorização do objeto como o usuário e caminhos validados (P0/M) |
@@ -59,7 +59,7 @@ Esforço: 9 S, 38 M, 16 L.
 
 ---
 
-### CARD API-001 — Escopos por subseção no token: catálogo, colunas, RPCs e cards-api conferindo a permissão
+### CARD API-001 — Escopos por subseção no token: catálogo, colunas, RPCs (inclusive exclusão) e cards-api conferindo a permissão
 
 | Campo          | Valor |
 | -------------- | ----- |
@@ -71,7 +71,7 @@ Esforço: 9 S, 38 M, 16 L.
 
 **Problema:** O token pessoal (public.api_tokens) é tudo ou nada: resolve_api_token devolve só o user_id, e a cards-api deixa qualquer token fazer qualquer ação de Projetos, inclusive validar cards e converter o quadro; para abrir a API ao sistema inteiro, o token precisa guardar um nível (Nenhum/Ler/Escrever/Excluir) por subseção, validado no banco, sem quebrar o /fila.
 
-**Contexto:** Lote 01. Sem dependências. Aceite: Criar token falha com mensagem clara para subseção inexistente, nível acima do máximo, admin.* sem ser admin, validade acima do teto e escrita sem AAL2 para quem tem MFA; a tela atual continua gerando token; o token migrado roda npm run cards -- boards, cards, card, queue e next; validate e setup-flow respondem 403 dizendo a permissão; o CI passa com gen:types --check. Arquitetura: docs/api-arquitetura.md.
+**Contexto:** Lote 01. Sem dependências. Aceite: Criar token falha com mensagem clara para subseção inexistente, nível acima do máximo, admin.* sem ser admin, validade acima do teto e escrita sem AAL2 para quem tem MFA; a tela atual continua gerando token; o token migrado roda npm run cards -- boards, cards, card, queue e next; validate e setup-flow respondem 403 dizendo a permissão; o CI passa com gen:types --check. Excluir o token usado pela CLI faz npm run cards -- boards responder 401. Arquitetura: docs/api-arquitetura.md.
 
 **Subtarefas Kanban:**
 
@@ -88,6 +88,7 @@ Esforço: 9 S, 38 M, 16 L.
 - [ ] Validar no create: admin.* só com is_admin() e com linha em audit_log; AAL2 obrigatório para Escrever, Excluir ou admin quando o usuário tem fator MFA verificado
 - [ ] Validar no create: recusar claims com akool_api e subir o limite de ativos de 10 para 20
 - [ ] Criar update_api_token_scopes(p_id, p_scopes) e revoke_all_my_api_tokens(), só para o dono e só de sessão do app, com as mesmas regras
+- [ ] Criar delete_api_token(p_id): só o dono, só de sessão do app (recusa claims com akool_api), apaga a linha em qualquer estado; revoke de public e anon, grant para authenticated; token ativo excluído deixa de resolver na hora
 - [ ] Criar resolve_api_token_v2(p_hash), só para service_role, devolvendo user_id, token_id, prefixo, email, escopos efetivos (sem admin.* se o dono deixou de ser admin) e expires_at
 - [ ] Em resolve_api_token_v2, regravar last_used_at só se tiver mais de 60 s; a v1 continua até o API-061
 - [ ] Migrar os tokens ativos para {projetos.quadros: read, projetos.cards: read, projetos.fila: write}, sem projetos.validacao
@@ -96,6 +97,7 @@ Esforço: 9 S, 38 M, 16 L.
 - [ ] Sem a permissão, a cards-api responde 403 com o campo required e dizendo como ativar
 - [ ] Criar o override ApiScopes em src/types/db.ts e rodar npm run gen:types
 - [ ] Ensaio ROLLBACK no staging (DO … RAISE) e harness supabase/checks/api001-token-scopes.sql
+- [ ] No harness: excluir um token ativo e conferir que resolve_api_token_v2 volta nulo; excluir o token de outro usuário dá P0002; chamar com claims akool_api é recusado
 - [ ] Depois de aplicar no staging: npm run staging:reset -- --migrations, get_advisors e docs/matriz-rls.md
 - [ ] Deploy da cards-api no staging e npm run cards -- boards, queue e next contra o staging
 - [ ] Produção: aplicar a migration só após confirmação do usuário e, logo depois, deploy da cards-api (Deploy function → production); depois npm run drift -- --write
@@ -260,12 +262,12 @@ Esforço: 9 S, 38 M, 16 L.
 | **ID**         | API-006 |
 | **Prioridade** | P1 |
 | **Esforço**    | M |
-| **Labels**     | api-v1, lote-02, confiabilidade, backup, supabase, pré-requisito |
+| **Labels**     | api-v1, lote-03, confiabilidade, backup, supabase, pré-requisito |
 | **Arquivos**   | `supabase/migrations/<ts>_api006_guards_without_user.sql`, `supabase/checks/api006-restore.sql`, `supabase/migrations/README.md`, `docs/api-arquitetura.md`, `docs/matriz-rls.md` |
 
 **Problema:** finance_guard_workspace recusa com 42501 o INSERT de linha com workspace_id quando auth.uid() é nulo, então restore_site_backup (service_role) já falha hoje em backups com linhas de workspace e o cron de recorrentes (API-016) também falharia; os gatilhos novos dos API-013, 021 e 028 repetiriam o defeito sem uma regra comum.
 
-**Contexto:** Lote 02. Sem dependências. Aceite: O ensaio de restore com linhas de workspace conclui; um usuário logado continua recebendo 42501 ao mover linha para workspace de que não é membro; a regra está documentada. Arquitetura: docs/api-arquitetura.md.
+**Contexto:** Lote 03. Sem dependências. Aceite: O ensaio de restore com linhas de workspace conclui; um usuário logado continua recebendo 42501 ao mover linha para workspace de que não é membro; a regra está documentada. Arquitetura: docs/api-arquitetura.md.
 
 **Subtarefas Kanban:**
 
@@ -356,24 +358,24 @@ Esforço: 9 S, 38 M, 16 L.
 
 ---
 
-### CARD API-009 — Configurações → API: permissões por seção e subseção, validade e edição do token
+### CARD API-009 — Configurações → API: tokens ativos com permissões por seção e subseção, edição e exclusão
 
 | Campo          | Valor |
 | -------------- | ----- |
 | **ID**         | API-009 |
 | **Prioridade** | P0 |
 | **Esforço**    | M |
-| **Labels**     | api, api-v1, lote-03, ux, configurações, i18n |
+| **Labels**     | api, api-v1, lote-02, ux, configurações, i18n |
 | **Arquivos**   | `src/components/ApiTokensSection.tsx`, `src/components/apiTokens/ScopePicker.tsx`, `src/components/apiTokens/TokenList.tsx`, `src/components/apiTokens/presets.ts`, `src/lib/data/apiTokens.ts`, `src/lib/data/apiTokens.test.ts`, `src/i18n/translations.pt-BR.ts`, `src/i18n/translations.en.ts`, `scripts/data-layer-baseline.json`, `scripts/lint-baseline.json`, `e2e/app/api-tokens.spec.ts` |
 
-**Problema:** A aba API só tem nome e Gerar, com 90 dias fixos e um texto dizendo que o token é só para o Claude Code via npm run cards; para usar a API com qualquer IA, o usuário precisa escolher o nível de cada seção e subseção (em lote ou uma a uma) e a validade, e depois revisar, editar e revogar.
+**Problema:** A aba API só tem nome e Gerar, com 90 dias fixos, e na lista só existe Revogar; para usar a API com qualquer IA, o usuário precisa escolher o nível de cada seção e subseção (em lote ou uma a uma) e a validade, e depois controlar cada token ativo: editar as permissões, revogar e excluir.
 
-**Contexto:** Lote 03. Depende de: API-001. Aceite: No staging dá para criar token por preset e por escolha manual por subseção, editar permissões sem trocar o segredo, revogar um e revogar todos; Administração não aparece para quem não é admin; os textos existem nas duas línguas; data-layer-baseline e lint-baseline não crescem e o E2E passa. Arquitetura: docs/api-arquitetura.md.
+**Contexto:** Lote 02. Depende de: API-001. Aceite: No staging dá para criar token por preset e por escolha manual por subseção; num token ativo, editar as permissões sem trocar o segredo, revogar e excluir; excluir revogados e expirados, um a um ou todos de uma vez; a CLI com um token excluído recebe 401; Administração não aparece para quem não é admin; os textos existem nas duas línguas; data-layer-baseline e lint-baseline não crescem e o E2E passa. Arquitetura: docs/api-arquitetura.md.
 
 **Subtarefas Kanban:**
 
 - [ ] Conferir que API-001 está em Concluído; se não, release e avisar o usuário
-- [ ] Criar src/lib/data/apiTokens.ts (listar, criar, editar escopos, revogar, revogar todos) e tirar as 3 chamadas diretas do ApiTokensSection (o data-layer-baseline diminui)
+- [ ] Criar src/lib/data/apiTokens.ts (listar, criar, editar escopos, revogar, revogar todos, excluir e limpar revogados e expirados) e tirar as 3 chamadas diretas do ApiTokensSection (o data-layer-baseline diminui)
 - [ ] ScopePicker: uma linha por seção com seletor em lote, limitado ao máximo de cada subseção, e controle segmentado por subseção
 - [ ] No ScopePicker, Administração só aparece para admin
 - [ ] No ScopePicker, as visões compostas (Visão geral, Rede, Painel, Projetos → Resumo) aparecem como linhas informativas que mostram o que exigem
@@ -383,15 +385,19 @@ Esforço: 9 S, 38 M, 16 L.
 - [ ] Criação: nome, validade (7, 30, 90 ou 365; até 90 com escrita e até 30 com admin) e escopos
 - [ ] Após criar, o token aparece uma vez; o erro de AAL2 explica o motivo e leva para Segurança
 - [ ] Lista: escopos em chips, último uso e último cliente
-- [ ] Na lista, Editar permissões (o segredo não muda), Revogar e Revogar todos
+- [ ] Token ativo na lista: Editar permissões (ScopePicker preenchido com o nível atual de cada subseção, de Nenhum a Excluir; o segredo não muda), Revogar e Excluir
+- [ ] Token revogado ou expirado: Excluir; para a lista inteira: Revogar todos e Limpar revogados e expirados
+- [ ] Excluir com confirmação em dois passos, no padrão de Revogar; para token ativo, o aviso diz que ele para de funcionar na hora e que a IA que o usa perde o acesso
+- [ ] O token migrado (o do /fila) aparece com as permissões atuais (Quadros: Ler, Cards: Ler, Fila: Escrever) e pode ser editado, por exemplo para ativar Validação
 - [ ] i18n: api_scope_section_*, api_scope_* e settings_api_* nas duas línguas; trocar settings_api_intro
 - [ ] Teste de paridade entre catalog.ts e as chaves i18n
 - [ ] Cores por token (nenhum hex novo), rótulos com <Field>, botões com nome e arquivos com até 600 linhas
-- [ ] E2E no staging (e2e/app/api-tokens.spec.ts): criar com preset, editar escopos e revogar
+- [ ] E2E no staging (e2e/app/api-tokens.spec.ts): criar com preset, editar escopos, revogar e excluir (token ativo e revogado)
 - [ ] Fechamento: npm test, npm run lint:ci, npx tsc -b e npm run build
 - [ ] Deploy do frontend só após confirmação do usuário
 - [ ] Você: Validar no staging a clareza dos níveis e dos presets
 - [ ] Você: Aprovar o deploy do frontend
+- [ ] Você: Editar as permissões do seu token atual (por exemplo, ativar Validação) e excluir um token de teste
 
 ---
 
@@ -557,14 +563,14 @@ Esforço: 9 S, 38 M, 16 L.
 
 **Problema:** Uma API que escreve em todas as seções precisa deixar rastro de cada chamada sem guardar dados pessoais, impedir que um agente duplique dinheiro ao repetir uma requisição e limitar abuso por token e por IP; a cards-api só limita por usuário (fail-open) e não registra nada, e private.request_ip() fica nulo fora da PostgREST.
 
-**Contexto:** Lote 05. Depende de: API-010. Aceite: No staging, toda chamada (sucesso, 4xx e 429) gera uma linha em private.api_calls sem argumentos e com ip_bucket; a mesma Idempotency-Key devolve a mesma resposta sem duplicar, e duas requisições simultâneas dão 409 na segunda; a 121ª chamada no minuto recebe 429; Configurações → API mostra a atividade. Arquitetura: docs/api-arquitetura.md.
+**Contexto:** Lote 05. Depende de: API-010. Aceite: No staging, toda chamada (sucesso, 4xx e 429) gera uma linha em private.api_calls sem argumentos e com ip_bucket; a mesma Idempotency-Key devolve a mesma resposta sem duplicar, e duas requisições simultâneas dão 409 na segunda; a 121ª chamada no minuto recebe 429; Configurações → API mostra a atividade. Excluir um token mantém as chamadas dele em Atividade. Arquitetura: docs/api-arquitetura.md.
 
 **Subtarefas Kanban:**
 
 - [ ] Conferir que API-010 está em Concluído; se não, release e avisar o usuário
 - [ ] Criar o schema api_rt com USAGE só para akool_api e akool_api_login
 - [ ] api_rt.authorize(hash, ip_bucket, nivel) resolve o token e aplica os limites numa ida
-- [ ] private.api_calls com os campos de docs/api-arquitetura.md §9.1, inclusive ip_bucket via private.ip_bucket_key, sem argumentos nem conteúdo
+- [ ] private.api_calls com os campos de docs/api-arquitetura.md §9.1, inclusive ip_bucket via private.ip_bucket_key e token_prefix/token_name copiados na chamada, sem FK para api_tokens (excluir o token preserva o histórico) e sem argumentos nem conteúdo
 - [ ] api_rt.audit_write lê token_id dos claims; escrita auditada dentro da transação do usuário; negações e falhas auditadas fora
 - [ ] O gateway monta request.headers só com o IP observado
 - [ ] O gatilho do SEC-018 e cq_source rotulam api:<prefixo> quando há akool_api
@@ -573,8 +579,8 @@ Esforço: 9 S, 38 M, 16 L.
 - [ ] Limites de §9.3 via public.check_rate_limit, com 429 e Retry-After
 - [ ] Se o limitador falhar: fail-open com log para leitura e escrita, fail-closed para Excluir
 - [ ] Gravar last_client do token: clientInfo do MCP ou User-Agent, até 80 caracteres
-- [ ] pg_cron api-housekeeping diário: apaga api_calls com mais de 90 dias e idempotência com mais de 24 h
-- [ ] list_my_api_calls(p_token_id, p_before), só para o dono, e painel Atividade em Configurações → API (últimas 50)
+- [ ] pg_cron api-housekeeping diário: apaga api_calls com mais de 90 dias, idempotência com mais de 24 h e linhas de idempotência de tokens que não existem mais
+- [ ] list_my_api_calls(p_token_id, p_before), só para o dono, e painel Atividade em Configurações → API (últimas 50); chamadas de token excluído aparecem como "token excluído", com nome e prefixo
 - [ ] Ligar os ganchos no http.ts; testes vitest de audit, idempotency e ratelimit
 - [ ] Ensaio ROLLBACK e harness supabase/checks/api014-audit.sql
 - [ ] Depois de aplicar no staging: npm run staging:reset -- --migrations, npm run gen:types, get_advisors e docs/matriz-rls.md

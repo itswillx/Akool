@@ -173,7 +173,7 @@ Casos especiais:
 - `supabase/functions/_api/definerInventory.ts` classifica cada função SECURITY DEFINER e cada gatilho executável por `authenticated` como `require(sub, level)`, `deny` ou predicado puro. As migrations têm 84 ocorrências de `security definer`. Um teste de paridade falha se aparecer função sem classificação.
 - Classificadas como `deny`:
   - as escritas `admin_*`;
-  - `create_api_token`, `update_api_token_scopes`, `revoke_api_token` e `revoke_all_my_api_tokens`;
+  - `create_api_token`, `update_api_token_scopes`, `revoke_api_token`, `revoke_all_my_api_tokens` e `delete_api_token`;
   - `set_ai_credentials`.
 - Classificadas como `require`:
   - `admin_list_profiles` → `admin.usuarios`;
@@ -367,6 +367,17 @@ supabase/functions/
   - rebaixar um admin tira `admin.*`; banir e revogar sessões revogam todos.
 
   `resolve` e `authorize` tiram `admin.*` de quem deixou de ser admin, a cada chamada.
+- **Exclusão** (`delete_api_token(p_id)`, API-001; tela no API-009):
+  - só o dono, só a partir de sessão do app, em qualquer estado (ativo, revogado ou expirado);
+  - apaga a linha. Um token ativo excluído para de funcionar na hora, porque `resolve` e `authorize` não o acham mais, e `api_scope_allows` falha fechado;
+  - o histórico fica: `private.api_calls` guarda `token_prefix` e `token_name` e não tem FK para `api_tokens` (§9.1);
+  - a tela também tem "Limpar revogados e expirados".
+- **Controle dos tokens ativos (API-009, lote 02):** cada token ativo tem três ações na lista:
+  - Editar permissões: o ScopePicker abre preenchido com o nível atual de cada subseção;
+  - Revogar;
+  - Excluir.
+
+  O token migrado, usado pelo `/fila`, também pode ser editado.
 - **Migração dos tokens atuais:** recebem `{projetos.quadros:read, projetos.cards:read, projetos.fila:write}`.
   - Ficam sem `projetos.validacao`, porque o skill diz que quem valida é o usuário. O `validate` responde 403 dizendo como ativar.
   - `board.setup_flow` passa a exigir Quadros: Excluir.
@@ -414,7 +425,7 @@ supabase/functions/
 ### 9.1 Auditoria (`private.api_calls`, API-014)
 
 - Campos:
-  - `token_id`, `user_id`, ação, subseção e nível;
+  - `token_id` (sem FK para `api_tokens`), `token_prefix` e `token_name` copiados na chamada, `user_id`, ação, subseção e nível. Assim, excluir um token preserva o histórico dele, e a Atividade mostra essas chamadas como "token excluído";
   - `surface` (rest, mcp ou legacy) e cliente (`clientInfo` ou User-Agent);
   - `ip_bucket` (por `private.ip_bucket_key`);
   - status, `error_code`, `target_ids` e `duration_ms`.
@@ -610,8 +621,8 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 | Lote | Cards (no máximo um L por lote) |
 |---|---|
 | 01 | 001 escopos no token (L); 002 sonda de papéis; 003 notas rápidas (correção) |
-| 02 | 004 papéis do executor; 005 núcleo puro; 006 restore e cron sem usuário |
-| 03 | 007 guardas no banco (L); 008 registro e cobertura; 009 tela de tokens |
+| 02 | 004 papéis do executor; 005 núcleo puro; 009 tela de tokens (editar permissões, revogar e excluir) |
+| 03 | 006 restore e cron sem usuário; 007 guardas no banco (L); 008 registro e cobertura |
 | 04 | 010 gateway REST (L); 011 ciclo de vida do token; 012 metas (correção) |
 | 05 | 013 regras de cards (L); 014 auditoria, limites e idempotência; 015 MCP |
 | 06 | 016 recorrentes no servidor (L); 017 OpenAPI; 018 Storage |
