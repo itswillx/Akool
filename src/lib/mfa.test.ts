@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Session } from '@supabase/supabase-js'
 import {
-  assuranceFromSession, formatTotpSecret, isInvalidTotpError, isOtpauthUri, isTotpCode, needsMfaChallenge,
-  totpFriendlyName, verifyWithAnyFactor,
+  assuranceFromSession, formatTotpSecret, isInvalidTotpError, isOtpauthUri, isPasskeyErrorKind, isTotpCode, needsMfaChallenge,
+  PASSKEY_ERROR_KEYS, passkeyCreateOptions, passkeyDevice, passkeyErrorKind, passkeyFriendlyName, passkeyGetOptions,
+  supportsPasskeys, totpFriendlyName, verifiedFactorId, verifyWithAnyFactor,
 } from './mfa'
 
 function jwt(payload: Record<string, unknown>): string {
@@ -111,5 +112,74 @@ describe('MFA: login com mais de um aparelho', () => {
     const verify = vi.fn(() => Promise.resolve({ error: { message: 'Failed to fetch' } }))
     expect(await verifyWithAnyFactor(['a', 'b'], verify)).toEqual({ error: 'Failed to fetch' })
     expect(verify.mock.calls).toEqual([['a']])
+  })
+})
+
+describe('MFA: passkey (entrar com o celular)', () => {
+  it('celular e tablet usam a passkey do próprio aparelho; o computador, a do celular via QR', () => {
+    expect(passkeyDevice(true, false)).toBe('this')
+    expect(passkeyDevice(false, true)).toBe('this')
+    expect(passkeyDevice(false, false)).toBe('phone')
+  })
+
+  it('só oferece passkey com a API WebAuthn do navegador', () => {
+    const credentials = { create: () => null, get: () => null }
+    expect(supportsPasskeys({ PublicKeyCredential: class {}, navigator: { credentials } as unknown as Navigator })).toBe(true)
+    expect(supportsPasskeys({ navigator: { credentials } as unknown as Navigator })).toBe(false)
+    expect(supportsPasskeys({ PublicKeyCredential: class {}, navigator: { credentials: null } as unknown as Navigator })).toBe(false)
+    expect(supportsPasskeys(undefined)).toBe(false)
+  })
+
+  it('acha o fator verificado do tipo pedido', () => {
+    const factors = [
+      { id: 't1', factor_type: 'totp' as const, status: 'verified' as const },
+      { id: 'pk0', factor_type: 'webauthn' as const, status: 'unverified' as const },
+      { id: 'pk1', factor_type: 'webauthn' as const, status: 'verified' as const },
+    ]
+    expect(verifiedFactorId(factors, 'webauthn')).toBe('pk1')
+    expect(verifiedFactorId(factors.slice(0, 2), 'webauthn')).toBeNull()
+    expect(verifiedFactorId(undefined, 'totp')).toBeNull()
+  })
+
+  it('nomeia a passkey com segundos e prefixo próprio (diferente do app autenticador)', () => {
+    const now = new Date('2026-10-04T17:01:32.123Z')
+    expect(passkeyFriendlyName(now)).toBe('Passkey 2026-10-04 17:01:32')
+    expect(passkeyFriendlyName(now)).not.toBe(totpFriendlyName(now))
+  })
+
+  it('troca os padrões de chave física: passkey no aparelho ou QR para o celular', () => {
+    expect(passkeyCreateOptions('this')).toEqual({
+      hints: ['client-device'],
+      authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
+      attestation: 'none',
+    })
+    expect(passkeyCreateOptions('phone')).toMatchObject({ hints: ['hybrid'], authenticatorSelection: { authenticatorAttachment: 'cross-platform' } })
+    expect(passkeyGetOptions('phone')).toEqual({ hints: ['hybrid'], userVerification: 'required' })
+    expect(passkeyGetOptions('this')).toEqual({ hints: ['client-device'], userVerification: 'required' })
+  })
+
+  it('traduz os erros do navegador e do Supabase em poucos casos', () => {
+    const domError = (name: string) => Object.assign(new Error('x'), { name })
+    // Cancelar: o auth-js copia o nome do DOMException e guarda o original em cause.
+    expect(passkeyErrorKind(Object.assign(new Error('x'), { name: 'NotAllowedError', code: 'ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY', cause: domError('NotAllowedError') }))).toBe('cancelled')
+    expect(passkeyErrorKind({ code: 'ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY', message: 'x', cause: domError('NotAllowedError') })).toBe('cancelled')
+    expect(passkeyErrorKind({ code: 'ERROR_CEREMONY_ABORTED', message: 'x' })).toBe('cancelled')
+    expect(passkeyErrorKind({ code: 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED', message: 'x' })).toBe('exists')
+    expect(passkeyErrorKind({ code: 'webauthn_credential_exists', message: 'x' })).toBe('exists')
+    expect(passkeyErrorKind({ code: 'ERROR_INVALID_RP_ID', message: 'x' })).toBe('wrong_domain')
+    expect(passkeyErrorKind(domError('SecurityError'))).toBe('wrong_domain')
+    expect(passkeyErrorKind({ code: 'mfa_webauthn_verify_not_enabled', message: 'MFA verification is disabled for WebAuthn' })).toBe('unavailable')
+    expect(passkeyErrorKind({ message: 'Browser does not support WebAuthn' })).toBe('unavailable')
+    expect(passkeyErrorKind({ code: 'mfa_challenge_expired', message: 'x' })).toBe('failed')
+    expect(passkeyErrorKind({ message: 'Failed to validate WebAuthn MFA response' })).toBe('failed')
+    expect(passkeyErrorKind({ code: 'insufficient_aal', message: 'AAL2 required' })).toBeNull()
+    expect(passkeyErrorKind(null)).toBeNull()
+  })
+
+  it('cada tipo de erro tem mensagem', () => {
+    expect(Object.keys(PASSKEY_ERROR_KEYS).sort()).toEqual(['cancelled', 'exists', 'failed', 'unavailable', 'wrong_domain'])
+    expect(isPasskeyErrorKind('cancelled')).toBe(true)
+    expect(isPasskeyErrorKind('Failed to fetch')).toBe(false)
+    expect(isPasskeyErrorKind('toString')).toBe(false)
   })
 })

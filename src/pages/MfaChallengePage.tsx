@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { LOCAL_KEYS } from '../lib/localKeys'
 import { ShieldCheck } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { MfaPasskeyOption } from '../components/MfaPasskeyOption'
 import { isTotpCode } from '../lib/mfa'
 import { getT, toLang } from '../i18n/translations'
 
@@ -67,6 +68,7 @@ export default function MfaChallengePage() {
           >
             {loading ? t('mfa_verifying') : t('mfa_verify')}
           </button>
+          <MfaPasskeyOption t={t} />
         </form>
 
         <p style={{ textAlign: 'center', marginTop: 20, marginBottom: 0 }}>

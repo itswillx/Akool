@@ -3,7 +3,7 @@ import { Check, Copy, ExternalLink } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useLanguage } from '../i18n/LanguageContext'
 import { copyToClipboard } from '../lib/clipboard'
-import { formatTotpSecret, isOtpauthUri } from '../lib/mfa'
+import { formatTotpSecret, hasCoarsePointer, isOtpauthUri } from '../lib/mfa'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { ghostBtnStyle, primaryBtnStyle, QR_BG } from '@/shared/ui/uiTokens'
 import { FeedbackBanner } from './settings/settingsUi'
@@ -23,11 +23,6 @@ interface Props {
   secret: string
   /** Outro aparelho, com o MFA já ativo. */
   adding: boolean
-}
-
-/** Tela de toque (celular, tablet): não dá para escanear a própria tela. */
-function hasCoarsePointer(): boolean {
-  return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches
 }
 
 export default function MfaAuthenticatorSetup({ uri, qrCode, secret, adding }: Props) {
