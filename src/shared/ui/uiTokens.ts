@@ -44,6 +44,9 @@ export const FIN_WARN = '#f59e0b'                             // attention / ove
 export const ACCENT = 'var(--color-accent)'
 export const ACCENT_SOFT = 'var(--color-accent-soft)'
 
+// Fundo de QR code: branco em qualquer tema, senão a câmera do celular não lê.
+export const QR_BG = '#ffffff'
+
 // Numeric figures use tabular-nums so columns of money align (design parity).
 export const tabularNums: CSSProperties = { fontVariantNumeric: 'tabular-nums' }
 
