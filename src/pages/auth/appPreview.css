@@ -1,0 +1,383 @@
+/* Prévia do app (AppPreview.tsx). Medidas em em: .pv-md e .pv-sm só mudam o
+   font-size. Cores por token (claro e escuro); as dos módulos vêm inline do
+   appPreviewContent. A entrada (barras crescendo, cards subindo) roda uma vez,
+   só com movimento liberado. */
+
+.pv {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 1.1em;
+  background-color: var(--color-surface);
+  box-shadow: 0 1.6em 3.6em -1.8em rgba(0, 0, 0, 0.38), 0 0.2em 0.6em rgba(0, 0, 0, 0.06);
+  color: var(--color-text);
+  line-height: 1.35;
+  text-align: left;
+  user-select: none;
+}
+.pv-md { font-size: 12px; }
+.pv-sm { font-size: 10.5px; }
+
+.pv-chrome {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.7em 0.9em;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-bg-secondary);
+}
+.pv-dot {
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 999px;
+  background-color: var(--color-border-strong);
+  opacity: 0.55;
+}
+.pv-chrome-title {
+  margin-left: 0.4em;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.95em;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.pv-body { display: flex; min-height: 0; }
+.pv-main {
+  flex: 1;
+  min-width: 0;
+  padding: 0.9em;
+  background-color: var(--color-bg);
+}
+
+/* Barra lateral (só no tamanho md). */
+.pv-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  width: 10.5em;
+  flex-shrink: 0;
+  padding: 0.8em 0.6em;
+  border-right: 1px solid var(--color-border);
+  background-color: var(--color-bg-secondary);
+}
+.pv-search {
+  margin-bottom: 0.4em;
+  padding: 0.35em 0.6em;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5em;
+  background-color: var(--color-surface);
+  color: var(--color-text-muted);
+}
+.pv-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.35em 0.5em;
+  overflow: hidden;
+  border-radius: 0.45em;
+  color: var(--color-text-subtle);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pv-nav-on {
+  background-color: var(--color-hover);
+  color: var(--color-text);
+  font-weight: 600;
+}
+.pv-nav-dot {
+  width: 0.55em;
+  height: 0.55em;
+  flex-shrink: 0;
+  border-radius: 0.2em;
+}
+.pv-nav-fav { padding-left: 1.55em; }
+.pv-side-label {
+  margin: 0.7em 0 0.1em 0.5em;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Peças comuns. */
+.pv-panel { display: flex; flex-direction: column; gap: 0.7em; }
+.pv-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; }
+.pv-h { font-size: 1.15em; font-weight: 700; }
+.pv-muted { color: var(--color-text-muted); }
+.pv-row { display: flex; justify-content: space-between; gap: 0.6em; }
+.pv-chip {
+  display: inline-flex;
+  padding: 0.1em 0.5em;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: 0.92em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pv-card-meta > span:last-child { white-space: nowrap; }
+.pv-chip-lg { align-self: flex-start; padding: 0.25em 0.7em; font-size: 1em; }
+.pv-meter {
+  display: block;
+  height: 0.5em;
+  overflow: hidden;
+  border-radius: 999px;
+  background-color: var(--color-hover);
+}
+.pv-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left;
+}
+.pv-kicker {
+  font-size: 0.85em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Quadro kanban. */
+.pv-tabs {
+  display: inline-flex;
+  gap: 0.2em;
+  padding: 0.2em;
+  border: 1px solid var(--color-border);
+  border-radius: 0.55em;
+  background-color: var(--color-bg-secondary);
+}
+.pv-tab { padding: 0.2em 0.55em; border-radius: 0.4em; font-size: 0.9em; color: var(--color-text-muted); }
+.pv-tab-on {
+  background-color: var(--color-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  color: var(--color-text);
+  font-weight: 600;
+}
+.pv-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6em; }
+.pv-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  padding: 0.55em;
+  border-radius: 0.7em;
+  background-color: var(--color-bg-secondary);
+}
+.pv-col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.92em;
+  font-weight: 600;
+  color: var(--color-text-subtle);
+}
+.pv-wip {
+  padding: 0 0.45em;
+  border-radius: 999px;
+  background-color: var(--color-hover);
+  font-size: 0.85em;
+  color: var(--color-text-muted);
+}
+.pv-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45em;
+  padding: 0.55em 0.6em;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6em;
+  background-color: var(--color-surface);
+}
+.pv-card-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-weight: 500;
+}
+.pv-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3em 0.4em;
+  font-size: 0.85em;
+  color: var(--color-text-muted);
+}
+
+/* Finanças. */
+.pv-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6em; }
+.pv-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+  padding: 0.6em 0.7em;
+  border: 1px solid var(--color-border);
+  border-radius: 0.7em;
+  background-color: var(--color-surface);
+}
+.pv-kpi strong { font-size: 1.15em; font-variant-numeric: tabular-nums; }
+.pv-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.8em;
+  height: 7em;
+  padding: 0.6em 0.7em 1.6em;
+  border: 1px solid var(--color-border);
+  border-radius: 0.7em;
+  background-color: var(--color-surface);
+}
+.pv-bars {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.2em;
+  height: 100%;
+}
+.pv-bar { width: 0.7em; border-radius: 0.25em 0.25em 0 0; transform-origin: bottom; }
+.pv-month { position: absolute; bottom: -1.4em; font-size: 0.82em; color: var(--color-text-muted); }
+.pv-budget { display: flex; flex-direction: column; gap: 0.4em; }
+
+/* Página (nota + tarefas + desenho) e estudos. */
+.pv-page-title { font-size: 1.35em; }
+.pv-line { display: block; height: 0.55em; border-radius: 999px; background-color: var(--color-hover); }
+.pv-checks { display: flex; flex-direction: column; gap: 0.45em; }
+.pv-check { display: flex; align-items: center; gap: 0.55em; }
+.pv-check-done { color: var(--color-text-muted); text-decoration: line-through; }
+.pv-box {
+  width: 0.95em;
+  height: 0.95em;
+  flex-shrink: 0;
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: 0.25em;
+}
+.pv-drawing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  padding: 0.6em;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 0.7em;
+  background-color: var(--color-surface);
+}
+.pv-drawing svg { width: 100%; height: auto; }
+
+/* Visão geral: o quadro com um cartão de saldo por cima. */
+.pv-overview { position: relative; padding-bottom: 1.4em; }
+.pv-float {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  width: 11em;
+  padding: 0.7em 0.8em;
+  border: 1px solid var(--color-border);
+  border-radius: 0.8em;
+  background-color: var(--color-surface);
+  box-shadow: 0 1em 2em -1em rgba(0, 0, 0, 0.45);
+}
+.pv-float strong { font-size: 1.3em; font-variant-numeric: tabular-nums; }
+.pv-mini-bars { display: flex; align-items: flex-end; gap: 0.25em; height: 2.2em; margin-top: 0.3em; }
+.pv-mini-bars > span { flex: 1; border-radius: 0.2em 0.2em 0 0; opacity: 0.85; transform-origin: bottom; }
+
+/* Quadro: cronograma e lista (as três visões leem o mesmo estado). */
+.pv-done { color: var(--color-text-muted); text-decoration: line-through; }
+.pv-timeline { display: flex; flex-direction: column; gap: 0.45em; }
+.pv-tl-row {
+  display: grid;
+  grid-template-columns: minmax(0, 9em) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6em;
+}
+.pv-tl-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pv-tl-track {
+  position: relative;
+  height: 1.5em;
+  border-radius: 0.4em;
+  background-color: var(--color-bg-secondary);
+  /* Três semanas. */
+  background-image: linear-gradient(to right, transparent calc(33.33% - 1px), var(--color-border) calc(33.33% - 1px), var(--color-border) 33.33%, transparent 33.33%, transparent calc(66.66% - 1px), var(--color-border) calc(66.66% - 1px), var(--color-border) 66.66%, transparent 66.66%);
+}
+.pv-tl-bar { position: absolute; top: 0.3em; bottom: 0.3em; border-radius: 0.3em; opacity: 0.85; }
+.pv-tl-bar-done { opacity: 0.3; }
+.pv-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.7em;
+  background-color: var(--color-surface);
+}
+.pv-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.5em 0.7em;
+}
+.pv-list-row + .pv-list-row { border-top: 1px solid var(--color-border); }
+.pv-list-title { overflow: hidden; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+.pv-wip-over {
+  background-color: color-mix(in srgb, var(--color-error) 16%, transparent);
+  color: var(--color-error-text);
+  font-weight: 700;
+}
+
+/* ─── Demonstração (.pv-live, na landing): controles nativos com o visual de
+   cima. O rádio/checkbox fica escondido (sr-only) dentro do rótulo. */
+.pv-hint {
+  margin-left: auto;
+  padding: 0.1em 0.6em;
+  border-radius: 999px;
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+.pv-live label,
+.pv-live button { cursor: pointer; }
+:where(.pv-live button) { color: inherit; font: inherit; text-align: inherit; }
+.pv-live .pv-card { width: 100%; }
+/* Alvos de pelo menos 24 px (WCAG 2.5.8), também no tamanho do celular. */
+.pv-live .pv-nav,
+.pv-live .pv-tab,
+.pv-live .pv-check { min-block-size: 24px; }
+.pv-live .pv-tab { display: inline-flex; align-items: center; }
+/* O anel de foco vai no rótulo (o campo de dentro é invisível). */
+.pv-live label:has(> input:focus-visible) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.pv-live .pv-card:focus-visible { outline-offset: 1px; }
+.pv-live .pv-bars:not(.pv-bars-on) .pv-bar { opacity: 0.4; }
+/* A janela não muda de altura a cada módulo (o hero não pula). */
+.pv-live .pv-main { min-height: 26.5em; }
+/* Na demonstração o saldo vai embaixo do quadro: por cima, cobriria os cards movidos. */
+.pv-live .pv-overview { display: flex; flex-direction: column; gap: 0.7em; padding-bottom: 0; }
+.pv-live .pv-float { position: static; align-self: flex-end; }
+@media (hover: hover) {
+  .pv-live .pv-nav:not(.pv-nav-on):hover { background-color: var(--color-hover); color: var(--color-text); }
+  .pv-live .pv-tab:not(.pv-tab-on):hover { color: var(--color-text); }
+  .pv-live .pv-card:hover { border-color: var(--color-border-strong); }
+  .pv-live .pv-bars:hover .pv-bar { opacity: 1; }
+  .pv-live .pv-check:hover .pv-box { border-color: var(--color-text-muted); }
+}
+
+@keyframes pv-grow { from { scale: 1 0; } }
+@keyframes pv-fill { from { scale: 0 1; } }
+@keyframes pv-rise { from { opacity: 0; translate: 0 0.6em; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .pv-bar,
+  .pv-mini-bars > span { animation: pv-grow 700ms var(--motion-ease) 200ms both; }
+  .pv-meter > span { animation: pv-fill 800ms var(--motion-ease) 300ms both; }
+  .pv-card { animation: pv-rise var(--motion-slow) var(--motion-ease) both; }
+  .pv-col:nth-child(2) .pv-card { animation-delay: 80ms; }
+  .pv-col:nth-child(3) .pv-card { animation-delay: 160ms; }
+  .pv-float { animation: pv-rise 480ms var(--motion-ease) 260ms both; }
+  .pv-live .pv-bar { transition: opacity var(--motion-fast) var(--motion-ease); }
+  .pv-progress { transition: width var(--motion-base) var(--motion-ease); }
+}

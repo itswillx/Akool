@@ -1,5 +1,5 @@
 import { lazy, Suspense, useRef, useState } from 'react'
-import { Database, Gift, KeyRound, Lock, LogOut, ScrollText, ShieldCheck, User, Users, X } from 'lucide-react'
+import { Bell, Database, Gift, KeyRound, Lock, LogOut, ScrollText, ShieldCheck, User, Users, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
@@ -9,7 +9,9 @@ import MfaSection from './MfaSection'
 import ProfileTab from './settings/ProfileTab'
 import PasswordTab from './settings/PasswordTab'
 import MyInvitesTab from './settings/MyInvitesTab'
+import { NotificationPrefsTab } from './notifications/NotificationPrefsTab'
 import { PanelFallback, TabBtn } from './settings/settingsUi'
+import { SETTINGS_FORM_MAX_WIDTH, settingsShellSize } from './settings/settingsTokens'
 
 // ARCH-008: a casca das Configurações (cabeçalho, abas, rodapé). Cada aba é
 // um componente em settings/; os painéis de admin carregam sob demanda.
@@ -24,20 +26,26 @@ const UserManagementPanel = lazy(() => import('./UserManagementPanel'))
 const BackupPanel = lazy(() => import('../modules/backup'))
 const AuditLogPanel = lazy(() => import('../modules/audit'))
 
+export type SettingsTab = 'profile' | 'password' | 'security' | 'notifications' | 'invites' | 'api' | 'users' | 'backup' | 'audit'
+type Tab = SettingsTab
+
 interface Props {
   open: boolean
   onClose: () => void
+  /** Aba ao abrir (NOTIF-001: o alerta de backup abre direto em Backup). */
+  initialTab?: SettingsTab
 }
 
-type Tab = 'profile' | 'password' | 'security' | 'invites' | 'api' | 'users' | 'backup' | 'audit'
+const ADMIN_TABS: ReadonlySet<SettingsTab> = new Set(['users', 'backup', 'audit'])
 
-export default function UserSettingsModal({ open, onClose }: Props) {
+export default function UserSettingsModal({ open, onClose, initialTab }: Props) {
   const { user, isAdmin, signOut } = useAuth()
   const { t } = useLanguage()
   // O fundo fecha (clique fora), então o Esc também (UX-003).
   const { titleId, dialogProps } = useDialog({ open, onClose, closeOnEsc: true })
   const isMobile = useIsMobile()
-  const [tab, setTab] = useState<Tab>('profile')
+  // Aba de admin pedida por quem não é admin abre no Perfil.
+  const [tab, setTab] = useState<Tab>(() => (initialTab && (isAdmin || !ADMIN_TABS.has(initialTab)) ? initialTab : 'profile'))
   const overlayRef = useRef<HTMLDivElement>(null)
 
   if (!open) return null
@@ -46,9 +54,10 @@ export default function UserSettingsModal({ open, onClose }: Props) {
     if (e.target === overlayRef.current) onClose()
   }
 
-  // Os painéis de admin precisam de uma casca bem mais larga e alta do que as
-  // abas da conta, que ficam compactas.
-  const wideTab = tab === 'users' || tab === 'backup' || tab === 'audit'
+  // Um tamanho só para todas as abas: settingsShellSize não recebe a aba. Os
+  // painéis de admin cuidam da própria rolagem; as abas da conta rolam aqui,
+  // com os formulários limitados a SETTINGS_FORM_MAX_WIDTH.
+  const adminPanel = tab === 'users' || tab === 'backup' || tab === 'audit'
 
   return (
     <div role="presentation"
@@ -56,45 +65,55 @@ export default function UserSettingsModal({ open, onClose }: Props) {
       onClick={handleOverlayClick}
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? 12 : 24 }}
     >
-      <div {...dialogProps} style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.24)', width: '100%', maxWidth: wideTab ? (isMobile ? '100%' : 980) : 460, height: wideTab ? 'calc(100dvh - 48px)' : undefined, maxHeight: 'calc(100dvh - 48px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px 0' }}>
-          <div>
-            <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--color-text)' }}>{t('settings_title')}</h2>
-            <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--color-text-muted)' }}>{user?.email}</p>
-          </div>
-          <button type="button" aria-label={t('dialog_close')} onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>
+      <div {...dialogProps} style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.24)', width: '100%', ...settingsShellSize(isAdmin, isMobile), display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Tudo num eixo central; só o fechar fica no canto. */}
+        <div style={{ position: 'relative', textAlign: 'center', padding: '20px 64px 0' }}>
+          <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--color-text)' }}>{t('settings_title')}</h2>
+          <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--color-text-muted)', overflowWrap: 'anywhere' }}>{user?.email}</p>
+          <button type="button" aria-label={t('dialog_close')} onClick={onClose} style={{ position: 'absolute', top: 20, right: 24, width: 32, height: 32, borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>
             <X size={15} />
           </button>
         </div>
 
-        <div className="finance-hide-scrollbar" style={{ display: 'flex', gap: 3, padding: '16px 24px 0', flexWrap: 'nowrap', overflowX: 'auto' }}>
-          <TabBtn active={tab === 'profile'} onClick={() => setTab('profile')} icon={<User size={13} />} label={t('settings_tab_profile')} />
-          <TabBtn active={tab === 'password'} onClick={() => setTab('password')} icon={<Lock size={13} />} label={t('settings_tab_password')} />
-          <TabBtn active={tab === 'security'} onClick={() => setTab('security')} icon={<ShieldCheck size={13} />} label={t('settings_tab_security')} />
-          <TabBtn active={tab === 'invites'} onClick={() => setTab('invites')} icon={<Gift size={13} />} label={t('settings_tab_invites')} />
-          <TabBtn active={tab === 'api'} onClick={() => setTab('api')} icon={<KeyRound size={13} />} label={t('settings_tab_api')} />
-          {isAdmin && <TabBtn active={tab === 'users'} onClick={() => setTab('users')} icon={<Users size={13} />} label={t('sidebar_users')} />}
-          {isAdmin && <TabBtn active={tab === 'backup'} onClick={() => setTab('backup')} icon={<Database size={13} />} label={t('sidebar_backup')} />}
-          {isAdmin && <TabBtn active={tab === 'audit'} onClick={() => setTab('audit')} icon={<ScrollText size={13} />} label={t('sidebar_audit')} />}
+        {/* max-content + margin auto: centralizada quando cabe; quando não cabe
+            (celular), a rolagem começa na primeira aba. */}
+        <div className="finance-hide-scrollbar" style={{ padding: '16px 24px 0', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', gap: 3, width: 'max-content', margin: '0 auto' }}>
+            <TabBtn active={tab === 'profile'} onClick={() => setTab('profile')} icon={<User size={13} />} label={t('settings_tab_profile')} />
+            <TabBtn active={tab === 'password'} onClick={() => setTab('password')} icon={<Lock size={13} />} label={t('settings_tab_password')} />
+            <TabBtn active={tab === 'security'} onClick={() => setTab('security')} icon={<ShieldCheck size={13} />} label={t('settings_tab_security')} />
+            <TabBtn active={tab === 'notifications'} onClick={() => setTab('notifications')} icon={<Bell size={13} />} label={t('settings_tab_notifications')} />
+            <TabBtn active={tab === 'invites'} onClick={() => setTab('invites')} icon={<Gift size={13} />} label={t('settings_tab_invites')} />
+            <TabBtn active={tab === 'api'} onClick={() => setTab('api')} icon={<KeyRound size={13} />} label={t('settings_tab_api')} />
+            {isAdmin && <TabBtn active={tab === 'users'} onClick={() => setTab('users')} icon={<Users size={13} />} label={t('sidebar_users')} />}
+            {isAdmin && <TabBtn active={tab === 'backup'} onClick={() => setTab('backup')} icon={<Database size={13} />} label={t('sidebar_backup')} />}
+            {isAdmin && <TabBtn active={tab === 'audit'} onClick={() => setTab('audit')} icon={<ScrollText size={13} />} label={t('sidebar_audit')} />}
+          </div>
         </div>
 
         <div style={{ height: 1, backgroundColor: 'var(--color-border)', margin: '12px 0 0' }} />
 
-        <div style={wideTab
+        <div style={adminPanel
           ? { flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }
-          : { padding: '20px 24px 24px', overflowY: 'auto', minHeight: 0, flex: 1 }}>
+          // A barra de rolagem reserva espaço dos dois lados: o conteúdo fica no centro com ou sem ela.
+          : { padding: '20px 24px 24px', overflowY: 'auto', scrollbarGutter: 'stable both-edges', minHeight: 0, flex: 1 }}>
           {tab === 'users' && <Suspense fallback={<PanelFallback />}><UserManagementPanel /></Suspense>}
           {tab === 'backup' && <Suspense fallback={<PanelFallback />}><BackupPanel /></Suspense>}
           {tab === 'audit' && <Suspense fallback={<PanelFallback />}><AuditLogPanel /></Suspense>}
-          {tab === 'api' && <ApiTokensSection />}
-          {tab === 'security' && <MfaSection />}
-          {tab === 'profile' && <ProfileTab />}
-          {tab === 'password' && <PasswordTab />}
-          {tab === 'invites' && <MyInvitesTab />}
+          {!adminPanel && (
+            <div style={{ maxWidth: SETTINGS_FORM_MAX_WIDTH, margin: '0 auto' }}>
+              {tab === 'api' && <ApiTokensSection />}
+              {tab === 'security' && <MfaSection />}
+              {tab === 'profile' && <ProfileTab />}
+              {tab === 'password' && <PasswordTab />}
+              {tab === 'invites' && <MyInvitesTab />}
+              {tab === 'notifications' && <NotificationPrefsTab />}
+            </div>
+          )}
         </div>
 
         {/* Rodapé fixo, fora do corpo que rola: sair fica junto da conta. */}
-        <div style={{ borderTop: '1px solid var(--color-border)', padding: '12px 24px', flexShrink: 0 }}>
+        <div style={{ borderTop: '1px solid var(--color-border)', padding: '12px 24px', flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
           <button
             type="button"
             onClick={() => { onClose(); void signOut() }}

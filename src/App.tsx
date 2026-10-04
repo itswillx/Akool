@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
+import type { ReactNode } from 'react'
 import { LOCAL_KEYS } from './lib/localKeys'
 import { Menu } from 'lucide-react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -9,9 +10,8 @@ import { OnboardingProvider } from './contexts/OnboardingContext'
 import { LanguageProvider, useLanguage } from './i18n/LanguageContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { WorkspaceModeProvider } from './contexts/WorkspaceModeContext'
-import AuthPage from './pages/AuthPage'
-import ResetPasswordPage from './pages/ResetPasswordPage'
-import MfaChallengePage from './pages/MfaChallengePage'
+import { hasStoredSession } from './lib/sessionHint'
+import { authScreen } from './lib/authScreen'
 import Sidebar from './components/Sidebar'
 import MainContent from './components/MainContent'
 import WorkspaceModeSwitch from './components/WorkspaceModeSwitch'
@@ -24,9 +24,26 @@ import { localDateKey } from './lib/localDate'
 import { setObservabilityUser } from './lib/observability'
 import { onReconnect } from './lib/connectivity'
 import OfflineBanner from './components/OfflineBanner'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { onAppEvent } from './lib/appEvents'
+import type { SettingsTab } from './components/UserSettingsModal'
 
 // PERF-009: fora do boot (leva o AvatarCropModal e o react-easy-crop junto).
 const UserSettingsModal = lazy(() => import('./components/UserSettingsModal'))
+// NOTIF-001: o sino (com a navegação das notificações) é um chunk à parte; o
+// contexto das notificações continua no boot. Enquanto chega, um espaço do
+// mesmo tamanho segura a barra do topo.
+const NotificationBell = lazy(() => import('./components/notifications/NotificationBell').then(m => ({ default: m.NotificationBell })))
+
+// PERF-012: as telas de entrada (landing, login, MFA, redefinição de senha) são
+// um chunk à parte: quem está logado nunca baixa. Sem sessão guardada, o chunk
+// começa a baixar já no boot, em paralelo com a checagem de sessão, e a tela de
+// carregamento cobre a espera (Suspense abaixo).
+const loadAuthPages = () => import('./pages/auth/authPages')
+const AuthPage = lazy(() => loadAuthPages().then(m => ({ default: m.AuthPage })))
+const ResetPasswordPage = lazy(() => loadAuthPages().then(m => ({ default: m.ResetPasswordPage })))
+const MfaChallengePage = lazy(() => loadAuthPages().then(m => ({ default: m.MfaChallengePage })))
+if (!hasStoredSession()) loadAuthPages().catch(() => {})
 import { getT, toLang } from './i18n/translations'
 
 // UX-003: a sidebar aberta é um painel modal (Esc fecha, Tab preso, foco volta
@@ -65,14 +82,37 @@ function SidebarToggle({ open, onOpen }: { open: boolean; onOpen: () => void }) 
   )
 }
 
+// A tela de carregamento do boot; também o fallback do Suspense das telas de entrada.
+function BootScreen() {
+  const { t } = useLanguage()
+  return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-bg-secondary)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: 'var(--color-logo-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-logo-text)', fontWeight: 700 }}>A</div>
+        <span style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>{t('app_loading')}</span>
+      </div>
+    </div>
+  )
+}
+
 function AppInner() {
   const { user, profile, loading, signOut, justSignedIn, recoveryMode, mfaPending } = useAuth()
   // UX-011: o AppInner já está dentro do LanguageProvider (idioma do perfil ou
   // da tela de login).
   const { t } = useLanguage()
   const isMobile = useIsMobile()
+  // Abaixo de 360 px a palavra "Akool" sai da barra (fica o "A"): o sino cabe
+  // sem empurrar o botão da conta para fora da tela.
+  const isNarrow = useIsMobile(359)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
+  // Aba das Configurações ao abrir (NOTIF-001: o alerta de backup e as
+  // preferências de notificação abrem direto na aba certa).
+  const [accountTab, setAccountTab] = useState<SettingsTab | undefined>()
+  useEffect(() => onAppEvent('settings_open', ({ tab }) => {
+    setAccountTab(tab)
+    setShowAccount(true)
+  }), [])
   const [dailyLoginRequired, setDailyLoginRequired] = useState(false)
   const { showToast } = useToast()
   // Conta já checada neste boot (REL-007).
@@ -90,6 +130,9 @@ function AppInner() {
       // Fora do corpo do efeito: o aviso fica marcado antes do SIGNED_OUT,
       // e a tela de login já abre explicando o porquê.
       queueMicrotask(() => {
+        // A tela de login vem num chunk à parte: pede antes de sair, para o
+        // relogin do dia não esperar a rede.
+        loadAuthPages().catch(() => {})
         setDailyLoginRequired(true)
         void signOut()
       })
@@ -116,25 +159,21 @@ function AppInner() {
   })
 
 
-  if (loading) {
-    return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-bg-secondary)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: 'var(--color-logo-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-logo-text)', fontWeight: 700 }}>A</div>
-          <span style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>{t('app_loading')}</span>
-        </div>
-      </div>
-    )
-  }
+  // Ordem das telas antes da área logada: src/lib/authScreen.ts (com teste).
+  const screen = authScreen({ loading, recoveryMode, signedIn: !!user, mfaPending })
+  if (screen === 'boot') return <BootScreen />
 
-  // Recovery link flow: show the set-new-password screen even while `user`
-  // is momentarily null (the page handles the missing-session case itself).
-  if (recoveryMode) return <ResetPasswordPage />
+  // As telas de entrada vêm do chunk lazy; enquanto ele chega, a mesma tela de
+  // carregamento do boot (sem flash). Falha do chunk: ErrorBoundary da raiz +
+  // installChunkReload (main.tsx).
+  const gate = (node: ReactNode) => <Suspense fallback={<BootScreen />}>{node}</Suspense>
 
-  if (!user) return <AuthPage dailyLoginRequired={dailyLoginRequired} />
-
-  // SEC-004: conta com MFA ativo entra só depois do código (sessão AAL2).
-  if (mfaPending) return <MfaChallengePage />
+  // MFA (SEC-004) e, na recuperação de uma conta com MFA, o código antes da senha nova.
+  if (screen === 'mfa') return gate(<MfaChallengePage />)
+  if (screen === 'reset') return gate(<ResetPasswordPage />)
+  // A flag do login diário só vale até a pessoa entrar de novo; sem zerá-la,
+  // um "Sair" no fim do dia abria direto em #entrar com a faixa de sessão expirada.
+  if (screen === 'signin') return gate(<AuthPage dailyLoginRequired={dailyLoginRequired} onSignedIn={() => setDailyLoginRequired(false)} />)
 
   const closeSidebar = () => setSidebarOpen(false)
 
@@ -155,11 +194,17 @@ function AppInner() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)', flexShrink: 0 }}>
               <SidebarToggle open={sidebarOpen} onOpen={() => setSidebarOpen(true)} />
               <div style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: 'var(--color-logo-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-logo-text)', fontWeight: 700, fontSize: 13 }}>A</div>
-              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>Akool</span>
+              {!isNarrow && <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>Akool</span>}
               <WorkspaceModeSwitch />
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/* Sem rede, o chunk do sino falha sozinho: o resto da barra e do app seguem. */}
+                <ErrorBoundary fallback={<span aria-hidden="true" style={{ width: 34, height: 32, flexShrink: 0 }} />}>
+                  <Suspense fallback={<span aria-hidden="true" style={{ width: 34, height: 32, flexShrink: 0 }} />}>
+                    <NotificationBell isMobile={isMobile} />
+                  </Suspense>
+                </ErrorBoundary>
                 <button
-                  onClick={() => setShowAccount(true)}
+                  onClick={() => { setAccountTab(undefined); setShowAccount(true) }}
                   title={profile?.display_name || user?.email || ''}
                   aria-label={t('account_menu')}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, padding: isMobile ? 4 : '0 12px 0 5px', borderRadius: 9, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)', cursor: 'pointer', color: 'var(--color-text)', flexShrink: 0 }}
@@ -183,7 +228,7 @@ function AppInner() {
           <MainContent isMobile={isMobile} />
           {showAccount && (
             <Suspense fallback={null}>
-              <UserSettingsModal open onClose={() => setShowAccount(false)} />
+              <UserSettingsModal open initialTab={accountTab} onClose={() => setShowAccount(false)} />
             </Suspense>
           )}
         </main>

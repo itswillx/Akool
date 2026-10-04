@@ -18,7 +18,8 @@ describe('inventário de chaves (QA-006)', () => {
   })
 
   it('o que sobrevive ao logout é só do aparelho', () => {
-    expect([...KEEP_ON_SIGN_OUT].sort()).toEqual([LOCAL_KEYS.authLang, LOCAL_KEYS.chunkReloadAt, LOCAL_KEYS.theme].sort())
+    // NOTIF-001: as categorias sem aviso ao chegar são do aparelho (só nomes de categoria, nada do usuário).
+    expect([...KEEP_ON_SIGN_OUT].sort()).toEqual([LOCAL_KEYS.authLang, LOCAL_KEYS.chunkReloadAt, LOCAL_KEYS.theme, LOCAL_KEYS.notificationPrefs].sort())
   })
 })
 

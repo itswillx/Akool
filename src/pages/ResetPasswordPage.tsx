@@ -1,75 +1,84 @@
-import { useState } from 'react'
-import { LOCAL_KEYS } from '../lib/localKeys'
+import { useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 import { Lock } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { PasswordInput, PasswordStrengthMeter } from '../components/PasswordFields'
+import { PasswordInput } from '../components/PasswordFields'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { Field } from '@/shared/ui/Field'
+import { ghostBtnStyle } from '@/shared/ui/uiTokens'
 import { isPasswordValid } from '../lib/passwordPolicy'
-import { getT, toLang } from '../i18n/translations'
+import { AuthCardLayout, AuthShell } from './auth/AuthShell'
+import { FormNotice } from './auth/FormNotice'
+import { PasswordChecklist } from './auth/PasswordChecklist'
+import { useAuthLang } from './auth/useAuthLang'
 
 // Shown when the app is opened from a password-recovery email link
-// (recoveryMode in AuthContext). Rendered outside the LanguageProvider,
-// so language comes from the same localStorage key AuthPage uses.
-const RESET_LABEL_STYLE = { display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 } as const
+// (recoveryMode in AuthContext). Same shell as the sign-in screen; the
+// language comes from the same localStorage key AuthPage writes (the profile
+// is not loaded yet).
+const LABEL_STYLE = { display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 } as const
+
+interface Errors { newPwd?: string; confirm?: string; form?: string }
 
 export default function ResetPasswordPage() {
   const { user, completePasswordReset, cancelPasswordReset } = useAuth()
-  const storedLang = toLang(localStorage.getItem(LOCAL_KEYS.authLang))
-  const t = getT(storedLang)
+  const isMobile = useIsMobile()
+  const { lang, uiLang, t, changeLang } = useAuthLang()
   const [newPwd, setNewPwd] = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [errors, setErrors] = useState<Errors>({})
+  const newRef = useRef<HTMLInputElement>(null)
+  const confirmRef = useRef<HTMLInputElement>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    setError('')
-    if (!isPasswordValid(newPwd)) { setError(t('settings_pwd_short')); return }
-    if (newPwd !== confirmPwd) { setError(t('settings_pwd_mismatch')); return }
+    if (loading) return
+    if (!isPasswordValid(newPwd)) {
+      setErrors({ newPwd: t('settings_pwd_short') })
+      newRef.current?.focus()
+      return
+    }
+    if (newPwd !== confirmPwd) {
+      setErrors({ confirm: t('settings_pwd_mismatch') })
+      confirmRef.current?.focus()
+      return
+    }
+    setErrors({})
     setLoading(true)
-    const { error } = await completePasswordReset(newPwd)
-    if (error === 'same_password') setError(t('settings_pwd_same'))
-    else if (error === 'weak_password') setError(t('auth_password_weak'))
-    else if (error === 'session_missing') setError(t('reset_session_missing'))
-    else if (error) setError(error)
-    // On success recoveryMode flips to false and App renders the signed-in area.
-    setLoading(false)
+    try {
+      const { error } = await completePasswordReset(newPwd)
+      if (error === 'same_password') setErrors({ newPwd: t('settings_pwd_same') })
+      else if (error === 'weak_password') setErrors({ newPwd: t('auth_password_weak') })
+      else if (error === 'session_missing') setErrors({ form: t('reset_session_missing') })
+      else if (error) setErrors({ form: error })
+      // On success recoveryMode flips to false and App renders the signed-in area.
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const cancelBtn = (
-    <button
-      type="button"
-      onClick={() => { void cancelPasswordReset() }}
-      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 13, textDecoration: 'underline', padding: 0 }}
-    >
+  const cancel = () => { void cancelPasswordReset() }
+  const action = (
+    <button type="button" onClick={cancel} style={{ ...ghostBtnStyle, color: 'var(--color-text)', fontSize: isMobile ? 12.5 : 13.5, padding: isMobile ? '6px 9px' : '8px 14px' }}>
       {t('reset_cancel')}
     </button>
   )
 
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-bg-tertiary)', padding: '24px' }}>
-      <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.14)', padding: '40px', width: '100%', maxWidth: 420 }}>
-        {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
-          <svg width="48" height="36" viewBox="0 0 259 194" xmlns="http://www.w3.org/2000/svg">
-            <g transform="translate(0,194) scale(0.1,-0.1)" fill="var(--color-text)" stroke="none">
-              <path d="M575 1157 c-52 -21 -73 -36 -80 -57 -4 -14 -35 -34 -88 -59 -98 -45 -115 -62 -98 -94 23 -41 81 -77 125 -77 23 0 57 -3 78 -6 31 -6 37 -11 42 -39 7 -37 22 -47 48 -34 9 5 19 5 22 1 20 -33 48 -127 56 -188 5 -41 19 -91 30 -113 22 -43 130 -140 191 -171 43 -22 49 -36 21 -44 -25 -8 -65 -64 -58 -81 14 -36 148 -25 161 14 12 40 52 64 112 67 69 3 396 65 557 104 95 24 142 25 204 5 26 -8 69 -16 97 -18 63 -3 72 -26 25 -68 -26 -24 -30 -32 -20 -44 7 -8 28 -15 46 -15 25 0 32 -4 28 -15 -16 -39 104 -44 129 -5 6 11 22 20 34 20 33 0 28 16 -7 29 -30 10 -30 11 -30 83 0 100 -6 116 -44 126 -29 8 -31 11 -32 59 -3 102 -40 158 -124 188 -67 25 -303 37 -565 29 -213 -6 -236 -4 -314 15 -96 24 -157 56 -186 98 -12 15 -49 78 -84 138 -79 137 -103 158 -185 162 -34 1 -74 -3 -91 -10z"/>
-            </g>
-          </svg>
-          <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--color-text)', margin: 0 }}>Akool</p>
-        </div>
-
+    <AuthShell view="forgot" lang={lang} t={t} isMobile={isMobile} onNavigate={cancel} onChangeLang={changeLang} title={t('reset_title')} action={action}>
+      <AuthCardLayout lang={uiLang} t={t} isMobile={isMobile} context="reset">
         {!user ? (
           // Recovery flag set but no session (expired link, reloaded after
           // sign-out, ...): the only way forward is requesting a new link.
           <>
-            <h2 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text)', margin: '0 0 4px' }}>{t('reset_title')}</h2>
+            <h1 tabIndex={-1} style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text)', margin: '0 0 4px' }}>{t('reset_title')}</h1>
             <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: '0 0 24px' }}>{t('reset_session_missing')}</p>
             <button
               type="button"
-              onClick={() => { void cancelPasswordReset() }}
+              onClick={cancel}
               style={{ width: '100%', backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', padding: '11px', borderRadius: 8, fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer' }}
             >
               {t('auth_back_to_login')}
@@ -77,18 +86,23 @@ export default function ResetPasswordPage() {
           </>
         ) : (
           <>
-            <h2 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text)', margin: '0 0 4px' }}>{t('reset_title')}</h2>
-            <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: '0 0 24px' }}>{t('reset_subtitle', { email: user.email ?? '' })}</p>
+            <h1 tabIndex={-1} style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text)', margin: '0 0 4px' }}>{t('reset_title')}</h1>
+            <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: '0 0 20px' }}>{t('reset_subtitle', { email: user.email ?? '' })}</p>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <form onSubmit={handleSubmit} noValidate aria-busy={loading} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
-                <Field label={t('settings_new_password')} labelStyle={RESET_LABEL_STYLE}>{control => (
+                <Field label={t('settings_new_password')} labelStyle={LABEL_STYLE} error={errors.newPwd ?? null} hint={<PasswordChecklist password={newPwd} t={t} />}>{control => (
                   <PasswordInput
                     control={control}
+                    inputRef={newRef}
+                    className="auth-input"
+                    name="new_password"
                     autoComplete="new-password"
+                    enterKeyHint="next"
+                    readOnly={loading}
                     t={t}
                     value={newPwd}
-                    onChange={setNewPwd}
+                    onChange={v => { setNewPwd(v); if (errors.newPwd) setErrors({}) }}
                     show={showNew}
                     onToggleShow={() => setShowNew(v => !v)}
                     placeholder={t('settings_password_min')}
@@ -96,16 +110,19 @@ export default function ResetPasswordPage() {
                 )}</Field>
               </div>
 
-              {newPwd.length > 0 && <PasswordStrengthMeter password={newPwd} t={t} />}
-
               <div>
-                <Field label={t('settings_confirm_password')} labelStyle={RESET_LABEL_STYLE}>{control => (
+                <Field label={t('settings_confirm_password')} labelStyle={LABEL_STYLE} error={errors.confirm ?? null}>{control => (
                   <PasswordInput
                     control={control}
+                    inputRef={confirmRef}
+                    className="auth-input"
+                    name="confirm_password"
                     autoComplete="new-password"
+                    enterKeyHint="go"
+                    readOnly={loading}
                     t={t}
                     value={confirmPwd}
-                    onChange={setConfirmPwd}
+                    onChange={v => { setConfirmPwd(v); if (errors.confirm) setErrors({}) }}
                     show={showConfirm}
                     onToggleShow={() => setShowConfirm(v => !v)}
                     placeholder={t('settings_password_repeat')}
@@ -113,21 +130,20 @@ export default function ResetPasswordPage() {
                 )}</Field>
               </div>
 
-              {error && <p role="alert" style={{ color: '#ef4444', fontSize: 13, margin: 0 }}>{error}</p>}
+              {errors.form && <FormNotice tone="error" role="alert">{errors.form}</FormNotice>}
 
               <button
                 type="submit"
-                disabled={loading || !newPwd || !confirmPwd}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', backgroundColor: loading || !newPwd || !confirmPwd ? 'var(--color-btn-disabled)' : 'var(--color-btn-primary)', color: loading || !newPwd || !confirmPwd ? 'var(--color-btn-disabled-text)' : 'var(--color-btn-primary-text)', padding: '11px', borderRadius: 8, fontSize: 14, fontWeight: 600, border: 'none', cursor: loading || !newPwd || !confirmPwd ? 'not-allowed' : 'pointer', transition: 'background-color 0.15s', marginTop: 4 }}
+                aria-disabled={loading}
+                className="auth-submit"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', padding: '11px', borderRadius: 8, fontSize: 14, fontWeight: 600, border: 'none', cursor: loading ? 'progress' : 'pointer', opacity: loading ? 0.85 : 1, marginTop: 4 }}
               >
-                {loading ? t('reset_saving') : <><Lock size={14} /> {t('reset_submit')}</>}
+                {loading ? <><span className="auth-spinner" aria-hidden="true" /> {t('reset_saving')}</> : <><Lock size={14} /> {t('reset_submit')}</>}
               </button>
             </form>
-
-            <p style={{ textAlign: 'center', marginTop: 24, marginBottom: 0 }}>{cancelBtn}</p>
           </>
         )}
-      </div>
-    </div>
+      </AuthCardLayout>
+    </AuthShell>
   )
 }

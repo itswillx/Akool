@@ -63,7 +63,7 @@ describe('staging-reset: functions', () => {
 
   it('empacota o entrypoint com os arquivos locais e de _shared', () => {
     const bundle = functionBundle('admin-ops', (rel: string) => readFileSync(join(ROOT, 'supabase/functions', rel), 'utf8'))
-    // _shared/sentry.ts importa _shared/scrub.ts: vem junto.
-    expect([...bundle.keys()].sort()).toEqual(['_shared/cors.ts', '_shared/scrub.ts', '_shared/sentry.ts', 'admin-ops/index.ts', 'admin-ops/rules.ts'])
+    // _shared/sentry.ts importa _shared/scrub.ts: vem junto; _shared/aal.ts é do SEC-004.
+    expect([...bundle.keys()].sort()).toEqual(['_shared/aal.ts', '_shared/cors.ts', '_shared/scrub.ts', '_shared/sentry.ts', 'admin-ops/index.ts', 'admin-ops/rules.ts'])
   })
 })

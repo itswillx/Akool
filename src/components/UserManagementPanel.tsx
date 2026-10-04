@@ -27,28 +27,26 @@ export default function UserManagementPanel() {
   const refresh = adminTab === 'users' ? users.refresh : invites.refresh
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', backgroundColor: 'var(--color-bg-tertiary)' }}>
+    <div style={{ flex: 1, overflow: 'auto', scrollbarGutter: 'stable both-edges', backgroundColor: 'var(--color-bg-tertiary)' }}>
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: isMobile ? '24px 12px 80px' : '40px 32px 80px' }}>
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 20, textAlign: 'center' }}>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 500 }}>{t('admin_label')}</p>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Users size={26} />
-              {t('admin_title')}
-            </h1>
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={refreshing}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
-            >
-              <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
-              {t('admin_refresh')}
-            </button>
-          </div>
+          <h1 style={{ margin: '4px 0 0', fontSize: 28, fontWeight: 700, color: 'var(--color-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <Users size={26} />
+            {t('admin_title')}
+          </h1>
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 14, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+          >
+            <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
+            {t('admin_refresh')}
+          </button>
         </div>
 
-        <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--color-border)', paddingBottom: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--color-border)', paddingBottom: 0 }}>
           <AdminTabBtn active={adminTab === 'users'} onClick={() => setAdminTab('users')} icon={<Users size={14} />} label={t('admin_tab_users')} />
           <AdminTabBtn active={adminTab === 'invites'} onClick={() => setAdminTab('invites')} icon={<Gift size={14} />} label={t('admin_tab_invites')} />
         </div>

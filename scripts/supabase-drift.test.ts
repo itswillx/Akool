@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error — script .mjs sem tipos; a lógica pura é o que importa aqui.
-import { compareFunctions, compareMigrations, diffSnapshot, repoFunctionSlugs, summarizeAdvisors } from './supabase-drift.mjs'
+import { compareFunctions, compareMigrations, diffSnapshot, policiesReadingProfiles, repoFunctionSlugs, summarizeAdvisors } from './supabase-drift.mjs'
 
 // DEV-005: o check de drift entre o Supabase remoto e o repositório.
 
@@ -96,5 +96,20 @@ describe('supabase-drift: advisors', () => {
       { level: 'ERROR', name: 'rls_disabled_in_public' },
       { level: 'ERROR', name: 'rls_disabled_in_public' },
     ])).toEqual({ byLevel: { WARN: 1, ERROR: 2 }, errors: ['rls_disabled_in_public'] })
+  })
+})
+
+describe('supabase-drift: policies que leem profiles', () => {
+  it('acusa policy fora de profiles que lê profiles direto; is_admin() e as de profiles passam', () => {
+    const rows = [
+      { schemaname: 'public', tablename: 'audit_log', policyname: 'antiga', qual: "(EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text))))", with_check: null },
+      { schemaname: 'public', tablename: 'audit_log', policyname: 'nova', qual: '( SELECT is_admin() AS is_admin)', with_check: null },
+      { schemaname: 'public', tablename: 'profiles', policyname: 'profiles_update', qual: '((id = auth.uid()) OR is_admin())', with_check: 'is_admin()' },
+      { schemaname: 'storage', tablename: 'objects', policyname: 'avatar', qual: null, with_check: "(bucket_id = 'avatars') AND EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid())" },
+    ]
+    expect(policiesReadingProfiles(rows)).toEqual([
+      'policy public.audit_log.antiga: lê profiles direto (use is_admin() ou uma função SECURITY DEFINER)',
+      'policy storage.objects.avatar: lê profiles direto (use is_admin() ou uma função SECURITY DEFINER)',
+    ])
   })
 })

@@ -66,9 +66,10 @@ Caddyfile = '''
 		# SEC-009: CSP só avisando (Report-Only) até as telas logadas serem
 		# conferidas; depois vira Content-Security-Policy. Sem unsafe-inline e sem
 		# unsafe-eval em script-src. style-src precisa de unsafe-inline: BlockNote,
-		# Mantine e Excalidraw injetam <style>. Imagens https de qualquer site
-		# (imagem colada por URL nas notas).
-		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://nhfftophadasiezrzlsv.supabase.co; media-src 'self' blob: https://nhfftophadasiezrzlsv.supabase.co; connect-src 'self' data: blob: https://nhfftophadasiezrzlsv.supabase.co wss://nhfftophadasiezrzlsv.supabase.co https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.figma.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		# Mantine e Excalidraw injetam <style>. img-src aceita https: de qualquer
+		# site (imagem colada por URL nas notas, decisão registrada no SEC-009; a
+		# política anterior só liberava o Supabase e barraria essas imagens).
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: https://nhfftophadasiezrzlsv.supabase.co; connect-src 'self' data: blob: https://nhfftophadasiezrzlsv.supabase.co wss://nhfftophadasiezrzlsv.supabase.co https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.figma.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 	}
 
 	@asset_exists {

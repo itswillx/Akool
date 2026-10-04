@@ -46,6 +46,12 @@
   --color-error: #ef4444;
   --color-success: #10b981;
   --color-warning: #f59e0b;
+  /* Texto de erro/sucesso com 4,5:1 nos fundos fixos (os tokens acima ficam
+     para ícone, borda e fundo); borda de campo com 3:1 no surface (WCAG 1.4.11).
+     Conferidos em scripts/theme-contrast.test.ts. */
+  --color-error-text: #b91c1c;
+  --color-success-text: #047857;
+  --color-border-strong: #8a8985;
   --sticky-yellow-bg: #fef9c3;
   --sticky-yellow-border: #facc15;
   --sticky-green-bg: #dcfce7;
@@ -87,6 +93,9 @@ html.dark {
   --color-error: #f87171;
   --color-success: #34d399;
   --color-warning: #fbbf24;
+  --color-error-text: #f87171;
+  --color-success-text: #34d399;
+  --color-border-strong: #7a7a77;
   --sticky-yellow-bg: #38341c;
   --sticky-yellow-border: #a16207;
   --sticky-green-bg: #1c3325;
@@ -336,6 +345,58 @@ html, body {
 }
 .dualrange:focus-visible::-moz-range-thumb {
   box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
+}
+
+/* Página pública: o contêiner de rolagem recebe o foco por código (para o
+   teclado rolar a landing e para a troca de view anunciar a tela); um anel em
+   volta da página inteira não ajuda ninguém. Os links e botões dentro dele
+   continuam com o anel global. O título focado na troca de view também não
+   precisa de anel: não é interativo. */
+.auth-scroll:focus,
+.auth-scroll h1[tabindex="-1"]:focus-visible {
+  outline: none;
+}
+
+/* Campos das telas de entrada: borda com 3:1 (WCAG 1.4.11), raio 6 (campos),
+   inválido em vermelho, só leitura enquanto envia. O anel de foco é o global. */
+.auth-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--color-text);
+  background-color: var(--color-surface);
+  box-sizing: border-box;
+}
+.auth-input[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+.auth-input[readonly] {
+  background-color: var(--color-input-disabled-bg);
+}
+
+/* Botão de enviar das telas de entrada: anel que gira enquanto a requisição
+   corre; sem movimento para quem pediu menos animação. */
+.auth-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  vertical-align: -2px;
+  animation: auth-spin 0.7s linear infinite;
+}
+@keyframes auth-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-spinner {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.6;
+  }
 }
 
 /* UX-002: na árvore de páginas o anel vai na linha, não no item inteiro (que

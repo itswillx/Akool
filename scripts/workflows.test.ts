@@ -55,6 +55,17 @@ describe('dependabot.yml e audit no CI', () => {
       expect(e.ate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     }
   })
+
+  // O Excalidraw 0.18.1 fixa o sass 1.51.0, que puxa o chokidar 3 e o braces
+  // (GHSA-vfj7-8cjw-p6xm, sem versão corrigida). O override troca pelo sass
+  // 1.79.4 (chokidar 4, sem braces); o dist do Excalidraw nem importa o sass.
+  it('o override do sass sai quando o Excalidraw trocar o sass 1.51.0', () => {
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { overrides: Record<string, unknown> }
+    const lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8')) as { packages: Record<string, { dependencies?: Record<string, string> }> }
+    expect(pkg.overrides.sass).toBe('1.79.4')
+    const excalidrawSass = lock.packages['node_modules/@excalidraw/excalidraw']?.dependencies?.sass
+    expect(excalidrawSass, 'o Excalidraw trocou o sass: tire o override "sass" do package.json e este teste').toBe('1.51.0')
+  })
 })
 
 // DEV-009: o link do preview vem de uma variável do repositório, nunca de um

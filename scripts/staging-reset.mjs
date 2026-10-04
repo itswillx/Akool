@@ -144,6 +144,8 @@ async function applyMigrations(api, from) {
 const STAGING_ONLY_SQL = [
   // REL-008: sem os segredos no Vault o backup automático só falharia.
   "select cron.unschedule(jobid) from cron.job where jobname = 'site-backup-auto'",
+  // REL-001: o alerta de backup atrasado só faz sentido onde há backup.
+  "select cron.unschedule(jobid) from cron.job where jobname = 'site-backup-stale-alert'",
 ]
 
 async function stagingSteps(api) {

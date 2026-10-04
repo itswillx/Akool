@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { allowedOrigins, corsHeaders } from "../_shared/cors.ts";
 import { captureException } from "../_shared/sentry.ts";
 import { cronSecretMatches, decideAuth } from "./auth.ts";
+import { MFA_REQUIRED, mfaRequired } from "../_shared/aal.ts";
 import { BACKUP_TABLES, EXCLUDED_TABLES, STORAGE_BUCKETS } from "./tables.ts";
 
 // SEC-007: CORS em _shared/cors.ts; sem ALLOWED_ORIGINS, só produção.
@@ -65,6 +66,9 @@ async function verifyAdmin(
     .single();
 
   if (profile?.role !== "admin") throw new Error("Forbidden");
+
+  // SEC-004 (etapa B): quem já ativou o MFA precisa de sessão AAL2 aqui (decisão testada em _shared/aal.ts).
+  if (await mfaRequired(serviceClient, user.id, jwt)) throw new Error(MFA_REQUIRED);
   return { userId: user.id };
 }
 
@@ -744,7 +748,7 @@ Deno.serve(async (req: Request) => {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const status = msg === "Unauthorized" ? 401 : msg === "Forbidden" ? 403 : 500;
+    const status = msg === "Unauthorized" || msg === MFA_REQUIRED ? 401 : msg === "Forbidden" ? 403 : 500;
     console.error("[site-backup]", msg);
     // Falha de backup já foi reportada com a tag de alerta (o reporter deduplica).
     if (status === 500) await captureException(err, { fn: "site-backup" });

@@ -44,3 +44,17 @@ export const submitBtnStyle = (disabled: boolean): React.CSSProperties => ({
   cursor: disabled ? 'not-allowed' : 'pointer',
   transition: 'background-color 0.15s',
 })
+
+/**
+ * As Configurações têm um tamanho só, em qualquer aba (antes a casca crescia
+ * nas abas de admin e encolhia nas da conta). Por isso a função não recebe a
+ * aba: só se a pessoa é admin (usuários, backup e auditoria pedem a casca
+ * larga) e se a tela é de celular.
+ */
+export function settingsShellSize(isAdmin: boolean, isMobile: boolean): React.CSSProperties {
+  if (isMobile) return { maxWidth: '100%', height: 'calc(100dvh - 24px)' }
+  return { maxWidth: isAdmin ? 980 : 640, height: 'min(760px, calc(100dvh - 48px))' }
+}
+
+/** Largura máxima dos formulários das abas da conta dentro da casca. */
+export const SETTINGS_FORM_MAX_WIDTH = 600

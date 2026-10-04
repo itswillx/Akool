@@ -72,7 +72,7 @@ describe('labels soltos (UX-007)', () => {
   it('os fluxos migrados continuam sem label solto', () => {
     const current = currentCounts()
     for (const file of [
-      'src/pages/AuthPage.tsx', 'src/pages/ResetPasswordPage.tsx', 'src/pages/MfaChallengePage.tsx',
+      'src/pages/AuthPage.tsx', 'src/pages/auth/AuthForm.tsx', 'src/pages/ResetPasswordPage.tsx', 'src/pages/MfaChallengePage.tsx',
       'src/components/UserSettingsModal.tsx', 'src/components/MfaSection.tsx', 'src/modules/projects/ImportCardsModal.tsx',
     ]) {
       expect(current[file] ?? 0, file).toBe(0)

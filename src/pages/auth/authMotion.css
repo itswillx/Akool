@@ -1,0 +1,191 @@
+/* Movimento das telas de entrada (landing, login, MFA, redefinição de senha).
+   Importado pelo AuthShell: vai no CSS do chunk de auth, fora do boot.
+   Regras (docs/design-system.md, "Movimento"):
+   - todo movimento é opt-in, dentro de prefers-reduced-motion: no-preference;
+   - só opacidade, translate/scale e tamanho; nada infinito além do spinner;
+   - classes com prefixo (auth-, landing-, pv-), nunca nomes de utilitário do
+     Tailwind (ele varre o src e gera CSS para palavras como "transition"). */
+
+:root {
+  --motion-fast: 150ms;
+  --motion-base: 240ms;
+  --motion-slow: 360ms;
+  /* Mesma curva das folhas e gavetas do Financeiro. --ease-out é do Tailwind. */
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes auth-rise {
+  from { opacity: 0; translate: 0 12px; }
+}
+@keyframes auth-fade-in {
+  from { opacity: 0; }
+}
+@keyframes auth-fade-out {
+  to { opacity: 0; }
+}
+@keyframes auth-pop {
+  from { opacity: 0; scale: 0.6; }
+  70% { opacity: 1; scale: 1.06; }
+  to { opacity: 1; scale: 1; }
+}
+
+/* ─── Barra do topo: ganha fundo translúcido, desfoque e sombra nos primeiros
+   64 px de rolagem (animação guiada pela rolagem do .auth-scroll). Não é
+   deslocamento, então vale também com movimento reduzido. As animações vencem
+   o backgroundColor inline. */
+@keyframes auth-topbar-raise {
+  to {
+    background-color: color-mix(in srgb, var(--color-bg) 80%, transparent);
+    border-bottom-color: transparent;
+    box-shadow: 0 10px 28px -18px rgba(0, 0, 0, 0.5);
+    -webkit-backdrop-filter: saturate(1.6) blur(14px);
+    backdrop-filter: saturate(1.6) blur(14px);
+  }
+}
+@supports (animation-timeline: scroll()) {
+  .auth-topbar {
+    animation-name: auth-topbar-raise;
+    animation-duration: 1ms; /* com timeline de rolagem, vira proporção do trecho */
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+    animation-timeline: scroll();
+    animation-range: 0 64px;
+  }
+}
+
+/* ─── Abas Entrar / Criar conta: uma pílula só, que desliza para a aba ativa. */
+.auth-mode {
+  position: relative;
+  isolation: isolate;
+}
+.auth-mode-pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  z-index: -1;
+  border-radius: 6px;
+  background-color: var(--color-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.auth-mode[data-active="signup"] .auth-mode-pill {
+  translate: 100% 0;
+}
+
+/* ─── View Transitions (src/pages/auth/viewTransition.ts). O <html> ganha
+   data-auth-vt durante a transição; os nomes só existem nesse intervalo. */
+
+/* A barra fica por cima e já no estado novo: capturada sozinha, o desfoque não
+   teria o que desfocar. */
+html[data-auth-vt] .auth-topbar { view-transition-name: auth-topbar; }
+html[data-auth-vt]::view-transition-group(auth-topbar) { z-index: 10; animation: none; }
+html[data-auth-vt]::view-transition-old(auth-topbar) { display: none; }
+html[data-auth-vt]::view-transition-new(auth-topbar) { animation: none; }
+
+/* page (landing ↔ login): crossfade da página; o conteúdo novo sobe ao montar
+   (.auth-enter, hero da landing). O palco não tem nome: o snapshot de uma
+   landing rolada viraria uma imagem enorme voando pela tela. */
+html[data-auth-vt]::view-transition-old(root) {
+  animation: auth-fade-out var(--motion-fast) var(--motion-ease) both;
+}
+html[data-auth-vt]::view-transition-new(root) {
+  animation: auth-fade-in var(--motion-base) var(--motion-ease) both;
+}
+
+/* card (dentro do cartão): a caixa muda de tamanho em vez de pular. As imagens
+   do cartão somem e o grupo é pintado como o próprio cartão (sem distorcer o
+   raio); o conteúdo cruza por dentro, recortado. */
+html[data-auth-vt="card"] .auth-card { view-transition-name: auth-card; }
+html[data-auth-vt="card"] .auth-card-body { view-transition-name: auth-card-body; }
+html[data-auth-vt="card"] .auth-mode { view-transition-name: auth-mode; }
+
+html[data-auth-vt="card"]::view-transition-group(auth-card),
+html[data-auth-vt="card"]::view-transition-group(auth-card-body),
+html[data-auth-vt="card"]::view-transition-group(auth-mode) {
+  animation-duration: var(--motion-base);
+  animation-timing-function: var(--motion-ease);
+}
+html[data-auth-vt="card"]::view-transition-group(auth-card) {
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background-color: var(--color-surface);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.14);
+}
+@media (max-width: 768px) {
+  html[data-auth-vt="card"]::view-transition-group(auth-card) {
+    border-radius: 12px;
+    box-shadow: none;
+  }
+}
+html[data-auth-vt="card"]::view-transition-old(auth-card),
+html[data-auth-vt="card"]::view-transition-new(auth-card) {
+  display: none;
+}
+html[data-auth-vt="card"]::view-transition-group(auth-card-body) { overflow: clip; }
+html[data-auth-vt="card"]::view-transition-old(auth-card-body) {
+  animation: auth-fade-out var(--motion-fast) var(--motion-ease) both;
+}
+html[data-auth-vt="card"]::view-transition-new(auth-card-body) {
+  animation: auth-fade-in var(--motion-base) var(--motion-ease) 60ms both;
+}
+/* As abas aparecem ao vivo (a pílula desliza por CSS por cima do cartão que
+   cresce); some ou surge com fade quando só existem de um lado (recuperar). */
+html[data-auth-vt="card"]::view-transition-old(auth-mode) { display: none; }
+html[data-auth-vt="card"]::view-transition-new(auth-mode) { animation: none; }
+html[data-auth-vt="card"]::view-transition-old(auth-mode):only-child {
+  display: block;
+  animation: auth-fade-out var(--motion-fast) var(--motion-ease) both;
+}
+html[data-auth-vt="card"]::view-transition-new(auth-mode):only-child {
+  animation: auth-fade-in var(--motion-base) var(--motion-ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Reserva: o viewTransition.ts nem inicia a transição nesse caso. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* ─── Entradas e micro-interações (só com movimento liberado). */
+@media (prefers-reduced-motion: no-preference) {
+  .auth-enter {
+    animation: auth-rise var(--motion-slow) var(--motion-ease) both;
+  }
+  .auth-stagger > * {
+    animation: auth-rise var(--motion-slow) var(--motion-ease) both;
+  }
+  .auth-stagger > :nth-child(2) { animation-delay: 60ms; }
+  .auth-stagger > :nth-child(3) { animation-delay: 120ms; }
+  .auth-stagger > :nth-child(4) { animation-delay: 180ms; }
+  .auth-stagger > :nth-child(n + 5) { animation-delay: 240ms; }
+
+  .auth-mode-pill {
+    transition: translate var(--motion-base) var(--motion-ease);
+  }
+  .auth-notice {
+    animation: auth-fade-in var(--motion-fast) var(--motion-ease) both;
+  }
+  .auth-pop {
+    animation: auth-pop var(--motion-slow) var(--motion-ease) both;
+  }
+  .auth-input {
+    transition: border-color var(--motion-fast) var(--motion-ease);
+  }
+  .auth-submit {
+    transition: scale var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease);
+  }
+  .auth-submit:active {
+    scale: 0.98;
+  }
+}
+
+@media (hover: hover) {
+  .auth-submit:hover {
+    box-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.55);
+  }
+}
