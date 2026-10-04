@@ -1,15 +1,16 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, userEvent } from '../test/rtl'
+import { render, screen, userEvent, waitFor } from '../test/rtl'
 
-// Tela do código do MFA: quem tem passkey ganha "Entrar com o celular" junto do
-// campo do código. O botão não envia o formulário do código.
+// Tela do código do MFA: a conta com passkey de login ganha "Entrar com o
+// celular" junto do campo do código. O botão não envia o formulário do código.
 
 const auth = vi.hoisted(() => ({
-  hasPasskey: true,
+  passkeys: [{ id: 'pk1' }] as { id: string }[],
   verifyMfa: vi.fn(() => Promise.resolve({ error: null })),
-  verifyMfaPasskey: vi.fn(() => Promise.resolve({ error: null })),
+  signInWithPasskey: vi.fn(() => Promise.resolve({ error: null })),
 }))
+const list = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: auth.passkeys, error: null })))
 // Superconjunto do que a tela usa, hoje e no redesenho das telas de entrada.
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -18,17 +19,17 @@ vi.mock('../contexts/AuthContext', () => ({
     signOut: () => Promise.resolve(),
     recoveryMode: false,
     cancelPasswordReset: () => Promise.resolve(),
-    hasPasskey: auth.hasPasskey,
-    verifyMfaPasskey: auth.verifyMfaPasskey,
+    signInWithPasskey: auth.signInWithPasskey,
   }),
 }))
+vi.mock('../lib/supabase', () => ({ supabase: { auth: { passkey: { list } } } }))
 vi.mock('@/shared/hooks/useIsMobile', () => ({ useIsMobile: () => false }))
 vi.mock('../lib/mfa', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/mfa')>(),
   supportsPasskeys: () => true,
 }))
 
-// A passkey fica atrás de VITE_MFA_PASSKEY (o Supabase hospedado ainda não liga o WebAuthn de MFA).
+// A passkey fica atrás de VITE_MFA_PASSKEY (ligada depois de configurar o Supabase).
 const flags = vi.hoisted(() => ({ passkey: true }))
 vi.mock('../lib/env', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/env')>(),
@@ -38,24 +39,26 @@ vi.mock('../lib/env', async importOriginal => ({
 import MfaChallengePage from './MfaChallengePage'
 
 beforeEach(() => {
-  auth.hasPasskey = true
+  auth.passkeys = [{ id: 'pk1' }]
   auth.verifyMfa.mockClear()
-  auth.verifyMfaPasskey.mockClear()
+  auth.signInWithPasskey.mockClear()
+  list.mockClear()
 })
 
 describe('MfaChallengePage: entrar com o celular', () => {
   it('com passkey, oferece o celular além do código', async () => {
     const user = userEvent.setup()
     render(<MfaChallengePage />)
+    await user.click(await screen.findByRole('button', { name: 'Entrar com o celular' }))
     expect(screen.getByText('O navegador mostra um QR code: leia com a câmera do celular e confirme com Face ID ou digital. O Bluetooth precisa estar ligado nos dois aparelhos.')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Entrar com o celular' }))
-    expect(auth.verifyMfaPasskey).toHaveBeenCalledWith('phone')
+    expect(auth.signInWithPasskey).toHaveBeenCalledTimes(1)
     expect(auth.verifyMfa).not.toHaveBeenCalled()
   })
 
-  it('sem passkey, fica só o código', () => {
-    auth.hasPasskey = false
+  it('sem passkey, fica só o código', async () => {
+    auth.passkeys = []
     render(<MfaChallengePage />)
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('button', { name: 'Entrar com o celular' })).toBeNull()
     expect(screen.getByPlaceholderText('000000')).toBeTruthy()
   })

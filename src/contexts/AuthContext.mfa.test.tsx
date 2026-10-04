@@ -4,10 +4,10 @@ import { act, useState } from 'react'
 import { render, screen, userEvent } from '../test/rtl'
 
 // MFA no login: o código vale para qualquer app autenticador cadastrado, e a
-// passkey ("Entrar com o celular") sobe a sessão sem ida extra à rede.
+// passkey de login ("Entrar com o celular") abre uma sessão que dispensa o código.
 
 type Listener = (event: string, session: unknown) => void
-type Factor = { id: string; factor_type: 'totp' | 'webauthn'; status: 'verified' | 'unverified' }
+type Factor = { id: string; factor_type: 'totp'; status: 'verified' | 'unverified' }
 
 const auth = vi.hoisted(() => {
   const state: { session: unknown; listener: Listener | null } = { session: null, listener: null }
@@ -18,8 +18,9 @@ const mfa = vi.hoisted(() => ({
   challengeAndVerify: vi.fn(({ factorId }: { factorId: string; code: string }) => Promise.resolve(factorId === 'f2'
     ? { data: {}, error: null }
     : { data: null, error: { code: 'mfa_verification_failed', message: 'Invalid TOTP code entered' } })),
-  webauthn: { authenticate: vi.fn<(params: { factorId: string }, overrides?: unknown) => Promise<{ data: unknown; error: unknown }>>() },
 }))
+const passkeySignIn = vi.hoisted(() => vi.fn<() => Promise<{ data: unknown; error: unknown }>>())
+const passwordSignIn = vi.hoisted(() => vi.fn<() => Promise<{ data: unknown; error: unknown }>>())
 vi.mock('../lib/supabase', () => ({
   recoveryLinkDetected: false,
   createEphemeralAuthClient: () => ({}),
@@ -30,9 +31,12 @@ vi.mock('../lib/supabase', () => ({
         auth.listener = cb
         return { data: { subscription: { unsubscribe: () => {} } } }
       },
+      signInWithPassword: passwordSignIn,
+      signInWithPasskey: passkeySignIn,
       mfa,
     },
     rpc: () => ({ select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: null }) }) }) }),
+    from: () => ({ update: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
   },
 }))
 
@@ -44,23 +48,21 @@ function jwt(payload: Record<string, unknown>): string {
   return `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.assinatura`
 }
 
-function session(aal: 'aal1' | 'aal2', factors: Factor[]) {
-  return { access_token: jwt({ sub: 'u1', aal }), user: { id: 'u1', email: 'ana@exemplo.com', factors } }
+function session(aal: 'aal1' | 'aal2', factors: Factor[], amr?: { method: string }[]) {
+  return { access_token: jwt({ sub: 'u1', aal, ...(amr ? { amr } : {}) }), user: { id: 'u1', email: 'ana@exemplo.com', factors } }
 }
 
 const TOTP: Factor = { id: 't1', factor_type: 'totp', status: 'verified' }
-const PASSKEY: Factor = { id: 'pk1', factor_type: 'webauthn', status: 'verified' }
 
 function Probe() {
-  const { verifyMfa, verifyMfaPasskey, hasPasskey, mfaPending } = useAuth()
+  const { signIn, verifyMfa, signInWithPasskey, mfaPending } = useAuth()
   const [result, setResult] = useState('')
   return (
     <div>
-      <span>{`passkey: ${String(hasPasskey)}`}</span>
       <span>{`pendente: ${String(mfaPending)}`}</span>
+      <button type="button" onClick={() => { void signIn('ana@exemplo.com', 'senha-forte').then(r => setResult(`senha: ${String(r.error)}`)) }}>senha</button>
       <button type="button" onClick={() => { void verifyMfa(' 123456 ').then(r => setResult(`totp: ${String(r.error)}`)) }}>totp</button>
-      <button type="button" onClick={() => { void verifyMfaPasskey('phone').then(r => setResult(`resultado: ${String(r.error)}`)) }}>celular</button>
-      <button type="button" onClick={() => { void verifyMfaPasskey('this').then(r => setResult(`resultado: ${String(r.error)}`)) }}>aparelho</button>
+      <button type="button" onClick={() => { void signInWithPasskey().then(r => setResult(`passkey: ${String(r.error)}`)) }}>celular</button>
       <span>{result}</span>
     </div>
   )
@@ -92,52 +94,58 @@ describe('AuthProvider: verifyMfa com dois aparelhos', () => {
   })
 })
 
-describe('AuthProvider: entrar com a passkey', () => {
-  it('sem passkey, não oferece e não tenta', async () => {
-    const user = await setup(session('aal1', [TOTP]))
-    expect(await screen.findByText('passkey: false')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'celular' }))
-    expect(await screen.findByText('resultado: no_factor')).toBeTruthy()
-    expect(mfa.webauthn.authenticate).not.toHaveBeenCalled()
-  })
-
-  it('no computador, pede o QR do celular sem listFactors antes e libera o app', async () => {
-    mfa.webauthn.authenticate.mockImplementation(() => {
-      auth.session = session('aal2', [TOTP, PASSKEY])
-      return Promise.resolve({ data: {}, error: null })
+describe('AuthProvider: entrar com a passkey de login', () => {
+  it('e-mail e senha abrem a tela do código, e o celular entra sem ele', async () => {
+    // Como no supabase-js, o SIGNED_IN da senha chega antes de a promessa resolver.
+    passwordSignIn.mockImplementation(() => {
+      auth.listener?.('SIGNED_IN', session('aal1', [TOTP]))
+      return Promise.resolve({ data: { user: { id: 'u1' }, session: null }, error: null })
     })
-    const user = await setup(session('aal1', [TOTP, PASSKEY]))
-    expect(await screen.findByText('passkey: true')).toBeTruthy()
+    passkeySignIn.mockResolvedValue({ data: { session: session('aal1', [TOTP], [{ method: 'passkey' }]), user: null }, error: null })
+    const user = await setup(null)
+    expect(screen.getByText('pendente: false')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'senha' }))
+    expect(await screen.findByText('senha: null')).toBeTruthy()
     expect(screen.getByText('pendente: true')).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: 'celular' }))
-    expect(await screen.findByText('resultado: null')).toBeTruthy()
+    expect(await screen.findByText('passkey: null')).toBeTruthy()
     expect(screen.getByText('pendente: false')).toBeTruthy()
-    expect(mfa.webauthn.authenticate).toHaveBeenCalledWith({ factorId: 'pk1' }, { hints: ['hybrid'], userVerification: 'required' })
-    expect(mfa.listFactors).not.toHaveBeenCalled()
+    expect(mfa.challengeAndVerify).not.toHaveBeenCalled()
   })
 
-  it('no próprio celular, usa a passkey do aparelho', async () => {
-    mfa.webauthn.authenticate.mockResolvedValue({ data: {}, error: null })
-    const user = await setup(session('aal1', [TOTP, PASSKEY]))
-    await user.click(await screen.findByRole('button', { name: 'aparelho' }))
-    await screen.findByText(/^resultado:/)
-    expect(mfa.webauthn.authenticate).toHaveBeenCalledWith({ factorId: 'pk1' }, { hints: ['client-device'], userVerification: 'required' })
+  it('na tela do código, a sessão aberta com passkey libera o app sem o código', async () => {
+    passkeySignIn.mockResolvedValue({ data: { session: session('aal1', [TOTP], [{ method: 'passkey' }]), user: null }, error: null })
+    const user = await setup(session('aal1', [TOTP]))
+    expect(await screen.findByText('pendente: true')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'celular' }))
+    expect(await screen.findByText('passkey: null')).toBeTruthy()
+    expect(screen.getByText('pendente: false')).toBeTruthy()
+    expect(passkeySignIn).toHaveBeenCalledTimes(1)
+  })
+
+  it('o SIGNED_IN da sessão por passkey também tira a tela do código', async () => {
+    await setup(session('aal1', [TOTP]))
+    expect(await screen.findByText('pendente: true')).toBeTruthy()
+    await act(async () => { auth.listener?.('SIGNED_IN', session('aal1', [TOTP], [{ method: 'passkey' }])) })
+    expect(screen.getByText('pendente: false')).toBeTruthy()
   })
 
   it('cancelar a passkey volta como "cancelled" e a tela do código continua', async () => {
     const notAllowed = Object.assign(new Error('The operation either timed out or was not allowed.'), { name: 'NotAllowedError' })
-    mfa.webauthn.authenticate.mockResolvedValue({ data: null, error: Object.assign(new Error(notAllowed.message), { name: 'NotAllowedError', code: 'ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY', cause: notAllowed }) })
-    const user = await setup(session('aal1', [TOTP, PASSKEY]))
+    passkeySignIn.mockResolvedValue({ data: null, error: Object.assign(new Error(notAllowed.message), { name: 'NotAllowedError', code: 'ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY', cause: notAllowed }) })
+    const user = await setup(session('aal1', [TOTP]))
     await user.click(await screen.findByRole('button', { name: 'celular' }))
-    expect(await screen.findByText('resultado: cancelled')).toBeTruthy()
+    expect(await screen.findByText('passkey: cancelled')).toBeTruthy()
     expect(screen.getByText('pendente: true')).toBeTruthy()
   })
 
-  it('os fatores vêm da sessão de cada evento, não do usuário guardado no login', async () => {
-    await setup(session('aal2', [TOTP]))
-    expect(await screen.findByText('passkey: false')).toBeTruthy()
-    await act(async () => { auth.listener?.('TOKEN_REFRESHED', session('aal2', [TOTP, PASSKEY])) })
-    expect(screen.getByText('passkey: true')).toBeTruthy()
+  it('passkey que não é do Akool volta como "not_found"', async () => {
+    passkeySignIn.mockResolvedValue({ data: null, error: { code: 'webauthn_credential_not_found', message: 'Credential not found' } })
+    const user = await setup(session('aal1', [TOTP]))
+    await user.click(await screen.findByRole('button', { name: 'celular' }))
+    expect(await screen.findByText('passkey: not_found')).toBeTruthy()
   })
 })
