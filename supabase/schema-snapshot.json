@@ -9,6 +9,11 @@
       "active": true,
       "command": "6d0a08bd81614a68372b4c2d3f94d9bb",
       "schedule": "30 5 * * 0"
+    },
+    "site-backup-stale-alert": {
+      "active": true,
+      "command": "4a826f67ba076edd16c48cac2043a08d",
+      "schedule": "0 7 * * *"
     }
   },
   "tables": {
@@ -109,10 +114,10 @@
       "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "public.notifications": {
-      "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
+      "acl": "978ece2f321dd58e55a9cb2c8744b23c",
       "rls": true,
       "kind": "r",
-      "col_acl": "d41d8cd98f00b204e9800998ecf8427e"
+      "col_acl": "9c4b2d5607c9d63bbe1af235520a0005"
     },
     "public.page_presence": {
       "acl": "aa6b191fe965c7bc52d4b557fd7c2351",
@@ -1074,10 +1079,13 @@
     "public.pages.pages_updated_at": "685c18bc5c8490c209782c0892e9a79b",
     "public.pages.guard_page_parent": "18d421b8db56a8acaaa63f22389cd4a9",
     "auth.users.on_auth_user_created": "786e53a33077b3a68f1ec248e238d18a",
+    "public.page_shares.page_shares_notify": "1110714f3d865e7f04b735fd0cb8562a",
     "storage.buckets.protect_buckets_delete": "50288cfc0da92cd8f2f573c018c16382",
     "storage.objects.protect_objects_delete": "45c5692d486583888bac16ef789d847f",
+    "public.notifications.notifications_enrich": "2a7bd7b2a0771f4266ae02dec1e236ad",
     "storage.objects.update_objects_updated_at": "7457963f6a733c584baf08e4e7a451d0",
     "auth.users.on_auth_user_signup_invite_check": "4c63f9a973f4dad9c5e05eae74aff3e5",
+    "public.project_shares.project_shares_notify": "a5031a692b3cab551da0354eed8dbb7a",
     "public.page_shares.page_shares_freeze_target": "1d72e9ed18636cb960f77d8b8384bfd8",
     "public.pages.prevent_page_ownership_transfer": "75418267d1ba103cd92a046e551b3b4d",
     "public.note_contents.note_contents_updated_at": "0a0f67136bd199a2b0cf15aa455dbacb",
@@ -1088,6 +1096,7 @@
     "public.finance_goals.trg_finance_goals_ws_guard": "f8ab92a3317ecf9360d7d3e62bcfdb17",
     "public.finance_loans.trg_finance_loans_ws_guard": "f347c58cab95d4df398cf773132a927c",
     "public.profiles.enforce_profile_privilege_bounds": "4f7d8bb51b4a45c81123403f73709f14",
+    "public.project_cards.project_cards_notify_assignee": "44d628a259058707c495e8e5d0b93e41",
     "public.project_shares.project_shares_freeze_target": "812ffcbd885d6c50a68a1177cbac7d12",
     "storage.buckets.enforce_bucket_name_length_trigger": "7774f4b5e39e4ad07a16a589aef6277c",
     "storage.buckets.protect_bucket_control_update_role": "34d64d2c71ac2a26720ae99bd0da100b",
@@ -1100,6 +1109,7 @@
     "public.finance_recurring.trg_finance_recurring_ws_guard": "0a296e8f7e2d1b148caa7460900b4317",
     "public.finance_suppliers.trg_finance_suppliers_ws_guard": "87b83009bffb127e9e3451e54d0996dc",
     "public.finance_categories.trg_finance_categories_ws_guard": "a00315452bf2044d71f10e36dfa8f9a7",
+    "public.project_cards.project_cards_refresh_assigned_title": "b6c464fa45a064eb494ea2fff19c1ec0",
     "public.finance_store_sales.trg_finance_store_sales_ws_guard": "bbdf634234e82d2857e374c08f639308",
     "public.finance_transactions.trg_finance_transactions_ws_guard": "26c9ffa8dfa16080f95f8d2084109f52",
     "public.finance_loan_payments.trg_finance_loan_payments_ws_guard": "23a45d31489c610589045bc576d68e44",
@@ -1123,10 +1133,15 @@
     "private.cq_on_card_change()": "71c14cce359b074648347ccc00e87988",
     "private.guard_page_parent()": "9f0d220e6a0f5671039df5307e6313a2",
     "public.list_public_tables()": "824af93fee2b1397ace85d735fdcc13e",
+    "private.notify_page_shared()": "74b204d6c691f82e654d453c270cc1eb",
     "public.admin_list_profiles()": "8f8b10ecc6649b80b7ecc7708affc71f",
+    "private.notification_enrich()": "cf11625cd7b199a5a054655c6fe0c280",
+    "private.notify_board_shared()": "30872cf80b01453f9f63a70c3f49136d",
+    "private.notify_stale_backup()": "ce0232a9dd9d99334773c7eac122acdc",
     "private.request_site_backup()": "2d6b8a038a950a26bb89c8c01c07f22b",
     "public.generate_invite_code()": "e9433d2915f26a612e9e32cea705d17d",
     "private.cq_actor(p_actor uuid)": "dbab39e09b5dec3f5fc6dc3275f92ec6",
+    "private.notify_card_assigned()": "48c1e148c8c6d3a6b72f54e989f59ab3",
     "private.shares_freeze_target()": "8e431b27369a2731be324d34cf2d414d",
     "public.cq_boards(p_actor uuid)": "d1c58aefd618c9d1c27a632df896dacc",
     "private.cq_priorities(p text[])": "f68daf2aba85937f8d36867490f9e5fd",
@@ -1147,6 +1162,7 @@
     "public.finance_guard_loan_borrower()": "2512bca476acfe7f42100ffd26abc3fd",
     "public.loan_is_owner(p_loan_id uuid)": "4b643977889568305a751465f528ea0a",
     "private.cq_flow_enabled(p_board uuid)": "f905ee76d855809b7dbbac3aaca70c94",
+    "private.refresh_card_assigned_title()": "37504bae7764d5023ede00013ffee9b8",
     "public.handle_invite_code_on_signup()": "24a404fe9ff6daaed3682006a5f32960",
     "public.resolve_api_token(p_hash text)": "1f7a21964cb8b76c7cf90399d3121cf4",
     "private.cq_effort_rank(p_labels jsonb)": "1e5d6efbc1c987951c91cba69b24bf6e",
@@ -1169,6 +1185,7 @@
     "public.prevent_profile_privilege_escalation()": "dc2430441bf393fdaf1a7e9e6072d3fe",
     "public.loan_confirm_payment(p_payment_id uuid)": "4e3e4f151b6e33427e89a2c77b465096",
     "public.remove_workspace_member(p_user_id uuid)": "5d39d42991f533744c8f0eaf6330d000",
+    "private.notification_actor_name(p_user_id uuid)": "4e1100aeb6b95d42665c460c2994a25f",
     "public.admin_revoke_invite_code(p_code_id uuid)": "fd4d3b32eeb9a16f822b7e2ab4802a0b",
     "public.cq_remove(p_queue_id uuid, p_actor uuid)": "9e1aa6eaac3b8589de33c9096a471717",
     "public.is_workspace_member(p_workspace_id uuid)": "e0e8b21df7da9b2c1bfa006458f63a80",
@@ -1187,6 +1204,7 @@
     "private.cq_status_column(p_board uuid, p_kind text)": "c2f0446029d8699090fd2547667d1d9c",
     "public.bootstrap_finance_categories(p_user_id uuid)": "51c04ac58fab5792753b95118c09950c",
     "private.cq_resolve_columns(p_board uuid, p_refs text[])": "286bd9f1ecee6e53bef7d338799c6146",
+    "private.notification_allowed(p_kind text, p_actor uuid)": "8b554d2a58d0e69dd66eaa59f92374fe",
     "public.cq_card(p_board uuid, p_card text, p_actor uuid)": "5f8e9409efc9ea2f08990a98f87835cf",
     "public.invite_member(p_workspace_id uuid, p_email text)": "df47a6d9c95778d6a4158acfe1de26a8",
     "public.loan_approve(p_loan_id uuid, p_disbursed_on date)": "b2c5db2bb44bdd0e7e311038ca3b4b36",
