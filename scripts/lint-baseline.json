@@ -32,7 +32,6 @@
   "src/components/ItemPicker.tsx::@typescript-eslint/no-floating-promises": 1,
   "src/components/ItemPicker.tsx::jsx-a11y/no-autofocus": 1,
   "src/components/LinkedNotePanel.tsx::@typescript-eslint/no-floating-promises": 1,
-  "src/components/MfaSection.tsx::akool/no-hex-color": 11,
   "src/components/NoteEditor.tsx::react-hooks/set-state-in-effect": 1,
   "src/components/PageHeader.tsx::@typescript-eslint/no-floating-promises": 2,
   "src/components/PageHeader.tsx::jsx-a11y/no-autofocus": 1,

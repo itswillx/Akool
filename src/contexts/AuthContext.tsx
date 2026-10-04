@@ -3,7 +3,7 @@ import { LOCAL_KEYS, SESSION_KEYS } from '../lib/localKeys'
 import type { ReactNode } from 'react'
 import type { User, AuthChangeEvent } from '@supabase/supabase-js'
 import { supabase, createEphemeralAuthClient, recoveryLinkDetected } from '../lib/supabase'
-import { assuranceFromSession, needsMfaChallenge } from '../lib/mfa'
+import { assuranceFromSession, needsMfaChallenge, verifyWithAnyFactor } from '../lib/mfa'
 import { localDateKey } from '../lib/localDate'
 import { clearLocalUserData } from '../lib/localData'
 import { getT, toLang } from '../i18n/translations'
@@ -333,13 +333,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const verifyMfa = useCallback(async (code: string): Promise<{ error: string | null }> => {
     const { data: factors, error: listError } = await supabase.auth.mfa.listFactors()
     if (listError) return { error: listError.message }
-    // `totp` lista só os fatores já verificados.
-    const factor = factors?.totp?.[0]
-    if (!factor) return { error: 'no_factor' }
-    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.trim() })
-    if (error) {
-      return { error: error.code === 'mfa_verification_failed' || /invalid|expired/i.test(error.message) ? 'invalid_code' : error.message }
-    }
+    // `totp` lista só os fatores já verificados, um por aparelho: o código pode
+    // ter vindo de qualquer um deles.
+    const factorIds = (factors?.totp ?? []).map(f => f.id)
+    const result = await verifyWithAnyFactor(factorIds, factorId => supabase.auth.mfa.challengeAndVerify({ factorId, code: code.trim() }))
+    if (result.error) return result
     const { data: { session: upgraded } } = await supabase.auth.getSession()
     setMfaPending(needsMfaChallenge(assuranceFromSession(upgraded)))
     return { error: null }

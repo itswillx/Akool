@@ -43,3 +43,53 @@ export function needsMfaChallenge(assurance: Assurance | null): boolean {
 export function isTotpCode(code: string): boolean {
   return /^\d{6}$/.test(code.trim())
 }
+
+/** Nome que o app autenticador mostra na entrada da conta: "Akool (e-mail)". */
+export const TOTP_ISSUER = 'Akool'
+
+/** A chave em grupos de 4, para ler e digitar; a cópia leva a chave crua. */
+export function formatTotpSecret(secret: string): string {
+  return secret.replace(/\s+/g, '').replace(/(.{4})(?=.)/g, '$1 ')
+}
+
+/** Só uma URI de cadastro TOTP vira QR code ou link para o app autenticador. */
+export function isOtpauthUri(uri: string): boolean {
+  return /^otpauth:\/\/totp\//i.test(uri)
+}
+
+/**
+ * Nome do fator no Supabase, que exige nome único por usuário. Com os segundos,
+ * ativar e logo em seguida adicionar outro aparelho não colidem.
+ */
+export function totpFriendlyName(now: Date): string {
+  return `${TOTP_ISSUER} ${now.toISOString().slice(0, 19).replace('T', ' ')}`
+}
+
+/** O que importa de um erro do supabase.auth.mfa (AuthError). */
+export interface MfaError {
+  code?: string | undefined
+  message: string
+}
+
+/** Código errado ou vencido; o resto (rede, limite de tentativas…) é outro erro. */
+export function isInvalidTotpError(error: MfaError): boolean {
+  return error.code === 'mfa_verification_failed' || /invalid|expired/i.test(error.message)
+}
+
+/**
+ * Cada aparelho é um fator com segredo próprio, e o código vale só para o que o
+ * gerou. Tenta os fatores em ordem e para no primeiro que aceitar; um erro que
+ * não é de código volta na hora, sem gastar tentativas nos outros.
+ */
+export async function verifyWithAnyFactor(
+  factorIds: readonly string[],
+  verify: (factorId: string) => Promise<{ error: MfaError | null }>,
+): Promise<{ error: string | null }> {
+  if (factorIds.length === 0) return { error: 'no_factor' }
+  for (const factorId of factorIds) {
+    const { error } = await verify(factorId)
+    if (!error) return { error: null }
+    if (!isInvalidTotpError(error)) return { error: error.message }
+  }
+  return { error: 'invalid_code' }
+}

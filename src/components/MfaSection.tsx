@@ -1,36 +1,54 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { localeOf } from '../i18n/translations'
-import { ShieldCheck, ShieldOff } from 'lucide-react'
+import { Plus, ShieldCheck, ShieldOff } from 'lucide-react'
 import type { Factor } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { isTotpCode } from '../lib/mfa'
+import { isInvalidTotpError, isTotpCode, TOTP_ISSUER, totpFriendlyName, type MfaError } from '../lib/mfa'
 import { useLanguage } from '../i18n/LanguageContext'
+import { ghostBtnStyle } from '@/shared/ui/uiTokens'
+import MfaAuthenticatorSetup from './MfaAuthenticatorSetup'
+import { FeedbackBanner } from './settings/settingsUi'
 
 // SEC-004: ativação da verificação em duas etapas (TOTP). O login passa a
 // pedir o código (MfaChallengePage) para quem tiver um fator verificado.
+// Cada aparelho é um fator: com o MFA ativo dá para adicionar outro (celular
+// novo, segundo app) e remover os antigos.
 
 type ListFactorsResult = Awaited<ReturnType<typeof supabase.auth.mfa.listFactors>>
 
 interface Enrollment {
+  /** `add`: já havia fator verificado, então é outro aparelho. */
+  mode: 'first' | 'add'
   factorId: string
+  uri: string
   qrCode: string
   secret: string
 }
 
+const DANGER_BORDER = 'color-mix(in srgb, var(--color-error) 40%, transparent)'
+
 export default function MfaSection() {
   const { t, lang } = useLanguage()
   const [factors, setFactors] = useState<Factor[]>([])
+  // Até a lista chegar, nada de "Desativada" nem do botão de ativar piscando
+  // para quem já tem MFA.
+  const [loaded, setLoaded] = useState(false)
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const rowIdBase = useId()
 
-  const errorText = useCallback((msg: string) => t('mfa_error').replace('{message}', msg), [t])
+  // Quem já tem MFA só mexe nos aparelhos com a sessão em AAL2 (código digitado).
+  const errorText = useCallback((error: MfaError) => (
+    error.code === 'insufficient_aal' ? t('mfa_need_aal2') : t('mfa_error', { message: error.message })
+  ), [t])
 
   const applyFactors = useCallback(({ data, error }: ListFactorsResult) => {
+    setLoaded(true)
     if (error) {
-      setMessage({ kind: 'error', text: errorText(error.message) })
+      setMessage({ kind: 'error', text: errorText(error) })
       return
     }
     // `totp` traz só os fatores já verificados.
@@ -53,16 +71,24 @@ export default function MfaSection() {
     for (const stale of (current?.all ?? []).filter(f => f.status === 'unverified')) {
       await supabase.auth.mfa.unenroll({ factorId: stale.id })
     }
+    const verifiedCount = (current?.totp ?? factors).length
     const { data, error } = await supabase.auth.mfa.enroll({
       factorType: 'totp',
-      friendlyName: `Akool ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
+      issuer: TOTP_ISSUER,
+      friendlyName: totpFriendlyName(new Date()),
     })
     setBusy(false)
     if (error || !data) {
-      setMessage({ kind: 'error', text: errorText(error?.message ?? 'enroll') })
+      setMessage({ kind: 'error', text: error ? errorText(error) : t('mfa_error', { message: 'enroll' }) })
       return
     }
-    setEnrollment({ factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret })
+    setEnrollment({
+      mode: verifiedCount > 0 ? 'add' : 'first',
+      factorId: data.id,
+      uri: data.totp.uri,
+      qrCode: data.totp.qr_code,
+      secret: data.totp.secret,
+    })
     setCode('')
   }
 
@@ -77,12 +103,12 @@ export default function MfaSection() {
     const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: enrollment.factorId, code: code.trim() })
     setBusy(false)
     if (error) {
-      setMessage({ kind: 'error', text: t('mfa_invalid_code') })
+      setMessage({ kind: 'error', text: isInvalidTotpError(error) ? t('mfa_invalid_code') : errorText(error) })
       return
     }
     setEnrollment(null)
     setCode('')
-    setMessage({ kind: 'ok', text: t('mfa_enabled_ok') })
+    setMessage({ kind: 'ok', text: t(enrollment.mode === 'add' ? 'mfa_device_added_ok' : 'mfa_enabled_ok') })
     await reload()
   }
 
@@ -94,21 +120,24 @@ export default function MfaSection() {
   }
 
   const removeFactor = async (factorId: string) => {
+    const wasLast = factors.length <= 1
     setConfirmRemove(null)
     setBusy(true)
     setMessage(null)
     const { error } = await supabase.auth.mfa.unenroll({ factorId })
     setBusy(false)
     if (error) {
-      setMessage({ kind: 'error', text: errorText(error.message) })
+      setMessage({ kind: 'error', text: errorText(error) })
       return
     }
-    setMessage({ kind: 'ok', text: t('mfa_removed_ok') })
+    setMessage({ kind: 'ok', text: t(wasLast ? 'mfa_removed_ok' : 'mfa_device_removed_ok') })
     await reload()
   }
 
   const enabled = factors.length > 0
-  const statusColor = enabled ? '#22c55e' : '#94a3b8'
+  const several = factors.length > 1
+  const statusColor = enabled ? 'var(--color-success)' : 'var(--color-text-muted)'
+  const locale = localeOf(lang)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -116,29 +145,39 @@ export default function MfaSection() {
         {enabled ? <ShieldCheck size={20} color={statusColor} /> : <ShieldOff size={20} color={statusColor} />}
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>{t('mfa_title')}</div>
-          <span style={{ fontSize: 11, fontWeight: 700, color: statusColor }}>{enabled ? t('mfa_status_on') : t('mfa_status_off')}</span>
+          {loaded && <span style={{ fontSize: 11, fontWeight: 700, color: statusColor }}>{enabled ? t('mfa_status_on') : t('mfa_status_off')}</span>}
         </div>
       </div>
       <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>{t('mfa_intro')}</p>
 
-      {factors.map(f => (
-        <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--color-border)' }}>
-          <span style={{ flex: 1, fontSize: 12.5, color: 'var(--color-text-muted)' }}>
-            {t('mfa_factor_added').replace('{date}', new Date(f.created_at).toLocaleDateString(localeOf(lang)))}
-          </span>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => (confirmRemove === f.id ? void removeFactor(f.id) : setConfirmRemove(f.id))}
-            onBlur={() => setConfirmRemove(id => (id === f.id ? null : id))}
-            style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ef444466', background: confirmRemove === f.id ? '#ef4444' : 'transparent', color: confirmRemove === f.id ? '#fff' : '#ef4444', fontSize: 12, fontWeight: 600, cursor: busy ? 'wait' : 'pointer' }}
-          >
-            {confirmRemove === f.id ? t('mfa_remove_confirm') : t('mfa_remove')}
-          </button>
-        </div>
-      ))}
+      {factors.map((f, i) => {
+        const labelId = `${rowIdBase}-${f.id}`
+        const armed = confirmRemove === f.id
+        const added = new Date(f.created_at)
+        return (
+          <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--color-border)' }}>
+            <span id={labelId} style={{ flex: 1, fontSize: 12.5, color: 'var(--color-text-muted)' }}>
+              {several
+                ? t('mfa_device_row', { n: i + 1, date: added.toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' }) })
+                : t('mfa_factor_added', { date: added.toLocaleDateString(locale) })}
+            </span>
+            <button
+              type="button"
+              disabled={busy || !!enrollment}
+              aria-describedby={labelId}
+              onClick={() => (armed ? void removeFactor(f.id) : setConfirmRemove(f.id))}
+              onBlur={() => setConfirmRemove(id => (id === f.id ? null : id))}
+              style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${DANGER_BORDER}`, background: armed ? 'var(--color-error)' : 'transparent', color: armed ? 'var(--color-btn-primary-text)' : 'var(--color-error)', fontSize: 12, fontWeight: 600, cursor: busy ? 'wait' : enrollment ? 'not-allowed' : 'pointer', opacity: enrollment ? 0.5 : 1 }}
+            >
+              {several
+                ? (armed ? t('mfa_remove_device_confirm') : t('mfa_remove_device'))
+                : (armed ? t('mfa_remove_confirm') : t('mfa_remove'))}
+            </button>
+          </div>
+        )
+      })}
 
-      {!enabled && !enrollment && (
+      {loaded && !enabled && !enrollment && (
         <button
           type="button"
           onClick={() => { void startEnrollment() }}
@@ -150,14 +189,24 @@ export default function MfaSection() {
         </button>
       )}
 
+      {loaded && enabled && !enrollment && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <button
+            type="button"
+            onClick={() => { void startEnrollment() }}
+            disabled={busy}
+            style={{ ...ghostBtnStyle, justifyContent: 'center', color: 'var(--color-text)', fontWeight: 600, cursor: busy ? 'wait' : 'pointer' }}
+          >
+            <Plus size={14} />
+            {busy ? t('mfa_enabling') : t('mfa_add_device')}
+          </button>
+          <span style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.45 }}>{t('mfa_add_device_hint')}</span>
+        </div>
+      )}
+
       {enrollment && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14, borderRadius: 10, border: '1px solid var(--color-border)' }}>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text)', lineHeight: 1.5 }}>{t('mfa_scan')}</p>
-          <img src={enrollment.qrCode} alt={t('mfa_qr_alt')} width={180} height={180} style={{ alignSelf: 'center', backgroundColor: '#fff', padding: 8, borderRadius: 8 }} />
-          <div>
-            <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginBottom: 4 }}>{t('mfa_secret_label')}</div>
-            <code style={{ display: 'block', overflowWrap: 'anywhere', fontSize: 12.5, padding: '6px 8px', borderRadius: 6, backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>{enrollment.secret}</code>
-          </div>
+          <MfaAuthenticatorSetup key={enrollment.factorId} uri={enrollment.uri} qrCode={enrollment.qrCode} secret={enrollment.secret} adding={enrollment.mode === 'add'} />
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 500, color: 'var(--color-text)' }}>
             {t('mfa_code_label')}
             <input
@@ -181,11 +230,7 @@ export default function MfaSection() {
         </div>
       )}
 
-      {message && (
-        <div role={message.kind === 'error' ? 'alert' : 'status'} style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12.5, backgroundColor: message.kind === 'error' ? '#ef444418' : '#22c55e18', color: message.kind === 'error' ? '#ef4444' : '#22c55e' }}>
-          {message.text}
-        </div>
-      )}
+      {message && <FeedbackBanner type={message.kind === 'ok' ? 'success' : 'error'} text={message.text} />}
     </div>
   )
 }
