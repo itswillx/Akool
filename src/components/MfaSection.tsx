@@ -8,6 +8,7 @@ import {
   passkeyFriendlyName, supportsPasskeys, TOTP_ISSUER, totpFriendlyName, type MfaError,
 } from '../lib/mfa'
 import { useLanguage } from '../i18n/LanguageContext'
+import { MFA_PASSKEY_ENABLED } from '../lib/env'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { ghostBtnStyle } from '@/shared/ui/uiTokens'
 import MfaAuthenticatorSetup from './MfaAuthenticatorSetup'
@@ -79,7 +80,7 @@ export default function MfaSection() {
   const [passkeyPending, setPasskeyPending] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-  const [webauthn] = useState(() => supportsPasskeys())
+  const [webauthn] = useState(() => MFA_PASSKEY_ENABLED && supportsPasskeys())
   const [coarsePointer] = useState(hasCoarsePointer)
   const rowIdBase = useId()
   const passkeyTitleId = useId()

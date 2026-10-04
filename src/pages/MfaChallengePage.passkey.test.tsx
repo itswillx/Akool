@@ -28,6 +28,13 @@ vi.mock('../lib/mfa', async importOriginal => ({
   supportsPasskeys: () => true,
 }))
 
+// A passkey fica atrás de VITE_MFA_PASSKEY (o Supabase hospedado ainda não liga o WebAuthn de MFA).
+const flags = vi.hoisted(() => ({ passkey: true }))
+vi.mock('../lib/env', async importOriginal => ({
+  ...await importOriginal<typeof import('../lib/env')>(),
+  get MFA_PASSKEY_ENABLED() { return flags.passkey },
+}))
+
 import MfaChallengePage from './MfaChallengePage'
 
 beforeEach(() => {

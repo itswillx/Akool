@@ -38,3 +38,8 @@ const env = checkEnv(import.meta.env)
 export const SUPABASE_URL = env.supabaseUrl
 export const SUPABASE_ANON_KEY = env.supabaseAnonKey
 export const missingEnv = env.missing
+
+// MFA com passkey ("Entrar com o celular"): o Supabase hospedado ainda recusa
+// ligar o WebAuthn de MFA (a API responde 422). Desligado até lá; ver
+// docs/deploy-coolify.md §3.3.
+export const MFA_PASSKEY_ENABLED = import.meta.env.VITE_MFA_PASSKEY === 'true'

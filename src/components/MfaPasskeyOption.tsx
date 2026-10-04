@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 import { Fingerprint, QrCode } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import type { TranslationKey } from '../i18n/translations'
+import { MFA_PASSKEY_ENABLED } from '../lib/env'
 import { hasCoarsePointer, isPasskeyErrorKind, PASSKEY_ERROR_KEYS, passkeyDevice, supportsPasskeys, type PasskeyDevice } from '../lib/mfa'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { ghostBtnStyle } from '@/shared/ui/uiTokens'
@@ -16,7 +17,7 @@ type Translate = (key: TranslationKey, vars?: Record<string, string | number>) =
 export function MfaPasskeyOption({ t }: { t: Translate }) {
   const { hasPasskey, verifyMfaPasskey } = useAuth()
   const isMobile = useIsMobile()
-  const [supported] = useState(() => supportsPasskeys())
+  const [supported] = useState(() => MFA_PASSKEY_ENABLED && supportsPasskeys())
   const [coarsePointer] = useState(hasCoarsePointer)
   if (!hasPasskey || !supported) return null
   return <MfaPasskeyButton t={t} device={passkeyDevice(isMobile, coarsePointer)} onAuthenticate={verifyMfaPasskey} />

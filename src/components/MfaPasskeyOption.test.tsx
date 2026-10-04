@@ -20,6 +20,13 @@ vi.mock('../lib/mfa', async importOriginal => ({
   hasCoarsePointer: () => false,
 }))
 
+// A passkey fica atrás de VITE_MFA_PASSKEY (o Supabase hospedado ainda não liga o WebAuthn de MFA).
+const flags = vi.hoisted(() => ({ passkey: true }))
+vi.mock('../lib/env', async importOriginal => ({
+  ...await importOriginal<typeof import('../lib/env')>(),
+  get MFA_PASSKEY_ENABLED() { return flags.passkey },
+}))
+
 import { MfaPasskeyOption } from './MfaPasskeyOption'
 
 const t = (key: string, vars?: Record<string, string | number>) => (vars ? [key, ...Object.values(vars)].join(' ') : key)
@@ -28,6 +35,7 @@ beforeEach(() => {
   state.hasPasskey = true
   state.webauthn = true
   state.mobile = false
+  flags.passkey = true
   state.verify.mockReset()
   state.verify.mockResolvedValue({ error: null })
 })
@@ -35,6 +43,12 @@ beforeEach(() => {
 describe('MfaPasskeyOption', () => {
   it('não aparece para quem não tem passkey', () => {
     state.hasPasskey = false
+    const { container } = render(<MfaPasskeyOption t={t} />)
+    expect(container.innerHTML).toBe('')
+  })
+
+  it('não aparece com VITE_MFA_PASSKEY desligada', () => {
+    flags.passkey = false
     const { container } = render(<MfaPasskeyOption t={t} />)
     expect(container.innerHTML).toBe('')
   })

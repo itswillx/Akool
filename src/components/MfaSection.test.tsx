@@ -58,6 +58,13 @@ vi.mock('../lib/mfa', async importOriginal => ({
   supportsPasskeys: () => env.webauthn,
 }))
 
+// A passkey fica atrás de VITE_MFA_PASSKEY (o Supabase hospedado ainda não liga o WebAuthn de MFA).
+const flags = vi.hoisted(() => ({ passkey: true }))
+vi.mock('../lib/env', async importOriginal => ({
+  ...await importOriginal<typeof import('../lib/env')>(),
+  get MFA_PASSKEY_ENABLED() { return flags.passkey },
+}))
+
 import MfaSection from './MfaSection'
 import { passkeyCreateOptions } from '../lib/mfa'
 
@@ -84,6 +91,7 @@ beforeEach(() => {
   server.registerCreatesFactor = true
   server.listCallsAtRegister = -1
   env.webauthn = false
+  flags.passkey = true
   clipboard.copy.mockResolvedValue(true)
   mfa.listFactors.mockImplementation(() => Promise.resolve(listResult(server.factors)))
   mfa.enroll.mockImplementation(() => {
@@ -334,6 +342,16 @@ describe('MfaSection: passkey para entrar com o celular', () => {
     render(<MfaSection />)
     await screen.findByRole('button', { name: 'mfa_enable' })
     expect(screen.queryByText('mfa_passkey_title')).toBeNull()
+  })
+
+  it('com VITE_MFA_PASSKEY desligada, não oferece passkey', async () => {
+    env.webauthn = true
+    flags.passkey = false
+    server.factors = [verified('f1')]
+    render(<MfaSection />)
+    await screen.findByRole('button', { name: 'mfa_add_device' })
+    expect(screen.queryByText('mfa_passkey_title')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'mfa_passkey_add' })).toBeNull()
   })
 
   it('em navegador sem WebAuthn, não oferece cadastrar', async () => {

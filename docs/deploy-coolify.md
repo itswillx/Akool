@@ -120,8 +120,15 @@ computador o navegador mostra um QR para ler com a câmera do celular
 código continua valendo. A passkey é um **fator de MFA** (WebAuthn), não o
 login principal, porque só o fator sobe a sessão para AAL2.
 
-Vem desligado no Supabase. Ligar pela Management API
-(`PATCH /v1/projects/{ref}/config/auth`) ou no painel (Authentication):
+**Ainda não disponível:** em 04/10/2026 a Management API recusou ligar o WebAuthn
+de MFA no projeto hospedado (422 "Enabling of MFA with WebAuthn not currently
+supported"). Por isso o app esconde a passkey atrás da Build Variable
+`VITE_MFA_PASSKEY` (desligada): sem ela, "Adicionar passkey" e "Entrar com o
+celular" não aparecem. Quando o Supabase liberar, ligue a configuração abaixo e,
+depois, `VITE_MFA_PASSKEY=true` no Coolify (novo build).
+
+Ligar pela Management API (`PATCH /v1/projects/{ref}/config/auth`) ou no painel
+(Authentication):
 
 | Campo | Valor |
 |---|---|
