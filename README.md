@@ -37,6 +37,8 @@ O seletor no topo alterna entre as visões Tudo, Documentos e Financeiro (`src/c
 
 Criar conta exige um código de convite, que é gerado por quem já usa o app (em Configurações).
 
+A raiz (`/`) é a página pública do app, com Entrar e Criar conta no canto superior direito; `/#entrar` e `/#cadastro` abrem o formulário direto.
+
 ### Portas
 
 | Porta | O quê | Como sobe |

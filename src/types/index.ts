@@ -312,12 +312,24 @@ export interface FinanceStoreSaleItem {
 
 // ─── Notifications ──────────────────────────────────────────────────────────
 
+// O que cada tipo traz em `data` está em src/lib/notificationKinds.ts.
 export type NotificationType =
   | 'workspace_invite'
   | 'invite_accepted'
   | 'invite_declined'
   | 'member_joined'
   | 'member_left'
+  | 'backup_stale'
+  | 'page_shared'
+  | 'board_shared'
+  | 'card_assigned'
+  | 'loan_borrower_linked'
+  | 'loan_requested'
+  | 'loan_approved'
+  | 'loan_rejected'
+  | 'loan_payment_reported'
+  | 'loan_payment_confirmed'
+  | 'loan_payment_rejected'
 
 export interface AppNotification {
   id: string

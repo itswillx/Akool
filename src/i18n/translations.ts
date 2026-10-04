@@ -62,12 +62,10 @@ export function getT(lang: Lang) {
   return function t(key: TranslationKey, vars?: Record<string, string | number>): string {
     // Lido a cada chamada: um t criado antes do dicionário chegar passa a
     // responder no idioma certo assim que ele carrega.
-    let str: string = dictionaries[lang]?.[key] ?? ptBR[key] ?? key
-    if (vars) {
-      Object.entries(vars).forEach(([k, v]) => {
-        str = str.replace(`{${k}}`, String(v))
-      })
-    }
-    return str
+    const str: string = dictionaries[lang]?.[key] ?? ptBR[key] ?? key
+    if (!vars) return str
+    // Uma passada só, com função: valores vindos de usuários (título de card,
+    // nome) não viram padrão de replace ("$&") nem placeholder ("{page}").
+    return str.replace(/\{(\w+)\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match))
   }
 }

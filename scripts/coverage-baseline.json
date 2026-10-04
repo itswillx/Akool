@@ -9,13 +9,13 @@
   "src/modules/backup": 5.52,
   "src/modules/docsnetwork": 0,
   "src/modules/finance": 23.41,
-  "src/modules/projects": 40.51,
+  "src/modules/projects": 40.46,
   "src/modules/study": 16.16,
   "src/pages": 68.87,
   "src/shared": 82.18,
   "supabase/functions/_shared": 98.21,
-  "supabase/functions/admin-ops": 12.87,
+  "supabase/functions/admin-ops": 12.62,
   "supabase/functions/cards-api": 0,
-  "supabase/functions/site-backup": 5.24,
+  "supabase/functions/site-backup": 5.22,
   "total": 43.78
 }

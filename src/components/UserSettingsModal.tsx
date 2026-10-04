@@ -1,5 +1,5 @@
 import { lazy, Suspense, useRef, useState } from 'react'
-import { Database, Gift, KeyRound, Lock, LogOut, ScrollText, ShieldCheck, User, Users, X } from 'lucide-react'
+import { Bell, Database, Gift, KeyRound, Lock, LogOut, ScrollText, ShieldCheck, User, Users, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
@@ -9,6 +9,7 @@ import MfaSection from './MfaSection'
 import ProfileTab from './settings/ProfileTab'
 import PasswordTab from './settings/PasswordTab'
 import MyInvitesTab from './settings/MyInvitesTab'
+import { NotificationPrefsTab } from './notifications/NotificationPrefsTab'
 import { PanelFallback, TabBtn } from './settings/settingsUi'
 import { SETTINGS_FORM_MAX_WIDTH, settingsShellSize } from './settings/settingsTokens'
 
@@ -25,20 +26,26 @@ const UserManagementPanel = lazy(() => import('./UserManagementPanel'))
 const BackupPanel = lazy(() => import('../modules/backup'))
 const AuditLogPanel = lazy(() => import('../modules/audit'))
 
+export type SettingsTab = 'profile' | 'password' | 'security' | 'notifications' | 'invites' | 'api' | 'users' | 'backup' | 'audit'
+type Tab = SettingsTab
+
 interface Props {
   open: boolean
   onClose: () => void
+  /** Aba ao abrir (NOTIF-001: o alerta de backup abre direto em Backup). */
+  initialTab?: SettingsTab
 }
 
-type Tab = 'profile' | 'password' | 'security' | 'invites' | 'api' | 'users' | 'backup' | 'audit'
+const ADMIN_TABS: ReadonlySet<SettingsTab> = new Set(['users', 'backup', 'audit'])
 
-export default function UserSettingsModal({ open, onClose }: Props) {
+export default function UserSettingsModal({ open, onClose, initialTab }: Props) {
   const { user, isAdmin, signOut } = useAuth()
   const { t } = useLanguage()
   // O fundo fecha (clique fora), então o Esc também (UX-003).
   const { titleId, dialogProps } = useDialog({ open, onClose, closeOnEsc: true })
   const isMobile = useIsMobile()
-  const [tab, setTab] = useState<Tab>('profile')
+  // Aba de admin pedida por quem não é admin abre no Perfil.
+  const [tab, setTab] = useState<Tab>(() => (initialTab && (isAdmin || !ADMIN_TABS.has(initialTab)) ? initialTab : 'profile'))
   const overlayRef = useRef<HTMLDivElement>(null)
 
   if (!open) return null
@@ -75,6 +82,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
             <TabBtn active={tab === 'profile'} onClick={() => setTab('profile')} icon={<User size={13} />} label={t('settings_tab_profile')} />
             <TabBtn active={tab === 'password'} onClick={() => setTab('password')} icon={<Lock size={13} />} label={t('settings_tab_password')} />
             <TabBtn active={tab === 'security'} onClick={() => setTab('security')} icon={<ShieldCheck size={13} />} label={t('settings_tab_security')} />
+            <TabBtn active={tab === 'notifications'} onClick={() => setTab('notifications')} icon={<Bell size={13} />} label={t('settings_tab_notifications')} />
             <TabBtn active={tab === 'invites'} onClick={() => setTab('invites')} icon={<Gift size={13} />} label={t('settings_tab_invites')} />
             <TabBtn active={tab === 'api'} onClick={() => setTab('api')} icon={<KeyRound size={13} />} label={t('settings_tab_api')} />
             {isAdmin && <TabBtn active={tab === 'users'} onClick={() => setTab('users')} icon={<Users size={13} />} label={t('sidebar_users')} />}
@@ -99,6 +107,7 @@ export default function UserSettingsModal({ open, onClose }: Props) {
               {tab === 'profile' && <ProfileTab />}
               {tab === 'password' && <PasswordTab />}
               {tab === 'invites' && <MyInvitesTab />}
+              {tab === 'notifications' && <NotificationPrefsTab />}
             </div>
           )}
         </div>

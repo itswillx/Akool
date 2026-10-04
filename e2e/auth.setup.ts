@@ -17,7 +17,8 @@ setup('login do usuário de teste', async ({ page }) => {
     setup.skip(true, 'Sem E2E_USER/E2E_PASSWORD: testes logados pulados.')
     return
   }
-  await page.goto('/')
+  // A raiz é a página pública; o formulário fica em #entrar.
+  await page.goto('/#entrar')
   await page.getByLabel(T.auth_email).fill(env.E2E_USER)
   await page.getByLabel(T.auth_password, { exact: true }).fill(env.E2E_PASSWORD)
   await page.locator('form button[type="submit"]').click()

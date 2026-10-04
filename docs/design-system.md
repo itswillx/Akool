@@ -23,6 +23,8 @@ Os tokens que o app usa, com o papel de cada um, e as regras para não sair dele
 | `--color-done` / `--color-success` | verde `#10b981` | `#10b981` / `#34d399` | concluído, receita |
 | `--color-error` | `#ef4444` | `#f87171` | erro, despesa, exclusão |
 | `--color-warning` | `#f59e0b` | `#fbbf24` | atenção, atrasado |
+| `--color-error-text` / `--color-success-text` | `#b91c1c` / `#047857` | `#f87171` / `#34d399` | **texto** de erro e de sucesso (4,5:1 nos fundos fixos; os tokens acima ficam para ícone, borda e fundo) |
+| `--color-border-strong` | `#8a8985` | `#7a7a77` | borda de campo das telas de entrada (3:1 no surface; classe `.auth-input`) |
 | `--color-logo-bg` / `-text` | `#37352f` / `#ffffff` | `#e8e8e6` / `#191919` | o "A" do logotipo |
 | `--sticky-*-bg` / `-border` | amarelo, verde, rosa, azul, roxo | versões escuras | notas rápidas |
 
@@ -65,6 +67,7 @@ Fonte do sistema (`-apple-system, BlinkMacSystemFont, "Segoe UI", …`); a Space
 | 15–17 | títulos de cartão e de folha |
 | 19–21 | títulos de seção e do tour |
 | 26–28 | título de página (Dashboard, Ajuda) |
+| 36 | só o título do hero da página pública (28 no celular) |
 
 Pesos: 500 (texto de nav), 600 (ênfase, botões), 700 (títulos). Caixa alta só com `letterSpacing` 0.4–0.7 e 10–11 px.
 
@@ -73,6 +76,23 @@ Pesos: 500 (texto de nav), 600 (ênfase, botões), 700 (títulos). Caixa alta s�
 - Modais e popovers: `0 8px 32px rgba(0,0,0,0.3)`; folhas no celular: `0 -8px 32px rgba(0,0,0,0.3)`; gaveta: `-14px 0 44px rgba(0,0,0,0.22)`.
 - Fundo escurecido (`Backdrop`): `rgba(0,0,0,0.5)` para modais e folhas, `0.4` para confirmações.
 - `zIndex`: 55 sidebar no celular · 200 tour · 900 grafo em tela cheia · 1000 modais e gavetas · 1100 modais sobre modais (importação, lightbox).
+
+## Movimento
+
+Só nas telas de entrada (landing, login, MFA, redefinição de senha), em `src/pages/auth/authMotion.css` (chunk de auth, fora do boot) e `src/pages/landing/landing.css`.
+
+| Token | Valor | Uso |
+|---|---|---|
+| `--motion-fast` | 150 ms | sair, avisos, campos |
+| `--motion-base` | 240 ms | trocas (crossfade, cartão que muda de tamanho, pílula das abas) |
+| `--motion-slow` | 360 ms | entradas (subir 12 px ao montar) |
+| `--motion-ease` | `cubic-bezier(0.22, 1, 0.36, 1)` | a curva de tudo (a mesma das folhas do Financeiro; `--ease-out` é do Tailwind) |
+
+- Todo movimento é opt-in, dentro de `@media (prefers-reduced-motion: no-preference)`; com movimento reduzido nada anima nem troca sozinho.
+- Anime só opacidade, `translate`/`scale`/`transform` e tamanho; nada infinito além do spinner; nada de `transition` inline.
+- Trocas de tela pela View Transitions API, só por `runAuthTransition` (`src/pages/auth/viewTransition.ts`): `page` (landing ↔ login, crossfade) e `card` (dentro do cartão). Sem a API, a troca é instantânea.
+- Revelar ao rolar e a barra que ganha desfoque usam animação guiada pela rolagem (`animation-timeline`), sob `@supports`: onde não há suporte, o conteúdo já aparece.
+- Classes com prefixo (`auth-`, `landing-`, `pv-`): o Tailwind varre o `src` e gera CSS para palavras como `transition` ou `shadow`.
 
 ## Regras
 

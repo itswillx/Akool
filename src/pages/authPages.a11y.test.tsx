@@ -1,14 +1,13 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
-import { createRoot, type Root } from 'react-dom/client'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '../test/rtl'
 import { expectNoAxeViolations } from '../test/axe'
+import { authContent } from '../i18n/authContent'
+import { landingContent } from '../i18n/landingContent'
 
-// UX-008: varredura axe nas telas que abrem sem login (login, cadastro,
-// esqueci a senha e redefinir senha). As telas logadas ficam com a extensão
-// axe DevTools, porque dependem de sessão.
-
-;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+// UX-008: varredura axe nas telas que abrem sem login (página pública, login,
+// cadastro, esqueci a senha e redefinir senha). As telas logadas ficam com a
+// extensão axe DevTools, porque dependem de sessão.
 
 vi.mock('../lib/supabase', () => ({ supabase: {}, recoveryLinkError: null }))
 vi.mock('@/shared/hooks/useIsMobile', () => ({ useIsMobile: () => false }))
@@ -17,50 +16,61 @@ vi.mock('../contexts/AuthContext', () => ({
     user: { id: 'u1', email: 'eu@example.com' },
     signIn: vi.fn(), signUp: vi.fn(), sendPasswordReset: vi.fn(),
     completePasswordReset: vi.fn(), cancelPasswordReset: vi.fn(),
+    verifyMfa: vi.fn(), signOut: vi.fn(),
   }),
 }))
 
 import AuthPage from './AuthPage'
 import ResetPasswordPage from './ResetPasswordPage'
+import MfaChallengePage from './MfaChallengePage'
 
-let container: HTMLDivElement
-let root: Root
+const PT = authContent['pt-BR']
 
 beforeEach(() => {
   localStorage.clear()
-  container = document.createElement('div')
-  document.body.appendChild(container)
-  root = createRoot(container)
-})
-
-afterEach(() => {
-  act(() => root.unmount())
-  container.remove()
-})
-
-const clickButton = (text: RegExp) => act(() => {
-  const button = [...container.querySelectorAll('button')].find(b => text.test(b.textContent ?? ''))
-  button?.click()
+  window.history.replaceState(null, '', '/')
 })
 
 describe('telas sem login (UX-008)', () => {
-  it('login, cadastro e esqueci a senha não têm violações sérias', async () => {
-    act(() => { root.render(<AuthPage />) })
+  it('página pública, login, cadastro e esqueci a senha não têm violações sérias', async () => {
+    const { container } = render(<AuthPage />)
+    await screen.findByRole('heading', { level: 1, name: landingContent['pt-BR'].hero.title })
     await expectNoAxeViolations(container)
 
-    clickButton(/criar conta/i)
+    fireEvent.click(screen.getAllByRole('link', { name: 'Entrar' })[0])
+    expect(screen.getByRole('heading', { level: 1, name: 'Bem-vindo de volta' })).toBeTruthy()
+    // Desktop largo: o painel da tela ao lado do cartão, com a prévia do app em Entrar.
+    const panel = (context: keyof typeof PT) => screen.getByRole('heading', { level: 2, name: PT[context].title })
+    expect(panel('signin')).toBeTruthy()
+    expect(container.querySelector('aside .pv')?.getAttribute('aria-hidden')).toBe('true')
+    await expectNoAxeViolations(container)
+
+    // As abas são links (#entrar / #cadastro) com aria-current; o painel passa aos passos do cadastro.
+    fireEvent.click(screen.getByRole('link', { name: 'Criar conta' }))
     expect(container.querySelectorAll('form input')).toHaveLength(3)
+    expect(panel('signup')).toBeTruthy()
     await expectNoAxeViolations(container)
 
-    clickButton(/entrar/i)
-    clickButton(/esqueci/i)
+    fireEvent.click(screen.getAllByRole('link', { name: 'Entrar' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Esqueci minha senha' }))
+    expect(container.querySelectorAll('form input')).toHaveLength(1)
+    expect(panel('forgot')).toBeTruthy()
+    await expectNoAxeViolations(container)
+  })
+
+  it('a etapa do MFA não tem violações sérias', async () => {
+    const { container } = render(<MfaChallengePage />)
+    expect(screen.getByRole('heading', { level: 1 })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: PT.mfa.title })).toBeTruthy()
     await expectNoAxeViolations(container)
   })
 
   it('redefinir senha não tem violações sérias, e o botão do olho tem nome', async () => {
-    act(() => { root.render(<ResetPasswordPage />) })
+    const { container } = render(<ResetPasswordPage />)
+    expect(screen.getByRole('heading', { level: 2, name: PT.reset.title })).toBeTruthy()
     await expectNoAxeViolations(container)
-    const toggles = [...container.querySelectorAll('button[aria-pressed]')]
+    // Só os olhos do formulário: no desktop o seletor PT/EN da barra também usa aria-pressed.
+    const toggles = [...container.querySelectorAll('form button[aria-pressed]')]
     expect(toggles.map(b => b.getAttribute('aria-label'))).toEqual(['Mostrar senha', 'Mostrar senha'])
   })
 })

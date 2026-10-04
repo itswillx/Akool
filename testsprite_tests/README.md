@@ -18,6 +18,7 @@ LOGIN_USER=... LOGIN_PASSWORD=... python3 testsprite_tests/TC001_Sign_in_and_rea
 ```
 
 - Use um **usuário de teste**, não a conta de admin.
+- A raiz (`/`, e `/login` pelo fallback do SPA) é a página pública: o formulário de login fica em `/#entrar`. Os scripts atuais esperam o campo de e-mail logo na raiz e param por timeout; ao regenerá-los, navegue para `http://localhost:4173/#entrar`. As abas Entrar / Criar conta são links: `get_by_role('button', name='Entrar', exact=True)` acha só o botão de enviar.
 - **Nunca rode contra a produção.** O `build:staging` usa o `.env.staging.local` (projeto `akool-staging`). O `npm run build` comum aponta para a produção, e ali o TC019 e o TC025 alteram o papel de usuários, e o TC020 e o TC026 disparam backup (DEV-002).
 - No staging, crie os usuários de teste (e os alvos de promover/rebaixar) no painel: Authentication → Add user.
 - No TestSprite, as credenciais ficam só na configuração dele (`testsprite_tests/tmp/`, ignorada pelo git). O PRD e o plano usam `{{LOGIN_USER}}`/`{{LOGIN_PASSWORD}}`.

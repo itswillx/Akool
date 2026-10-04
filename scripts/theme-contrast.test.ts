@@ -48,6 +48,19 @@ describe.each([['claro', light], ['escuro', dark]] as const)('tema %s', (_theme,
     }
   })
 
+  // Telas de entrada: texto de erro/sucesso e borda de campo (rodada 2 da landing).
+  it.each(['color-error-text', 'color-success-text'])('%s passa 4,5:1 nos fundos fixos', token => {
+    for (const bg of BACKGROUNDS) {
+      expect(contrast(theme[token], theme[bg]), `${token} sobre ${bg}`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('borda forte de campo passa 3:1 no surface e no bg', () => {
+    for (const bg of ['color-bg', 'color-surface']) {
+      expect(contrast(theme['color-border-strong'], theme[bg]), `color-border-strong sobre ${bg}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
   it('anel de foco (primary) passa 3:1 nos fundos principais', () => {
     for (const bg of ['color-bg', 'color-bg-secondary']) {
       expect(contrast(theme['color-primary'], theme[bg]), `color-primary sobre ${bg}`).toBeGreaterThanOrEqual(3)

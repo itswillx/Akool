@@ -86,7 +86,7 @@ export default defineConfig([
       'src/lib/priorities.ts', 'src/lib/avatar.ts', 'src/lib/importProjectCards.ts', 'src/lib/financePdf.ts',
       'src/modules/projects/projectsShared.ts', 'src/modules/projects/QueueModal.tsx', 'src/modules/study/studyUi.ts',
       'src/modules/finance/modals/AccountModal.tsx', 'src/modules/finance/modals/GoalModals.tsx', 'src/modules/finance/modals/CategoryModal.tsx',
-      'src/modules/projects/modals/BoardModals.tsx', 'src/i18n/tourContent.ts', 'src/i18n/helpContent.ts', 'src/shared/ui/uiTokens.ts',
+      'src/modules/projects/modals/BoardModals.tsx', 'src/i18n/tourContent.ts', 'src/i18n/landingContent.ts', 'src/i18n/appPreviewContent.ts', 'src/i18n/helpContent.ts', 'src/shared/ui/uiTokens.ts',
     ],
     rules: { 'akool/no-hex-color': 'off' },
   },

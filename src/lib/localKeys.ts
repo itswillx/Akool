@@ -13,6 +13,8 @@ export const LOCAL_KEYS = {
   authLang: `${NS}auth.lang`,
   theme: `${NS}theme`,
   chunkReloadAt: `${NS}chunk-reload-at`,
+  /** Categorias de notificação sem aviso ao chegar (preferência deste aparelho, sobrevive ao logout). */
+  notificationPrefs: `${NS}notifications.prefs`,
   // Usuário: apagadas no logout.
   workspaceMode: `${NS}workspace.mode`,
   pagesActive: `${NS}pages.active`,
@@ -30,6 +32,9 @@ export const LOCAL_KEYS = {
   financeMyprojectsSection: `${NS}finance.myprojects-section`,
   financeStoreSection: `${NS}finance.store-section`,
   financeStoreSalesMode: `${NS}finance.store-sales-mode`,
+  /** Abrir o modal do workspace da família quando o Financeiro montar (vindo de uma notificação). */
+  financeOpenWorkspace: `${NS}finance.open-workspace`,
+
 } as const
 
 /** Chaves do localStorage com uma parte variável (usuário, quadro). */
@@ -63,6 +68,9 @@ export const KEEP_ON_SIGN_OUT: ReadonlySet<string> = new Set([
   LOCAL_KEYS.authLang,
   LOCAL_KEYS.theme,
   LOCAL_KEYS.chunkReloadAt,
+  // NOTIF-001: preferência do aparelho (só o aviso ao chegar); o login diário
+  // não pode apagá-la. Não guarda nada do usuário.
+  LOCAL_KEYS.notificationPrefs,
 ])
 
 // ── Migração dos nomes antigos ──────────────────────────────────────────────

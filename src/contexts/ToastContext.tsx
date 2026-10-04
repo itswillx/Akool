@@ -2,13 +2,21 @@ import { createContext, useContext, useState, useCallback, useRef, useEffect, us
 import type { ReactNode } from 'react'
 import { ToastStack } from '../components/ToastStack'
 
-export type ToastVariant = 'error' | 'warning' | 'success'
+// `info`: avisos neutros (NOTIF-001: notificação nova chegando).
+export type ToastVariant = 'error' | 'warning' | 'success' | 'info'
+
+/** Um botão no aviso (ex.: "Ver" na notificação nova); clicar também fecha o aviso. */
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
 
 export interface ToastOptions {
   /** ms before auto-dismiss; 0 = sticky (user must dismiss manually). Defaults per variant. */
   duration?: number
   /** Toasts sharing a dedupeKey collapse into one while the first is still showing. Defaults to `${variant}:${message}`. */
   dedupeKey?: string
+  action?: ToastAction
 }
 
 export interface ToastItem {
@@ -17,6 +25,7 @@ export interface ToastItem {
   message: string
   duration: number
   dedupeKey: string
+  action?: ToastAction
 }
 
 // PERF-001: o contexto público só carrega as ações, que são estáveis. A fila
@@ -32,6 +41,7 @@ const DEFAULT_DURATIONS: Record<ToastVariant, number> = {
   error: 6000,
   warning: 5000,
   success: 3500,
+  info: 7000,
 }
 
 // How many toasts render concurrently ("fila" — queue). Extras wait FIFO and
@@ -44,12 +54,40 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined)
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<ToastItem[]>([])
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  // NOTIF-001: o tempo para enquanto o mouse ou o foco estão no aviso (dá para
+  // chegar ao botão de ação); `deadlines` guarda quando cada um venceria e
+  // `paused`, quanto faltava ao pausar.
+  const deadlines = useRef<Map<string, number>>(new Map())
+  const paused = useRef<Map<string, number>>(new Map())
 
   const dismissToast = useCallback((id: string) => {
     const timer = timers.current.get(id)
     if (timer) { clearTimeout(timer); timers.current.delete(id) }
+    deadlines.current.delete(id)
+    paused.current.delete(id)
     setQueue(prev => prev.filter(t => t.id !== id))
   }, [])
+
+  const arm = useCallback((id: string, ms: number) => {
+    timers.current.set(id, setTimeout(() => dismissToast(id), ms))
+    deadlines.current.set(id, Date.now() + ms)
+  }, [dismissToast])
+
+  const pauseToast = useCallback((id: string) => {
+    const timer = timers.current.get(id)
+    if (!timer) return
+    clearTimeout(timer)
+    timers.current.delete(id)
+    paused.current.set(id, Math.max(0, (deadlines.current.get(id) ?? 0) - Date.now()))
+  }, [])
+
+  // Ao retomar, pelo menos 1,5 s para a pessoa ver que o aviso continua ali.
+  const resumeToast = useCallback((id: string) => {
+    const remaining = paused.current.get(id)
+    if (remaining === undefined) return
+    paused.current.delete(id)
+    arm(id, Math.max(1500, remaining))
+  }, [arm])
 
   const showToast = useCallback((variant: ToastVariant, message: string, options: ToastOptions = {}) => {
     const dedupeKey = options.dedupeKey ?? `${variant}:${message}`
@@ -59,7 +97,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setQueue(prev => {
       const dupe = prev.find(t => t.dedupeKey === dedupeKey)
       if (dupe) { resultId = dupe.id; return prev }
-      return [...prev, { id, variant, message, duration, dedupeKey }]
+      return [...prev, { id, variant, message, duration, dedupeKey, action: options.action }]
     })
     return resultId
   }, [])
@@ -71,11 +109,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     for (const t of visible) {
-      if (t.duration > 0 && !timers.current.has(t.id)) {
-        timers.current.set(t.id, setTimeout(() => dismissToast(t.id), t.duration))
-      }
+      if (t.duration > 0 && !timers.current.has(t.id) && !paused.current.has(t.id)) arm(t.id, t.duration)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- visible/dismissToast intentionally excluded, visibleKey is the derived dep
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- visible/arm intentionally excluded, visibleKey is the derived dep
   }, [visibleKey])
 
   useEffect(() => () => { timers.current.forEach(clearTimeout); timers.current.clear() }, [])
@@ -85,7 +121,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <ToastStack toasts={visible} onDismiss={dismissToast} />
+      <ToastStack toasts={visible} onDismiss={dismissToast} onPause={pauseToast} onResume={resumeToast} />
     </ToastContext.Provider>
   )
 }
