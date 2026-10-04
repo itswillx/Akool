@@ -8,22 +8,6 @@
     "ate": "2026-11-30"
   },
   {
-    "id": "GHSA-xvcm-6775-5m9r",
-    "package": "immutable",
-    "severity": "high",
-    "title": "Immutable: Hash-collision algorithmic complexity denial of service in Immutable.Map/Set",
-    "motivo": "Aguardando o PR do Dependabot com a versão corrigida (compatível por semver).",
-    "ate": "2026-11-30"
-  },
-  {
-    "id": "GHSA-v56q-mh7h-f735",
-    "package": "immutable",
-    "severity": "high",
-    "title": "Immutable.js `List` 32-bit trie overflow → unrecoverable DoS",
-    "motivo": "Aguardando o PR do Dependabot com a versão corrigida (compatível por semver).",
-    "ate": "2026-11-30"
-  },
-  {
     "id": "GHSA-r5fr-rjxr-66jc",
     "package": "lodash-es",
     "severity": "high",

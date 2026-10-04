@@ -86,6 +86,7 @@
   "overrides": {
     "eslint-plugin-jsx-a11y": {
       "eslint": "$eslint"
-    }
+    },
+    "sass": "1.79.4"
   }
 }
