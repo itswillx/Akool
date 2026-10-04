@@ -1,44 +1,59 @@
-import type { Factor, GoTrueMFAApi, Session } from '@supabase/supabase-js'
+import type { Session } from '@supabase/supabase-js'
 import type { TranslationKey } from '../i18n/translations'
 
 // MFA/TOTP (SEC-004). Quem tem um fator verificado precisa subir a sessão de
-// AAL1 (só senha) para AAL2 (senha + código) antes de entrar no app.
+// AAL1 (só senha) para AAL2 (senha + código) antes de entrar no app. A sessão
+// aberta com passkey de login (amr `passkey`) vale no lugar do código.
 
 export type AssuranceLevel = 'aal1' | 'aal2'
 
 export interface Assurance {
   currentLevel: AssuranceLevel | null
   nextLevel: AssuranceLevel | null
+  /** Sessão aberta com passkey de login (amr `passkey`): dispensa o código. */
+  passkey: boolean
 }
 
-function decodeAal(accessToken: string | undefined): AssuranceLevel | null {
+interface JwtClaims {
+  aal?: unknown
+  amr?: unknown
+}
+
+function decodeClaims(accessToken: string | undefined): JwtClaims | null {
   const payload = accessToken?.split('.')[1]
   if (!payload) return null
   try {
     const b64 = payload.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(payload.length / 4) * 4, '=')
-    const aal = (JSON.parse(atob(b64)) as { aal?: unknown }).aal
-    return aal === 'aal1' || aal === 'aal2' ? aal : null
+    return JSON.parse(atob(b64)) as JwtClaims
   } catch {
     return null
   }
 }
 
+/** O GoTrue registra `{ method: 'passkey' }` no amr de quem entrou com passkey de login. */
+function isPasskeySignIn(amr: unknown): boolean {
+  return Array.isArray(amr) && amr.some(entry => typeof entry === 'object' && entry !== null && (entry as { method?: unknown }).method === 'passkey')
+}
+
 /**
  * Mesmo cálculo de `supabase.auth.mfa.getAuthenticatorAssuranceLevel()`: o nível
  * atual vem do claim `aal` do JWT e o próximo é AAL2 se houver fator verificado.
+ * Além disso, marca a sessão aberta com passkey de login, que o GoTrue deixa em
+ * AAL1 (ver a seção de passkey abaixo).
  * Síncrono de propósito: roda dentro do onAuthStateChange, onde chamadas async
  * do supabase-js podem travar no lock da sessão.
  */
 export function assuranceFromSession(session: Pick<Session, 'access_token' | 'user'> | null): Assurance | null {
   if (!session) return null
-  const currentLevel = decodeAal(session.access_token)
+  const claims = decodeClaims(session.access_token)
+  const currentLevel = claims?.aal === 'aal1' || claims?.aal === 'aal2' ? claims.aal : null
   const hasVerifiedFactor = (session.user?.factors ?? []).some(f => f.status === 'verified')
-  return { currentLevel, nextLevel: hasVerifiedFactor ? 'aal2' : currentLevel }
+  return { currentLevel, nextLevel: hasVerifiedFactor ? 'aal2' : currentLevel, passkey: isPasskeySignIn(claims?.amr) }
 }
 
-/** A sessão existe, o usuário tem MFA e ainda não digitou o código. */
+/** A sessão existe, o usuário tem MFA e ainda não digitou o código (nem entrou com passkey). */
 export function needsMfaChallenge(assurance: Assurance | null): boolean {
-  return !!assurance && assurance.nextLevel === 'aal2' && assurance.currentLevel !== 'aal2'
+  return !!assurance && !assurance.passkey && assurance.nextLevel === 'aal2' && assurance.currentLevel !== 'aal2'
 }
 
 export function isTotpCode(code: string): boolean {
@@ -95,10 +110,12 @@ export async function verifyWithAnyFactor(
   return { error: 'invalid_code' }
 }
 
-// --- Passkey (WebAuthn) como fator de MFA ---------------------------------
-// Só a passkey de MFA sobe a sessão para AAL2 (no GoTrue, a passkey de login
-// principal dá AAL1 e o app pediria o código do mesmo jeito). No computador o
-// navegador mostra um QR para ler com o celular; no celular, Face ID ou digital.
+// --- Passkey de login ("Entrar com o celular") ---------------------------
+// O Supabase hospedado não liga passkey como fator de MFA (422 em 04/10/2026).
+// A passkey de login (experimental) abre uma sessão AAL1 com `passkey` no amr,
+// e o app e as edge functions a aceitam no lugar do código: o GoTrue só deixa
+// cadastrar passkey em sessão AAL2 de quem tem MFA, e a passkey do celular pede
+// Face ID ou digital. No computador o navegador mostra um QR para o celular.
 
 /** Onde a passkey mora: neste aparelho (celular, tablet) ou no celular, via QR. */
 export type PasskeyDevice = 'this' | 'phone'
@@ -119,61 +136,14 @@ export function supportsPasskeys(win: PasskeyWindow | undefined = typeof window 
   return !!win?.PublicKeyCredential && typeof credentials?.create === 'function' && typeof credentials.get === 'function'
 }
 
-export function verifiedFactorId(
-  factors: readonly Pick<Factor, 'id' | 'factor_type' | 'status'>[] | null | undefined,
-  type: Factor['factor_type'],
-): string | null {
-  return factors?.find(f => f.factor_type === type && f.status === 'verified')?.id ?? null
-}
-
-/**
- * Nome único com os segundos e prefixo próprio (o do app autenticador é
- * `Akool …`). Importa: se o enroll falha, o register() do auth-js remove o
- * fator webauthn VERIFICADO que tiver o mesmo nome.
- */
-export function passkeyFriendlyName(now: Date): string {
-  return `Passkey ${now.toISOString().slice(0, 19).replace('T', ' ')}`
-}
-
-type WebAuthnApi = GoTrueMFAApi['webauthn']
-type PasskeyCreateOptions = NonNullable<Parameters<WebAuthnApi['register']>[1]>
-type PasskeyGetOptions = NonNullable<Parameters<WebAuthnApi['authenticate']>[1]>
-
-/**
- * O auth-js parte de padrões de chave de segurança física (cross-platform,
- * hints security-key, residentKey discouraged). No celular isso esconderia a
- * própria passkey, e no computador o Chrome não iria direto ao QR.
- */
-export function passkeyCreateOptions(device: PasskeyDevice): PasskeyCreateOptions {
-  return {
-    hints: [device === 'this' ? 'client-device' : 'hybrid'],
-    authenticatorSelection: {
-      authenticatorAttachment: device === 'this' ? 'platform' : 'cross-platform',
-      residentKey: 'required',
-      requireResidentKey: true,
-      userVerification: 'required',
-    },
-    attestation: 'none',
-  }
-}
-
-export function passkeyGetOptions(device: PasskeyDevice): PasskeyGetOptions {
-  // O auth-js tipa esta sobrescrita como opções completas (com challenge), mas
-  // só mescla o que vier aqui.
-  const options: Partial<PasskeyGetOptions> = {
-    hints: [device === 'this' ? 'client-device' : 'hybrid'],
-    userVerification: 'required',
-  }
-  return options as PasskeyGetOptions
-}
-
-export type PasskeyErrorKind = 'cancelled' | 'exists' | 'wrong_domain' | 'unavailable' | 'failed'
+export type PasskeyErrorKind = 'cancelled' | 'exists' | 'wrong_domain' | 'unavailable' | 'not_found' | 'failed'
 
 export const PASSKEY_ERROR_KEYS: Record<PasskeyErrorKind, TranslationKey> = {
   cancelled: 'mfa_passkey_cancelled',
   exists: 'mfa_passkey_exists',
   wrong_domain: 'mfa_passkey_wrong_domain',
   unavailable: 'mfa_passkey_unavailable',
+  not_found: 'mfa_passkey_not_found',
   failed: 'mfa_passkey_failed',
 }
 
@@ -202,7 +172,8 @@ export function passkeyErrorKind(error: PasskeyErrorLike | null | undefined): Pa
   if (code === 'ERROR_CEREMONY_ABORTED' || names.some(n => n === 'NotAllowedError' || n === 'AbortError')) return 'cancelled'
   if (code === 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED' || code === 'webauthn_credential_exists' || names.includes('InvalidStateError')) return 'exists'
   if (code === 'ERROR_INVALID_RP_ID' || code === 'ERROR_INVALID_DOMAIN' || names.includes('SecurityError')) return 'wrong_domain'
-  if (code === 'mfa_webauthn_enroll_not_enabled' || code === 'mfa_webauthn_verify_not_enabled' || /does not support WebAuthn/i.test(message)) return 'unavailable'
-  if (code === 'mfa_verification_failed' || code === 'mfa_challenge_expired' || code.startsWith('webauthn_') || /validate WebAuthn/i.test(message)) return 'failed'
+  if (code === 'passkey_disabled' || /does not support WebAuthn|passkey support is experimental/i.test(message)) return 'unavailable'
+  if (code === 'webauthn_credential_not_found') return 'not_found'
+  if (code.startsWith('webauthn_') || /validate WebAuthn/i.test(message)) return 'failed'
   return null
 }
