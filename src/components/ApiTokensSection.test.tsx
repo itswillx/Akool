@@ -44,7 +44,7 @@ const backend = vi.hoisted(() => {
           expires_at: new Date(now + (args.p_expires_in_days ?? 90) * 86_400_000).toISOString(), revoked_at: null,
         }
         state.rows.unshift(created)
-        return ok({ id: created.id, token: 'akool_pat_SEGREDO_UMA_VEZ', prefix: created.prefix, expires_at: created.expires_at, scopes: created.scopes })
+        return ok({ id: created.id, token: `akool_pat_segredo_${created.id}`, prefix: created.prefix, expires_at: created.expires_at, scopes: created.scopes })
       }
       case 'update_api_token_scopes':
         if (row) row.scopes = args.p_scopes ?? {}
@@ -102,6 +102,8 @@ const REVOKED: Row = { ...MIGRATED, id: 'revogado', name: 'Antigo', prefix: 'ako
 const EXPIRED: Row = { ...MIGRATED, id: 'expirado', name: 'Vencido', prefix: 'akool_pat_exp1', scopes: { 'financas.contas': 'read' }, last_used_at: null, last_client: null, expires_at: iso(-3) }
 
 const onOpenSecurity = vi.fn()
+/** O segredo que o banco falso devolve na criação (um por chamada). */
+const SECRET = /^akool_pat_segredo_novo-\d+$/
 /** A próxima RPC devolve este erro. */
 const failNext = (error: Failure) => backend.state.failures.set(backend.state.calls.length + 1, error)
 
@@ -176,7 +178,7 @@ describe('ApiTokensSection: criação', () => {
     fireEvent.click(radio('Validade', '90 dias'))
     fireEvent.click(generate)
 
-    expect(await screen.findByText('akool_pat_SEGREDO_UMA_VEZ')).toBeTruthy()
+    expect(await screen.findByText(SECRET)).toBeTruthy()
     expect(document.activeElement).toBe(button('Copiar'))
     expect(backend.state.calls).toEqual([['create_api_token', {
       p_name: 'Claude no Mac', p_expires_in_days: 90, p_scopes: { 'projetos.quadros': 'read', 'projetos.cards': 'read', 'projetos.fila': 'write' },
@@ -185,9 +187,9 @@ describe('ApiTokensSection: criação', () => {
     expect(row('Claude no Mac').getByText('Ativo')).toBeTruthy()
 
     fireEvent.click(button('Copiar'))
-    expect(await screen.findByText('Copiado')).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Copiado' })).toBeTruthy()
     fireEvent.click(button('Já copiei'))
-    expect(screen.queryByText('akool_pat_SEGREDO_UMA_VEZ')).toBeNull()
+    expect(screen.queryByText(SECRET)).toBeNull()
   })
 
   it('cópia que falha avisa para copiar à mão; cancelar fecha o formulário', async () => {
@@ -196,7 +198,7 @@ describe('ApiTokensSection: criação', () => {
     openForm()
     fireEvent.click(radio('Ponto de partida', 'Somente leitura'))
     fireEvent.click(button('Gerar token'))
-    await screen.findByText('akool_pat_SEGREDO_UMA_VEZ')
+    await screen.findByText(SECRET)
     fireEvent.click(button('Copiar'))
     expect((await screen.findByRole('alert')).textContent).toBe('Não deu para copiar. Selecione o token e copie à mão.')
 
@@ -358,5 +360,125 @@ describe('ApiTokensSection: revogar e excluir', () => {
     expect(await screen.findByText('Tokens revogados: 1.')).toBeTruthy()
     expect(row('Claude Code (fila)').getByText('Revogado')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Revogar todos' })).toBeNull()
+  })
+})
+
+describe('ApiTokensSection: estado e foco', () => {
+  /** Cria pelo formulário e espera o segredo novo (diferente de `previous`, se a faixa anterior ainda está lá). */
+  const createWith = async (preset: string, previous?: string | null) => {
+    openForm()
+    fireEvent.click(radio('Ponto de partida', preset))
+    fireEvent.click(button('Gerar token'))
+    return screen.findByText(text => SECRET.test(text) && text !== previous)
+  }
+
+  it('o segundo token recomeça a faixa: sem "Copiado" herdado, foco no Copiar e o segredo novo', async () => {
+    await renderSection()
+    const first = await createWith('Somente leitura')
+    fireEvent.click(button('Copiar'))
+    expect(await screen.findByRole('button', { name: 'Copiado' })).toBeTruthy()
+    const second = await createWith('Claude Code: fila', first.textContent)
+    expect(second.textContent).not.toBe(first.textContent)
+    expect(screen.queryByText(first.textContent ?? '')).toBeNull()
+    expect(button('Copiar')).toBeTruthy()
+    expect(document.activeElement).toBe(button('Copiar'))
+  })
+
+  it('a segunda criação que falha não apaga a faixa do primeiro token', async () => {
+    await renderSection()
+    const first = await createWith('Somente leitura')
+    openForm()
+    fireEvent.click(radio('Ponto de partida', 'Claude Code: fila'))
+    failNext({ code: '42501', message: 'Confirme o segundo fator (MFA) antes de dar Escrever, Excluir ou Administração a um token' })
+    fireEvent.click(button('Gerar token'))
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(screen.getByText(first.textContent ?? '')).toBeTruthy()
+  })
+
+  it('"Já copiei" devolve o foco para o "Gerar novo token"', async () => {
+    await renderSection()
+    await createWith('Somente leitura')
+    const dismiss = button('Já copiei')
+    dismiss.focus()
+    fireEvent.click(dismiss)
+    await waitFor(() => expect(document.activeElement).toBe(button('Gerar novo token')))
+  })
+
+  it('revogar o token recém-criado tira o segredo da tela', async () => {
+    await renderSection()
+    await createWith('Somente leitura')
+    const name = within(screen.getByRole('list', { name: 'Seus tokens' })).getAllByText('Token')[0]
+    const revoke = within(name.closest('li') as HTMLElement).getByRole('button', { name: 'Revogar' })
+    fireEvent.click(revoke)
+    fireEvent.click(revoke)
+    expect(await screen.findByText('Token revogado.')).toBeTruthy()
+    expect(screen.queryByText(SECRET)).toBeNull()
+  })
+
+  it('o painel de edição fecha quando o token deixa de estar ativo', async () => {
+    await renderSection()
+    fireEvent.click(row('Claude Code (fila)').getByRole('button', { name: 'Editar permissões' }))
+    expect(screen.getByRole('region', { name: /Editar permissões de/ })).toBeTruthy()
+    const all = button('Revogar todos')
+    fireEvent.click(all)
+    fireEvent.click(all)
+    expect(await screen.findByText('Tokens revogados: 1.')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: /Editar permissões de/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Salvar permissões' })).toBeNull()
+  })
+
+  it('fechar a aba durante o "Gerando…" não perde o segredo: ele aparece ao voltar', async () => {
+    const first = await renderSection()
+    openForm()
+    fireEvent.click(radio('Ponto de partida', 'Somente leitura'))
+    fireEvent.click(button('Gerar token'))
+    first.unmount()
+    await waitFor(() => expect(backend.state.rows.some(r => r.id.startsWith('novo-'))).toBe(true))
+    await renderSection()
+    expect(await screen.findByText(SECRET)).toBeTruthy()
+  })
+
+  it('o foco não cai no body: formulário, cancelar, edição e exclusão', async () => {
+    await renderSection()
+    openForm()
+    expect(document.activeElement).toBe(screen.getByLabelText('Nome do token'))
+    fireEvent.click(button('Cancelar'))
+    await waitFor(() => expect(document.activeElement).toBe(button('Gerar novo token')))
+
+    const edit = row('Claude Code (fila)').getByRole('button', { name: 'Editar permissões' })
+    fireEvent.click(edit)
+    const cancel = within(screen.getByRole('region', { name: /Editar permissões de/ })).getByRole('button', { name: 'Cancelar' })
+    cancel.focus()
+    fireEvent.click(cancel)
+    await waitFor(() => expect(document.activeElement).toBe(edit))
+
+    const del = row('Antigo').getByRole('button', { name: 'Excluir' })
+    del.focus()
+    fireEvent.click(del)
+    fireEvent.click(del)
+    expect(await screen.findByText('Token excluído.')).toBeTruthy()
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Seus tokens' })))
+  })
+
+  it('cada botão da linha diz de qual token é; o Copiar diz o que fazer; o "Copiado" é anunciado', async () => {
+    await renderSection()
+    const describedBy = (el: HTMLElement) => (el.getAttribute('aria-describedby') ?? '').split(' ').map(id => document.getElementById(id)?.textContent ?? '').join(' ')
+    expect(describedBy(row('Antigo').getByRole('button', { name: 'Excluir' }))).toContain('Antigo')
+    expect(describedBy(row('Claude Code (fila)').getByRole('button', { name: 'Revogar' }))).toContain('Claude Code (fila)')
+    expect(describedBy(row('Claude Code (fila)').getByRole('button', { name: 'Editar permissões' }))).toContain('akool_pat_abcd')
+
+    await createWith('Somente leitura')
+    // A instrução é o nome do grupo da faixa: lida uma vez ao entrar, não repetida no botão.
+    const banner = screen.getByRole('group', { name: /Copie agora/ })
+    expect(within(banner).getByRole('button', { name: 'Copiar' }).getAttribute('aria-describedby')).toBeNull()
+    fireEvent.click(button('Copiar'))
+    await waitFor(() => expect(screen.getAllByRole('status').some(s => s.textContent === 'Copiado')).toBe(true))
+  })
+
+  it('a seção com níveis diferentes avisa "Misto" também para o leitor de tela', async () => {
+    await renderSection()
+    fireEvent.click(row('Claude Code (fila)').getByRole('button', { name: 'Editar permissões' }))
+    const group = screen.getByRole('radiogroup', { name: 'Todas de Projetos' })
+    expect(document.getElementById(group.getAttribute('aria-describedby') ?? '')?.textContent).toBe('Misto')
   })
 })

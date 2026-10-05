@@ -276,6 +276,7 @@ supabase/functions/
 
 - `tsconfig.functions.json` (API-005): strict, ES2023 sem DOM, `types: ["node"]` (os testes leem migrations com `node:fs`), `allowImportingTsExtensions`, `noEmit`, `tsBuildInfoFile` em `node_modules/.tmp`. `include: ["supabase/functions/_api", "supabase/functions/_domain"]` (um padrão terminado em `/**` é ignorado pelo TypeScript) e `exclude: ["supabase/functions/**/runtime", "supabase/functions/**/index.ts"]` (relativos ao arquivo). Fica referenciado no `tsconfig.json`, então `npx tsc -b` checa os módulos puros. Opcional: rodar `deno check supabase/functions/api/index.ts` no CI.
 - `_api/importBoundary.test.ts` (API-005): fora de `runtime/`, `_api` e `_domain` só importam caminhos relativos com `.ts` dentro de `supabase/functions` (inclusive `import type`, `export … from` e `import()`), e o que importarem de fora (ex.: `_shared`) segue a mesma regra. Ficam proibidos `src/`, `@/`, pacote nu, `npm:`, `jsr:`, import de efeito colateral e importar `runtime/` ou um `index.ts`. Testes podem importar `vitest` e `node:*`. O `exclude` do tsconfig não basta: um arquivo importado é checado do mesmo jeito.
+- Globais do Node (`process`, `Buffer`, `require`, `__dirname`…) ficam proibidos em `_api` e `_domain` fora dos testes, pela regra `no-restricted-globals` do `eslint.config.js`. O `types: ["node"]` do `tsconfig.functions.json` existe só por causa dos testes, então o `tsc` sozinho deixaria passar.
 
 **Porte de módulos de `src/lib`.** Cada card de porte:
 

@@ -200,6 +200,24 @@ function discriminator(options: readonly JsonSchema[]): string | null {
   return Object.keys(first).find(key => options.every(o => o.properties?.[key]?.const !== undefined)) ?? null
 }
 
+
+/**
+ * Caracteres como o Postgres conta (char_length): pontos de código, não UTF-16;
+ * um surrogate solto conta 1, como no spread. Para em `limit + 1`: um texto
+ * enorme num campo curto não vira um array inteiro na memória da edge.
+ */
+function codePoints(value: string, limit: number): number {
+  let n = 0
+  for (let i = 0; i < value.length && n <= limit; i++) {
+    const unit = value.charCodeAt(i)
+    if (unit >= 0xd800 && unit <= 0xdbff && i + 1 < value.length) {
+      const next = value.charCodeAt(i + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) i++
+    }
+    n++
+  }
+  return n
+}
 function check(schema: JsonSchema, value: unknown, at: (string | number)[], issues: SchemaIssue[]): void {
   const push = (keyword: string, message: string, extra: (string | number)[] = []) => {
     if (issues.length < MAX_ISSUES) issues.push({ path: jsonPointer([...at, ...extra]), keyword, message })
@@ -221,8 +239,9 @@ function check(schema: JsonSchema, value: unknown, at: (string | number)[], issu
   }
 
   if (typeof value === 'string') {
-    // Caracteres como o Postgres conta (char_length): pontos de código, não UTF-16.
-    const length = [...value].length
+    const length = schema.minLength === undefined && schema.maxLength === undefined
+      ? 0
+      : codePoints(value, Math.max(schema.minLength ?? 0, schema.maxLength ?? 0))
     if (schema.minLength !== undefined && length < schema.minLength) push('minLength', `Deve ter no mínimo ${schema.minLength} caractere(s)`)
     if (schema.maxLength !== undefined && length > schema.maxLength) push('maxLength', `Deve ter no máximo ${schema.maxLength} caractere(s)`)
     else if (schema.pattern !== undefined && !compiledPattern(schema.pattern).test(value)) push('pattern', 'Formato inválido')

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PostgrestError } from '@supabase/supabase-js'
 import type { TranslationKey } from '../../i18n/translations'
 import {
-  classifyApiTokenError, createApiToken, deleteApiToken, listApiTokens, purgeInactiveApiTokens, revokeAllApiTokens,
-  revokeApiToken, updateApiTokenScopes, type ApiTokenRow, type CreatedApiToken,
+  apiTokenStatus, classifyApiTokenError, createApiToken, deleteApiToken, listApiTokens, purgeInactiveApiTokens,
+  revokeAllApiTokens, revokeApiToken, updateApiTokenScopes, type ApiTokenRow, type CreatedApiToken,
 } from '../../lib/data/apiTokens'
 import type { CreateTokenInput } from './CreateTokenForm'
 import type { ScopeMap } from './scopeModel'
@@ -23,6 +23,16 @@ type Result<T> = { data: T | null; error: PostgrestError | null }
 const toProblem = (error: { code?: string | null; message?: string | null }): ApiTokenProblem =>
   ({ kind: classifyApiTokenError(error), message: error.message ?? '' })
 
+// Token criado com a aba já fechada (trocou de aba ou fechou as Configurações
+// durante o "Gerando…"): o segredo aparece na próxima leitura da lista. Só se
+// o token estiver nela e ativo, e o RLS só lista os da própria pessoa.
+let orphanCreated: CreatedApiToken | null = null
+
+/** O segredo fica na tela só enquanto o token dele está ativo na lista. */
+function keepIfActive(token: CreatedApiToken | null, rows: readonly ApiTokenRow[], now: number): CreatedApiToken | null {
+  return token && rows.some(row => row.id === token.id && apiTokenStatus(row, now) === 'active') ? token : null
+}
+
 export function useApiTokens() {
   const [tokens, setTokens] = useState<ApiTokenRow[]>([])
   // A aba monta com `loading` true; o efeito só aplica a resposta.
@@ -32,12 +42,25 @@ export function useApiTokens() {
   const [created, setCreated] = useState<CreatedApiToken | null>(null)
   const [problem, setProblem] = useState<ApiTokenProblem | null>(null)
   const [notice, setNotice] = useState<ApiTokenNotice | null>(null)
+  const mounted = useRef(false)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   const applyList = useCallback(({ data, error }: Result<ApiTokenRow[]>) => {
     if (error) setProblem(toProblem(error))
     else {
-      setTokens(data ?? [])
-      setNow(Date.now())
+      const rows = data ?? []
+      const at = Date.now()
+      // Só a aba montada pega o órfão, e só quando a linha dele já está na lista
+      // (a leitura pode chegar antes do commit da criação).
+      const orphan = mounted.current ? orphanCreated : null
+      if (orphan && rows.some(row => row.id === orphan.id)) orphanCreated = null
+      setTokens(rows)
+      setNow(at)
+      setCreated(current => keepIfActive(current ?? orphan, rows, at))
     }
     setLoading(false)
   }, [])
@@ -62,9 +85,14 @@ export function useApiTokens() {
     return !error
   }
 
-  const create = (input: CreateTokenInput) => run(() => createApiToken(input), data => {
-    setCreated(data)
-  })
+  // A faixa do token anterior fica até o próximo sair (se a criação falhar, o
+  // segredo dele não se perde); o key da faixa zera o "Copiado" e o foco.
+  const create = (input: CreateTokenInput) => {
+    return run(() => createApiToken(input), data => {
+      if (mounted.current) setCreated(data)
+      else orphanCreated = data
+    })
+  }
   const updateScopes = (id: string, scopes: ScopeMap) => run(() => updateApiTokenScopes(id, scopes), () => {
     setNotice({ key: 'settings_api_saved' })
   })
@@ -75,7 +103,6 @@ export function useApiTokens() {
     setNotice({ key: 'settings_api_revoked_all_notice', n: n ?? 0 })
   })
   const remove = (id: string) => run(() => deleteApiToken(id), () => {
-    setCreated(current => (current?.id === id ? null : current))
     setNotice({ key: 'settings_api_deleted_notice' })
   })
   const purge = () => run(async () => {

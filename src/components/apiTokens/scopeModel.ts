@@ -89,7 +89,8 @@ export type ScopeWarning = 'delete' | 'validacao' | 'sharing' | 'admin'
 export function scopeWarnings(scopes: ScopeMap): ScopeWarning[] {
   const warnings: ScopeWarning[] = []
   if (Object.values(scopes).includes('delete')) warnings.push('delete')
-  if (scopes['projetos.validacao']) warnings.push('validacao')
+  // Validação em Ler não libera nada; o aviso é para aprovar e reprovar (Escrever).
+  if (levelRank(scopes['projetos.validacao']) >= levelRank('write')) warnings.push('validacao')
   if (scopes['compartilhamento.pessoas']) warnings.push('sharing')
   if (hasAdminScope(scopes)) warnings.push('admin')
   return warnings
@@ -137,15 +138,24 @@ export function createLimits(isAdmin: boolean): PickerLimits {
   return { maxLevel: 'delete', admin: isAdmin }
 }
 
+// created_at e expires_at saem do mesmo now() do servidor; a folga cobre o arredondamento.
+const SPAN_SLACK_MS = 1_000
+
 /**
  * Na edição, a validade que resta limita o nível, como o banco faz: Escrever e
- * Excluir só em token que vence em até 90 dias; Administração, em até 30.
+ * Excluir só em token que vence em até 90 dias; Administração, em até 30. Um
+ * token emitido com validade dentro do teto passa sempre (o banco mede com o
+ * relógio dele, e o do navegador pode estar atrasado); o resto depende do que
+ * falta para vencer.
  */
-export function editLimits(expiresAt: string, isAdmin: boolean, now = Date.now()): PickerLimits {
-  const left = new Date(expiresAt).getTime() - now
+export function editLimits(token: { created_at: string; expires_at: string }, isAdmin: boolean, now = Date.now()): PickerLimits {
+  const expires = Date.parse(token.expires_at)
+  const span = expires - Date.parse(token.created_at)
+  const left = expires - now
+  const within = (days: number) => span <= days * DAY_MS + SPAN_SLACK_MS || left <= days * DAY_MS
   return {
-    maxLevel: left > MAX_DAYS_WITH_WRITE * DAY_MS ? 'read' : 'delete',
-    admin: isAdmin && left <= MAX_DAYS_WITH_ADMIN * DAY_MS,
+    maxLevel: within(MAX_DAYS_WITH_WRITE) ? 'delete' : 'read',
+    admin: isAdmin && within(MAX_DAYS_WITH_ADMIN),
   }
 }
 

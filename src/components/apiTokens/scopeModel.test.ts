@@ -112,6 +112,8 @@ describe('nível em lote', () => {
 describe('avisos, chips e visões', () => {
   it('avisa sobre Excluir, Validação, Compartilhamento e Administração', () => {
     expect(scopeWarnings(LEGACY_SCOPES)).toEqual([])
+    // Validação em Ler não libera aprovar nem reprovar (o preset Somente leitura tem).
+    expect(scopeWarnings({ 'projetos.validacao': 'read' })).toEqual([])
     expect(scopeWarnings({ 'documentos.paginas': 'delete', 'projetos.validacao': 'write', 'compartilhamento.pessoas': 'read', 'admin.usuarios': 'read' }))
       .toEqual(['delete', 'validacao', 'sharing', 'admin'])
   })
@@ -136,11 +138,24 @@ describe('edição', () => {
     expect(prefillScopes(null, true)).toEqual({})
   })
 
+  // Token criado agora (created_at = NOW) com N dias de validade.
+  const issued = (days: number, createdDaysAgo = 0) => ({ created_at: new Date(NOW - createdDaysAgo * DAY).toISOString(), expires_at: inDays(days - createdDaysAgo) })
+
   it('a validade que resta trava o nível como o banco: 90 dias para escrita, 30 para admin', () => {
-    expect(editLimits(inDays(91), true, NOW)).toEqual({ maxLevel: 'read', admin: false })
-    expect(editLimits(inDays(90), true, NOW)).toEqual({ maxLevel: 'delete', admin: false })
-    expect(editLimits(inDays(30), true, NOW)).toEqual({ maxLevel: 'delete', admin: true })
-    expect(editLimits(inDays(30), false, NOW)).toEqual({ maxLevel: 'delete', admin: false })
+    expect(editLimits(issued(365), true, NOW)).toEqual({ maxLevel: 'read', admin: false })
+    expect(editLimits(issued(90), true, NOW)).toEqual({ maxLevel: 'delete', admin: false })
+    expect(editLimits(issued(30), true, NOW)).toEqual({ maxLevel: 'delete', admin: true })
+    expect(editLimits(issued(30), false, NOW)).toEqual({ maxLevel: 'delete', admin: false })
+    // Token de 365 dias: libera a escrita quando faltam 90, e Administração quando faltam 30.
+    expect(editLimits(issued(365, 274), true, NOW)).toEqual({ maxLevel: 'read', admin: false })
+    expect(editLimits(issued(365, 275), true, NOW)).toEqual({ maxLevel: 'delete', admin: false })
+    expect(editLimits(issued(365, 335), true, NOW)).toEqual({ maxLevel: 'delete', admin: true })
+  })
+
+  it('relógio do navegador atrasado não trava um token recém-criado no teto (90 ou 30 dias)', () => {
+    const late = NOW - 5_000
+    expect(editLimits(issued(90), true, late)).toEqual({ maxLevel: 'delete', admin: false })
+    expect(editLimits(issued(30), true, late)).toEqual({ maxLevel: 'delete', admin: true })
   })
 
   it('compara mapas pelo conteúdo, não pela ordem', () => {

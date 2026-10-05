@@ -94,9 +94,10 @@ export function TokenScopePicker({ value, onChange, isAdmin, limits, emptyHint }
                   {name}
                 </button>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  {bulk === 'mixed' && <span style={hintStyle}>{t('api_picker_mixed')}</span>}
+                  {bulk === 'mixed' && <span id={`${id}-${section}-mixed`} style={hintStyle}>{t('api_picker_mixed')}</span>}
                   <SegmentedRadio
                     label={t('api_picker_section_all', { section: name })}
+                    describedBy={bulk === 'mixed' ? `${id}-${section}-mixed` : undefined}
                     value={bulk === 'mixed' ? null : bulk}
                     onChange={(level: PickerLevel) => change(setSectionLevel(value, section, level, limits))}
                     options={bulkOptions}

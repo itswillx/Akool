@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { KeyRound } from 'lucide-react'
 import { Field } from '@/shared/ui/Field'
 import { primaryBtnStyle } from '@/shared/ui/uiTokens'
@@ -31,6 +31,9 @@ export function CreateTokenForm({ isAdmin, busy, onCreate, onCancel }: {
   const [name, setName] = useState('')
   const [scopes, setScopes] = useState<ScopeMap>({})
   const [days, setDays] = useState(30)
+  // Abrir o formulário leva o foco ao nome (o botão que abriu sai da tela).
+  const nameInput = useRef<HTMLInputElement>(null)
+  useEffect(() => { nameInput.current?.focus() }, [])
   // A escolha fica guardada: tirar a escrita devolve a validade que a pessoa pediu.
   const effectiveDays = clampExpiry(days, scopes)
   const empty = Object.keys(scopes).length === 0
@@ -51,6 +54,7 @@ export function CreateTokenForm({ isAdmin, busy, onCreate, onCancel }: {
           {control => (
             <input
               {...control}
+              ref={nameInput}
               value={name}
               onChange={event => setName(event.target.value)}
               placeholder={t('settings_api_name_placeholder')}

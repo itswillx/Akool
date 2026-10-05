@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useEffect, useId, useRef, type Ref } from 'react'
 import { Pencil } from 'lucide-react'
 import { MAX_ACTIVE_TOKENS } from '../../../supabase/functions/_api/catalog'
 import { useLanguage } from '../../i18n/LanguageContext'
@@ -25,7 +25,9 @@ export interface TokenListActions {
   onPurge: () => void
 }
 
-export function TokenList({ tokens, now, isAdmin, busy, editingId, actions }: {
+export function TokenList({ titleRef, tokens, now, isAdmin, busy, editingId, actions }: {
+  /** O título recebe o foco quando a ação some com o botão focado. */
+  titleRef?: Ref<HTMLHeadingElement>
   tokens: readonly ApiTokenRow[]
   now: number
   isAdmin: boolean
@@ -45,7 +47,7 @@ export function TokenList({ tokens, now, isAdmin, busy, editingId, actions }: {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <h3 id={titleId} style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>{t('settings_api_list_label')}</h3>
+          <h3 id={titleId} ref={titleRef} tabIndex={-1} style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>{t('settings_api_list_label')}</h3>
           <span style={hintStyle}>{t('settings_api_active_count', { n: active })}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -97,6 +99,17 @@ function TokenRow({ token, status, now, isAdmin, busy, editing, actions }: {
 }) {
   const { t, lang } = useLanguage()
   const panelId = useId()
+  // Os botões repetem em todas as linhas; a descrição diz de qual token são.
+  const nameId = useId()
+  const prefixId = useId()
+  const rowLabel = `${nameId} ${prefixId}`
+  // Fechar o painel (Salvar ou Cancelar) tira o botão focado: o foco volta ao Editar.
+  const editButton = useRef<HTMLButtonElement>(null)
+  const wasEditing = useRef(editing)
+  useEffect(() => {
+    if (wasEditing.current && !editing && (!document.activeElement || document.activeElement === document.body)) editButton.current?.focus()
+    wasEditing.current = editing
+  }, [editing])
   const fmt = (iso: string) => new Date(iso).toLocaleDateString(localeOf(lang))
   const scopes = prefillScopes(token.scopes, isAdmin)
 
@@ -128,15 +141,15 @@ function TokenRow({ token, status, now, isAdmin, busy, editing, actions }: {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 260px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{token.name}</span>
+            <span id={nameId} style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{token.name}</span>
             <span style={statusBadgeStyle(status)}>{t(`settings_api_status_${status}`)}</span>
           </div>
           <span style={{ fontSize: 12, color: 'var(--color-text-muted)', overflowWrap: 'anywhere' }}>
-            <code>{token.prefix}…</code>
+            <code id={prefixId}>{token.prefix}…</code>
             {' · '}
             {meta}
           </span>
-          <ul aria-label={t('settings_api_scopes_of', { name: token.name })} style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <ul aria-label={t('settings_api_scopes_of', { name: `${token.name} (${token.prefix}…)` })} style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {chips.length === 0
               ? <li style={chipStyle}>{t('settings_api_no_scopes')}</li>
               : chips.map(chip => <li key={chip.section} title={chipDetail(chip)} style={chipStyle}>{chipText(chip)}</li>)}
@@ -145,8 +158,10 @@ function TokenRow({ token, status, now, isAdmin, busy, editing, actions }: {
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', flex: '0 1 auto' }}>
           {status === 'active' && (
             <button
+              ref={editButton}
               type="button"
               aria-expanded={editing}
+              aria-describedby={rowLabel}
               aria-controls={editing ? panelId : undefined}
               disabled={busy && !editing}
               onClick={() => actions.onEdit(editing ? null : token.id)}
@@ -160,6 +175,7 @@ function TokenRow({ token, status, now, isAdmin, busy, editing, actions }: {
             <ConfirmButton
               label={t('settings_api_revoke')}
               confirmLabel={t('settings_api_revoke_confirm')}
+              describedBy={rowLabel}
               disabled={busy}
               onConfirm={() => actions.onRevoke(token.id)}
             />
@@ -168,12 +184,13 @@ function TokenRow({ token, status, now, isAdmin, busy, editing, actions }: {
             label={t('settings_api_delete')}
             confirmLabel={t('settings_api_delete_confirm')}
             warning={status === 'active' ? t('settings_api_delete_active_warning') : undefined}
+            describedBy={rowLabel}
             disabled={busy}
             onConfirm={() => actions.onDelete(token.id)}
           />
         </div>
       </div>
-      {editing && (
+      {editing && status === 'active' && (
         <EditScopesPanel
           id={panelId}
           token={token}

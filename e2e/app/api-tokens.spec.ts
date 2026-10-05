@@ -9,6 +9,10 @@ import { expect, test, T } from '../fixtures'
 
 const env = stagingEnv()
 
+// O segredo passa pela tela e pela rede. No CI o repositório é público e o
+// relatório sobe como artefato quando falha: lá, nada de trace nem captura.
+test.use({ trace: process.env.CI ? 'off' : 'retain-on-failure', screenshot: 'off', video: 'off' })
+
 async function openApiTab(page: Page): Promise<Locator> {
   await page.getByRole('button', { name: T.account_menu }).click()
   const dialog = page.getByRole('dialog')
@@ -25,12 +29,16 @@ async function createToken(dialog: Locator, name: string, preset: string): Promi
   await dialog.getByRole('radiogroup', { name: T.api_preset_label }).getByRole('radio', { name: preset }).click()
   await dialog.getByRole('radiogroup', { name: T.settings_api_expiry_label }).getByRole('radio', { name: T.settings_api_expiry_days.replace('{n}', '7') }).click()
   await dialog.getByRole('button', { name: T.settings_api_generate }).click()
-  const code = dialog.locator('code', { hasText: 'akool_pat_' }).first()
+  // A faixa do token novo é o grupo nomeado pela instrução; a lista também tem
+  // <code> com o prefixo (akool_pat_xxxx…), então nada de procurar no diálogo todo.
+  const banner = dialog.getByRole('group', { name: T.settings_api_new_token })
+  const code = banner.locator('code')
   await expect(code).toBeVisible()
   const secret = (await code.textContent())?.trim() ?? ''
-  expect(secret).toMatch(/^akool_pat_[0-9a-f]{64}$/)
-  await dialog.getByRole('button', { name: T.settings_api_dismiss }).click()
-  await expect(dialog.locator('code', { hasText: 'akool_pat_' })).toHaveCount(0)
+  // Sem toMatch: a mensagem de falha imprimiria o segredo.
+  expect(/^akool_pat_[0-9a-f]{64}$/.test(secret), 'segredo no formato akool_pat_ + 64 hex').toBe(true)
+  await banner.getByRole('button', { name: T.settings_api_dismiss }).click()
+  await expect(banner).toHaveCount(0)
   return secret
 }
 
@@ -46,10 +54,14 @@ async function cardsApi(request: APIRequestContext, token: string, action: strin
 
 const rowOf = (dialog: Locator, name: string) => dialog.getByRole('listitem').filter({ hasText: name }).first()
 
-/** Botão de dois passos: o segundo clique confirma. */
-async function confirmTwice(button: Locator) {
-  await button.click()
-  await button.click()
+/** Rótulo com {n} (ex.: "Confirmar: excluir {n}") como regex de qualquer número. */
+const countLabel = (template: string) =>
+  new RegExp(`^${template.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\{n\\}', '\\d+')}$`)
+
+/** Botão de dois passos: o primeiro clique arma e troca o nome; o segundo, no nome novo, confirma. */
+async function confirmTwice(scope: Locator, label: string, confirmLabel: string | RegExp) {
+  await scope.getByRole('button', { name: label, exact: true }).click()
+  await scope.getByRole('button', { name: confirmLabel, exact: typeof confirmLabel === 'string' }).click()
 }
 
 test('criar com preset, editar escopos, revogar, limpar e excluir; token sem acesso recebe 401', async ({ app: page, unique, request }) => {
@@ -76,26 +88,30 @@ test('criar com preset, editar escopos, revogar, limpar e excluir; token sem ace
     expect(await cardsApi(request, secretA, 'queue.list')).toBe(400)
 
     // Revogar: 401. Depois "Limpar revogados e expirados" tira a linha.
-    await confirmTwice(rowA.getByRole('button', { name: T.settings_api_revoke, exact: true }))
+    await confirmTwice(rowA, T.settings_api_revoke, T.settings_api_revoke_confirm)
     await expect(rowA.getByText(T.settings_api_status_revoked, { exact: true })).toBeVisible()
     expect(await cardsApi(request, secretA, 'queue.list')).toBe(401)
-    await confirmTwice(dialog.getByRole('button', { name: T.settings_api_purge }))
+    await confirmTwice(dialog, T.settings_api_purge, countLabel(T.settings_api_purge_confirm))
     await expect(dialog.getByText(nameA)).toHaveCount(0)
 
     // B: somente leitura; excluído ainda ativo, para na hora.
     const secretB = await createToken(dialog, nameB, T.api_preset_read_only)
     expect(await cardsApi(request, secretB, 'boards')).toBe(200)
-    const deleteB = rowOf(dialog, nameB).getByRole('button', { name: T.settings_api_delete, exact: true })
-    await deleteB.click()
+    const rowB = rowOf(dialog, nameB)
+    await rowB.getByRole('button', { name: T.settings_api_delete, exact: true }).click()
     await expect(dialog.getByText(T.settings_api_delete_active_warning)).toBeVisible()
-    await deleteB.click()
+    await rowB.getByRole('button', { name: T.settings_api_delete_confirm, exact: true }).click()
     await expect(dialog.getByText(nameB)).toHaveCount(0)
     expect(await cardsApi(request, secretB, 'boards')).toBe(401)
   } finally {
-    // Sobrou token deste teste (falha no meio)? Exclui pela tela.
+    // Sobrou token deste teste (falha no meio)? Exclui pela tela. O Excluir pode
+    // ter ficado armado ("Confirmar exclusão") se a falha veio entre os dois cliques.
     for (const name of [nameA, nameB]) {
       const leftover = rowOf(dialog, name)
-      if (await leftover.count()) await confirmTwice(leftover.getByRole('button', { name: T.settings_api_delete, exact: true }))
+      if (!(await leftover.count())) continue
+      const armed = leftover.getByRole('button', { name: T.settings_api_delete_confirm, exact: true })
+      if (!(await armed.count())) await leftover.getByRole('button', { name: T.settings_api_delete, exact: true }).click()
+      await armed.click()
     }
   }
 })

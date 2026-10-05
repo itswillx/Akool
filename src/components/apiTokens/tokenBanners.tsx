@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Check, Copy, ShieldCheck } from 'lucide-react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { TranslationKey } from '../../i18n/translations'
 import { copyToClipboard } from '../../lib/clipboard'
 import type { ApiTokenErrorKind } from '../../lib/data/apiTokens'
-import { bannerStyle, smallBtnStyle } from './tokenStyles'
+import { bannerStyle, smallBtnStyle, srOnlyStyle } from './tokenStyles'
 
 // API-009: as faixas da aba API: o token recém-criado (mostrado uma vez) e o
 // erro, com o atalho para Segurança quando falta o segundo fator.
@@ -29,10 +29,12 @@ export function NewTokenBanner({ token, onDismiss }: { token: string; onDismiss:
   // O formulário fecha ao criar: o foco vem para o Copiar, não cai no body.
   const copyRef = useRef<HTMLButtonElement>(null)
   useEffect(() => { copyRef.current?.focus() }, [])
+  // O foco chega no Copiar; a instrução é o nome do grupo, lida ao entrar nele.
+  const hintId = useId()
 
   return (
-    <div style={{ ...bannerStyle('warning'), display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <span>{t('settings_api_new_token')}</span>
+    <div role="group" aria-labelledby={hintId} style={{ ...bannerStyle('warning'), display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <span id={hintId}>{t('settings_api_new_token')}</span>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <code style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontSize: 12, padding: '6px 8px', borderRadius: 6, backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
           {token}
@@ -44,6 +46,8 @@ export function NewTokenBanner({ token, onDismiss }: { token: string; onDismiss:
         <button type="button" onClick={onDismiss} style={smallBtnStyle}>{t('settings_api_dismiss')}</button>
       </div>
       {copy === 'failed' && <span role="alert">{t('settings_api_copy_failed')}</span>}
+      {/* Região viva montada desde o início: o "Copiado" é anunciado. */}
+      <span role="status" style={srOnlyStyle}>{copy === 'copied' ? t('settings_api_copied') : ''}</span>
     </div>
   )
 }

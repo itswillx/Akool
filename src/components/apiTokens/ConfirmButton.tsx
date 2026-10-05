@@ -5,9 +5,11 @@ import { dangerBtnStyle } from './tokenStyles'
 // primeiro clique arma (o texto vira "Confirmar…"), o segundo executa e sair
 // do botão desarma. Armado, o aviso aparece ao lado, ligado ao botão.
 
-export function ConfirmButton({ label, confirmLabel, warning, disabled, onConfirm }: {
+export function ConfirmButton({ label, confirmLabel, warning, describedBy, disabled, onConfirm }: {
   label: string
   confirmLabel: string
+  /** Ids do que o botão afeta (ex.: nome e prefixo do token da linha). */
+  describedBy?: string
   /** Mostrado (e anunciado) enquanto o botão está armado. */
   warning?: string
   disabled?: boolean
@@ -22,7 +24,7 @@ export function ConfirmButton({ label, confirmLabel, warning, disabled, onConfir
       <button
         type="button"
         disabled={disabled}
-        aria-describedby={showWarning ? id : undefined}
+        aria-describedby={[describedBy, showWarning ? id : null].filter(Boolean).join(' ') || undefined}
         onClick={() => {
           if (!armed) {
             setArmed(true)

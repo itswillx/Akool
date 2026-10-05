@@ -25,7 +25,7 @@ export function EditScopesPanel({ id, token, isAdmin, now, busy, onSave, onCance
   const titleId = useId()
   const initial = useMemo(() => prefillScopes(token.scopes, isAdmin), [token.scopes, isAdmin])
   const [scopes, setScopes] = useState(initial)
-  const limits = editLimits(token.expires_at, isAdmin, now)
+  const limits = editLimits(token, isAdmin, now)
   const canSave = !busy && Object.keys(scopes).length > 0 && !sameScopes(scopes, initial)
   const expires = new Date(token.expires_at).toLocaleDateString(localeOf(lang))
 

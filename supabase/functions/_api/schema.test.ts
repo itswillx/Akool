@@ -106,6 +106,18 @@ describe('validate: palavras-chave', () => {
     expect(issuesOf({ type: 'string', minLength: 1 }, '')[0]).toMatchObject({ keyword: 'minLength', message: 'Deve ter no mínimo 1 caractere(s)' })
   })
 
+  it('conta pontos de código nas fronteiras, inclusive surrogate solto, e para no teto', () => {
+    const lone = '\ud83d'
+    expect(validate({ type: 'string', maxLength: 3 }, `ab${lone}`).ok).toBe(true)
+    expect(validate({ type: 'string', maxLength: 2 }, `ab${lone}`).ok).toBe(false)
+    expect(validate({ type: 'string', minLength: 3, maxLength: 3 }, '😀a😀').ok).toBe(true)
+    expect(validate({ type: 'string', minLength: 4 }, '😀a😀').ok).toBe(false)
+    expect(validate({ type: 'string', minLength: 2 }, '😀😀').ok).toBe(true)
+    expect(issuesOf({ type: 'string', maxLength: 5 }, '😀'.repeat(6)).map(i => i.keyword)).toEqual(['maxLength'])
+    // Texto enorme num campo curto: recusado sem percorrer tudo.
+    expect(issuesOf({ type: 'string', maxLength: 10 }, 'x'.repeat(2_000_000)).map(i => i.keyword)).toEqual(['maxLength'])
+  })
+
   it('pattern não roda sobre texto acima do maxLength', () => {
     const schema: JsonSchema = { type: 'string', pattern: '^[a-z]+$', maxLength: 5 }
     expect(validate(schema, 'abc').ok).toBe(true)
