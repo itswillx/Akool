@@ -82,7 +82,7 @@ O API-002 decide entre os planos; o API-004 cria os papéis.
 | Papel | Atributos e grants | Para quê |
 |---|---|---|
 | `akool_api` | NOLOGIN; `grant authenticated to akool_api with inherit true, set false`; `grant akool_api to postgres with inherit false, set true` | Herda as policies `TO authenticated` e os grants por coluna (`has_privs_of_role`), mas ninguém consegue `set role authenticated` através dele. Recebe EXECUTE dos 11 `cq_*` revogados no SEC-012 e, depois, dos `loan_*`. É o alvo das RESTRICTIVE. |
-| `akool_api_login` | LOGIN NOINHERIT; `grant akool_api to akool_api_login with set true`; `grant akool_api_login to postgres with admin option, inherit false, set true`; senha fora do git | Sozinho, só executa `resolve_api_token_v2` e as funções de `api_rt`. Depois de `reset role`, não lê nenhuma tabela pública. |
+| `akool_api_login` | LOGIN NOINHERIT; `grant akool_api to akool_api_login with inherit false, set true`; `grant akool_api_login to postgres with inherit false, set true` (o ADMIN o postgres já recebe ao criar o papel; ver a sonda abaixo); senha fora do git | Sozinho, só executa `resolve_api_token_v2` e as funções de `api_rt`. Depois de `reset role`, não lê nenhuma tabela pública. |
 
 - O Supavisor aceita papel custom com LOGIN (documentação do Supabase). As credenciais ficam em cache depois de trocar a senha.
 - **Plano B**, se o postgres do Supabase não tiver ADMIN OPTION sobre `authenticated`:
@@ -93,6 +93,29 @@ O API-002 decide entre os planos; o API-004 cria os papéis.
 
   Nesse plano, `reset role` deixa de ser barreira. A defesa contra SQL arbitrário passa a ser o teste estático `sqlSafety.test.ts`.
 - `supabase/checks/schema-snapshot.sql` ganha um bloco `roles` com os atributos de `akool_%` e as linhas de `pg_auth_members` (admin/inherit/set). Assim o drift pega mudança feita pelo painel.
+
+#### Sonda do API-002 (05/10/2026)
+
+**Decisão: plano A**, provisória até a prova pelo pooler (último item da tabela). Se o login pelo Supavisor falhar, vale o plano B.
+
+Evidência (harness `supabase/checks/api002-roles-probe.sql`, rodado no staging em transação desfeita):
+
+| Fato | Resultado |
+|---|---|
+| `postgres` sobre `authenticated` (staging e produção) | `admin=t inherit=t set=t`: pode conceder `authenticated` a outro papel |
+| Papel do caminho do MCP `apply_migration` | `postgres`, sem superusuário, com CREATEROLE (sonda `DO … RAISE`, sem registro no ledger) |
+| `grant … to postgres with admin option` | **Falha** com 0LP01 ("ADMIN option cannot be granted back to your own grantor"). No PG 16+, quem cria o papel já recebe ADMIN dele, concedido pelo `supabase_admin` com `inherit=f set=f` (`createrole_self_grant` vazio). O grant do postgres fica só `with inherit false, set true` |
+| `akool_api` | herda `authenticated` (USAGE `t`), sem SET em `authenticated` (`f`) |
+| Como `akool_api` com os claims de uma pessoa | `auth.uid()` lê os claims; policies `TO authenticated` valem (vê só a própria nota, insere a própria, a de outra pessoa é barrada pelo RLS); grants por coluna de `profiles` valem (`display_name` lê e altera, `role` dá *permission denied* nas duas) |
+| `akool_api_login` sozinho (NOINHERIT) | SET `akool_api` `t`; não herda `akool_api`; sem USAGE nem SET em `authenticated`; *permission denied* em `quick_notes` e `profiles`; 0 funções de `public` executáveis |
+| `set role authenticated` como `akool_api_login` e login pelo Supavisor (`akool_api_login.<ref>`, porta 6543) | **Pendente.** SET ROLE confere o `session_user`, então só uma sessão real pelo pooler prova. Depende da senha definida pelo usuário |
+
+**Claim `amr`** (documentação do Supabase: *JWT Claims Reference* e *Multi-Factor Authentication*):
+- É um array de `{method, timestamp}`, com `timestamp` em segundos Unix. O método mais recente vem primeiro, como em `[{"method":"totp","timestamp":1666086056},{"method":"password","timestamp":1666085924}]`.
+- É um claim opcional: só some se um *Custom Access Token Hook* o tirar, e o projeto não tem hook.
+- O `timestamp` é o do login com aquele método; renovar o token não o atualiza.
+- Regra do API-011: "autenticou há no máximo 10 minutos" é `max(amr[].timestamp) >= extract(epoch from now()) - 600`, lido de `auth.jwt() -> 'amr'`.
+- O fallback (MFA obrigatório para token de escrita) não é necessário.
 
 ### 1.3 Por que funciona
 

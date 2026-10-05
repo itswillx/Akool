@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { captureException } from "../_shared/sentry.ts";
+import { allows } from "../_api/scopes.ts";
+import { ACTION_SCOPES, insufficientScope } from "./scopeMap.ts";
 
 /**
  * API de cards para a IA (Claude Code via `npm run cards`).
@@ -10,7 +12,8 @@ import { captureException } from "../_shared/sentry.ts";
  * esta function roda com verify_jwt = false (config.toml).
  *
  * Toda regra (permissão no quadro, fila, conclusão) vive nas RPCs `public.cq_*`.
- * Aqui só resolvemos o token para um usuário e repassamos como `p_actor`, que as
+ * Aqui resolvemos o token para um usuário, conferimos a permissão do token para
+ * a ação (API-001, `scopeMap.ts`) e repassamos o usuário como `p_actor`, que as
  * RPCs só aceitam de service_role.
  */
 
@@ -103,6 +106,13 @@ function requireString(body: Record<string, unknown>, key: string): string {
 }
 
 class BadRequest extends Error {}
+
+// Devolvido por resolve_api_token_v2 (API-001).
+interface Principal {
+  user_id: string;
+  token_id: string;
+  scopes: Record<string, unknown>;
+}
 
 type Handler = (body: Record<string, unknown>) => { fn: string; args: Record<string, unknown> };
 
@@ -208,15 +218,20 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: actor, error: tokenError } = await admin.rpc("resolve_api_token", { p_hash: await sha256Hex(token) });
+  const { data: resolved, error: tokenError } = await admin.rpc("resolve_api_token_v2", {
+    p_hash: await sha256Hex(token),
+    p_client: "cards-api",
+  });
   if (tokenError) {
-    console.error("[cards-api] resolve_api_token falhou:", tokenError.message);
-    await captureException(new Error(`resolve_api_token: ${tokenError.message}`), { fn: "cards-api", tags: { rpc: "resolve_api_token" } });
+    console.error("[cards-api] resolve_api_token_v2 falhou:", tokenError.message);
+    await captureException(new Error(`resolve_api_token_v2: ${tokenError.message}`), { fn: "cards-api", tags: { rpc: "resolve_api_token_v2" } });
     return json(500, { error: "Falha ao validar o token" });
   }
-  if (!actor) {
+  const principal = resolved as Principal | null;
+  if (!principal?.user_id) {
     return json(401, { error: "Token inválido, revogado ou expirado" });
   }
+  const actor = principal.user_id;
 
   const verdict = await checkRateLimit(admin, "cards-api", String(actor), RATE_LIMIT, RATE_WINDOW_SECONDS);
   if (verdict && !verdict.allowed) {
@@ -238,6 +253,15 @@ Deno.serve(async (req: Request) => {
   const handler = Object.hasOwn(ACTIONS, action) ? ACTIONS[action] : undefined;
   if (!handler) {
     return json(400, { error: `Ação desconhecida: "${action}"`, actions: Object.keys(ACTIONS) });
+  }
+
+  // Ação sem linha no mapa nega (fail-closed); scopeMap.test.ts garante a cobertura.
+  const required = Object.hasOwn(ACTION_SCOPES, action) ? ACTION_SCOPES[action] : undefined;
+  if (!required) {
+    return json(403, { error: "Ação sem permissão mapeada", code: "insufficient_scope" });
+  }
+  if (!allows(principal.scopes, required.sub, required.level)) {
+    return json(403, insufficientScope(required));
   }
 
   let call: { fn: string; args: Record<string, unknown> };

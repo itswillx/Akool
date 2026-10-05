@@ -109,11 +109,13 @@ já versionadas (`finance_store_module.sql`/`finance_projects_module.sql`/
 
 | Tabela | Operação | Quem |
 |---|---|---|
-| `quick_notes` | SELECT/INSERT/UPDATE/DELETE | own |
+| `quick_notes` | SELECT/INSERT/UPDATE/DELETE | own; `updated_at` é do servidor (gatilho `quick_notes_updated_at`, API-003) e serve de versão: o app grava condicionado a ela |
 | `study_topics` / `study_cards` / `study_logs` | SELECT/INSERT/UPDATE/DELETE | own |
 | `site_backups` / `site_backup_settings` | SELECT | admin apenas |
 | `site_backups` / `site_backup_settings` | INSERT/UPDATE/DELETE | **nenhuma policy** | só `service_role` (edge function `site-backup`) escreve |
 | `profile_secrets` | qualquer operação | **RLS habilitado, zero policies** | intencional: só `service_role` acessa (chaves de API de IA); ver advisory `rls_enabled_no_policy` — não é um gap, é o desenho |
+| `api_tokens` | SELECT | own (`api_tokens_select_own`), **grant por coluna** sem `user_id` e `token_hash` | escrita só pelas RPCs SECURITY DEFINER (`create_api_token`, `update_api_token_scopes`, `revoke_api_token`, `revoke_all_my_api_tokens`, `delete_api_token`), que recusam chamada feita com claims de token da API (API-001). `scopes` e `last_client` entraram com `grant select (coluna)`; nunca REVOKE de tabela |
+| `private.api_scope_catalog` | qualquer operação | **RLS habilitado, zero policies**, fora da Data API | catálogo de permissões da API (API-001), lido só pelas funções SECURITY DEFINER; mesmo desenho do `private.rate_limits` |
 
 ## Projects module
 
@@ -190,20 +192,22 @@ login) — único caso, intencional (validar o código antes de criar a conta).
 
 Migration `20260928145254_sec012_grants_hardening.sql`. Verificação:
 `supabase/checks/sec012-grants.sql` (transação desfeita). Depois dela, o
-advisor lista **32** funções `SECURITY DEFINER` para `authenticated` (eram 54)
-e só a `validate_invite_code` para `anon`. As 32 são intencionais:
+advisor passou a listar 34 funções `SECURITY DEFINER` para `authenticated` (eram 54)
+e só a `validate_invite_code` para `anon`. Com o API-001 (05/10/2026) são **37**,
+todas intencionais:
 
 | Grupo | Funções | Por que continuam com EXECUTE para `authenticated` |
 |---|---|---|
 | Helpers de RLS (10) | `page_is_readable`, `page_is_writable`, `current_user_can_share_page`, `user_can_access_board`, `is_admin`, `is_workspace_member`, `profile_is_related`, `loan_is_owner`, `loan_is_visible`, `loan_file_is_readable` | a política roda como quem consulta: sem o EXECUTE, o RLS quebra. Tirá-las da API exige movê-las para o schema `private` e refazer as políticas (card à parte) |
-| RPCs do frontend (22) | convites (`generate_invite_code`, `validate_invite_code`, `admin_add_invite_slots`, `admin_revoke_invite_code`), workspaces (`create_workspace`, `invite_member`, `accept_/decline_workspace_invite`, `remove_workspace_member`, `leave_workspace`, `bootstrap_*_categories`), `create_project_board`, `search_users_for_share`, tokens (`create_api_token`, `revoke_api_token`) e a fila no `QueueModal` (`cq_list`, `cq_enqueue`, `cq_move`, `cq_remove`, `cq_reprioritize`, `cq_validate`) | chamadas com o JWT do usuário; cada uma confere quem chama |
+| RPCs do frontend (27) | convites (`generate_invite_code`, `validate_invite_code`, `admin_add_invite_slots`, `admin_revoke_invite_code`), workspaces (`create_workspace`, `invite_member`, `accept_/decline_workspace_invite`, `remove_workspace_member`, `leave_workspace`, `bootstrap_*_categories`), `create_project_board`, `search_users_for_share`, perfil (`get_my_profile`, `admin_list_profiles`), tokens (`create_api_token`, `revoke_api_token`, `update_api_token_scopes`, `revoke_all_my_api_tokens`, `delete_api_token`) e a fila no `QueueModal` (`cq_list`, `cq_enqueue`, `cq_move`, `cq_remove`, `cq_reprioritize`, `cq_validate`) | chamadas com o JWT do usuário; cada uma confere quem chama. As de token recusam claims de token da API (API-001) |
 
 **Só `service_role`** (sem EXECUTE para `anon`/`authenticated`):
 - `cq_block`, `cq_boards`, `cq_card`, `cq_cards`, `cq_check`, `cq_complete`, `cq_next`, `cq_note`, `cq_release`, `cq_setup_flow`, `cq_start`: só a `cards-api` usa;
 - `admin_revoke_user_sessions`: a `admin-ops`;
 - `loan_approve`, `loan_cancel_request`, `loan_confirm_payment`, `loan_link_borrower`, `loan_reject`, `loan_reject_payment`, `loan_report_payment`, `loan_request`: não há tela de empréstimos. Uma tela nova precisa devolver o grant na mesma migration;
 - `set_ai_credentials` (não há tela) e `check_auto_site_backup_due` (feita para o `pg_cron`, que roda como `postgres`);
-- já eram: `_notify`, `check_rate_limit`, `resolve_api_token`, `list_public_tables`, `restore_site_backup`, `study_lookup_cache_prune`.
+- já eram: `_notify`, `check_rate_limit`, `resolve_api_token`, `list_public_tables`, `restore_site_backup`, `study_lookup_cache_prune`;
+- `resolve_api_token_v2` (API-001): a `cards-api` resolve o token com escopos efetivos. A v1 fica até o API-061.
 
 **Privilégios de tabela** em `public`:
 - `anon` só tem SELECT (o RLS decide as linhas); nenhuma escrita, TRUNCATE, TRIGGER, REFERENCES ou MAINTAIN;

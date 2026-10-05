@@ -3,7 +3,8 @@ import { LOCAL_KEYS } from '../lib/localKeys'
 import { flattenTree as flatten } from '../lib/pageTree'
 import { StickyNote, Trash2, Plus, Link2, X, FileText, FolderKanban } from 'lucide-react'
 import type { QuickNote, QuickNoteColor, QuickNoteLinkedItem } from '../types'
-import { useQuickNotes } from '../hooks/useQuickNotes'
+import { useQuickNotes, type QuickNoteChange, type QuickNoteConflict } from '../hooks/useQuickNotes'
+import { EditConflictBanner } from './SaveStatusBadge'
 import { usePages } from '../contexts/PagesContext'
 import { setDocsSelection } from '../lib/docsNavigation'
 import { activateProps } from '../lib/a11y'
@@ -33,7 +34,7 @@ function ColorDot({ color, selected, onClick, title }: {
 export default function QuickNotes({ isMobile = false }: { isMobile?: boolean }) {
   const { user } = useAuth()
   const { t } = useLanguage()
-  const { notes, createNote, updateNote, deleteNote } = useQuickNotes(user?.id)
+  const { notes, conflicts, createNote, updateNote, deleteNote, resolveConflict } = useQuickNotes(user?.id)
   const [draft, setDraft] = useState('')
   const [draftColor, setDraftColor] = useState<QuickNoteColor>('yellow')
   // Delete asks for confirmation; beforeDelete lets the card cancel its
@@ -94,7 +95,9 @@ export default function QuickNotes({ isMobile = false }: { isMobile?: boolean })
             <QuickNoteCard
               key={n.id}
               note={n}
+              conflict={conflicts[n.id]}
               onUpdate={updateNote}
+              onResolveConflict={resolveConflict}
               onRequestDelete={(id, beforeDelete) => setConfirmDelete({ id, beforeDelete })}
             />
           ))}
@@ -119,14 +122,24 @@ export default function QuickNotes({ isMobile = false }: { isMobile?: boolean })
 
 // ─── Single sticky note ───────────────────────────────────────────────────────
 
-function QuickNoteCard({ note, onUpdate, onRequestDelete }: {
+function QuickNoteCard({ note, conflict, onUpdate, onResolveConflict, onRequestDelete }: {
   note: QuickNote
-  onUpdate: (id: string, patch: Partial<Pick<QuickNote, 'content' | 'color' | 'linked_items'>>) => Promise<void>
+  conflict?: QuickNoteConflict
+  onUpdate: (id: string, change: QuickNoteChange) => Promise<void>
+  onResolveConflict: (id: string, choice: 'load' | 'keep') => Promise<void>
   onRequestDelete: (id: string, beforeDelete: () => void) => void
 }) {
   const { t } = useLanguage()
   const { pages, sharedPages, setActivePage, setActivePanel } = usePages()
   const [text, setText] = useState(note.content)
+  // API-003: fora de foco, o campo acompanha a nota (versão salva escolhida no
+  // conflito, rascunho recuperado, edição desfeita). Em foco, quem manda é o teclado.
+  const [shown, setShown] = useState(note.content)
+  const [focused, setFocused] = useState(false)
+  if (!focused && note.content !== shown) {
+    setShown(note.content)
+    setText(note.content)
+  }
   const [hov, setHov] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -175,14 +188,16 @@ function QuickNoteCard({ note, onUpdate, onRequestDelete }: {
     }
   }
 
+  // API-003: vínculos são operações sobre a nota mais recente. Se outra aba
+  // mexeu na lista, o item entra (ou sai) da lista de lá, sem apagar o resto.
   const addLink = (picked: PickedItem) => {
     setPickerOpen(false)
     const item: QuickNoteLinkedItem = { id: crypto.randomUUID(), ...picked }
-    onUpdate(note.id, { linked_items: [...note.linked_items, item] })
+    void onUpdate(note.id, current => ({ linked_items: [...current.linked_items, item] }))
   }
 
   const removeLink = (id: string) => {
-    onUpdate(note.id, { linked_items: note.linked_items.filter(l => l.id !== id) })
+    void onUpdate(note.id, current => ({ linked_items: current.linked_items.filter(l => l.id !== id) }))
   }
 
   return (
@@ -216,10 +231,20 @@ function QuickNoteCard({ note, onUpdate, onRequestDelete }: {
         </button>
       </div>
 
+      {conflict && (
+        <EditConflictBanner
+          inline
+          message={t('quick_notes_conflict')}
+          onLoadSaved={() => void onResolveConflict(note.id, 'load')}
+          onKeepMine={() => void onResolveConflict(note.id, 'keep')}
+        />
+      )}
+
       <textarea
         value={text}
         onChange={e => scheduleSave(e.target.value)}
-        onBlur={flush}
+        onFocus={() => setFocused(true)}
+        onBlur={() => { setFocused(false); flush() }}
         rows={Math.min(Math.max(text.split('\n').length, 2), 8)}
         style={{ resize: 'none', border: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', lineHeight: 1.45, width: '100%' }}
       />

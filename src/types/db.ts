@@ -1,6 +1,6 @@
 import type { Database as GeneratedDatabase } from './database'
 import type {
-  AppNotification, FinanceAccountType, FinanceAttachment, FinanceGoalStatus,
+  ApiScopes, AppNotification, FinanceAccountType, FinanceAttachment, FinanceGoalStatus,
   FinanceRecurringEntryStatus, FinanceStoreChannel, FinanceStoreCondition,
   FinanceStoreProductKind, FinanceStorePurchaseStatus, FinanceStoreSaleStatus,
   FinanceTxType, PageShareRole, PageType, ProjectCardAttachment,
@@ -41,6 +41,7 @@ type PatchTable<T extends GeneratedTables[keyof GeneratedTables], P> = {
 }
 
 type TableOverrides = Overrides<{
+  api_tokens: { scopes: ApiScopes }
   audit_log: { details: Record<string, unknown> }
   drawing_contents: {
     elements: unknown[] | null
@@ -108,6 +109,8 @@ type PatchedTables = {
 
 /** Argumentos jsonb das RPCs com a forma que o app manda. */
 type FunctionArgOverrides = {
+  create_api_token: { p_scopes?: ApiScopes }
+  update_api_token_scopes: { p_scopes: ApiScopes }
   reorder_project_cards: { p_moves: { id: string; column_id: string; sort_order: number }[] }
   reorder_project_columns: { p_columns: { id: string; sort_order: number }[] }
   schedule_project_cards: {

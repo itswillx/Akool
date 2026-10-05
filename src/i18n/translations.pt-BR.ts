@@ -551,6 +551,8 @@ export const ptBR = {
   quick_notes_color_pink: 'Rosa',
   quick_notes_color_blue: 'Azul',
   quick_notes_color_purple: 'Roxo',
+  quick_notes_conflict: 'Esta nota mudou em outro lugar enquanto você editava. Sua edição ainda não foi salva.',
+  quick_notes_gone: 'Uma nota rápida foi excluída em outro lugar.',
   item_picker_placeholder: 'Buscar páginas e cards...',
   item_picker_group_pages: 'Páginas',
   item_picker_group_cards: 'Cards de projeto',
