@@ -74,8 +74,14 @@ function Probe({ userId }: { userId: string | undefined }) {
 let container: HTMLDivElement
 let root: Root
 const render = (userId: string | undefined) => act(async () => { root.render(<Probe userId={userId} />) })
-/** Deixa os efeitos assíncronos (rascunhos, reenvio) terminarem. */
-const settle = () => act(async () => { for (let i = 0; i < 10; i++) await new Promise(r => setTimeout(r, 0)) })
+/**
+ * Deixa os efeitos assíncronos (rascunhos, reenvio com `import()`) terminarem:
+ * espera até `done` valer, ou cerca de 1 s. Com a suíte inteira em paralelo,
+ * uma espera fixa curta não basta.
+ */
+const settle = async (done: () => boolean) => {
+  for (let i = 0; i < 200 && !done(); i++) await act(async () => { await new Promise(r => setTimeout(r, 5)) })
+}
 
 beforeEach(() => {
   db.results = {}
@@ -180,7 +186,7 @@ describe('useQuickNotes: versão do servidor (API-003)', () => {
     await act(async () => { await hook.resolveConflict('a', 'load') })
     expect(hook.notes[0]).toMatchObject({ content: 'deles', updated_at: 'v9' })
     expect(hook.conflicts).toEqual({})
-    await settle()
+    await settle(() => offline.deleted.includes('u1:quick_notes:a'))
     expect(offline.deleted).toContain('u1:quick_notes:a')
   })
 
@@ -250,7 +256,7 @@ describe('useQuickNotes offline (REL-012)', () => {
     await act(async () => { await hook.updateNote('n1', { content: 'depois' }) })
     expect(hook.notes[0].content).toBe('depois')
     expect(showToast).not.toHaveBeenCalled()
-    await settle()
+    await settle(() => offline.puts.length > 0)
     expect(offline.puts).toHaveLength(1)
     expect(offline.puts[0]).toMatchObject({
       userId: 'u1', table: 'quick_notes', id: 'n1', value: { content: 'depois' }, version: '2026-09-01T00:00:00Z',
@@ -264,7 +270,7 @@ describe('useQuickNotes offline (REL-012)', () => {
     }]
     db.results.select = { data: [note('a', 'one', { updated_at: 'v1' })], error: null }
     await render('u1')
-    await settle()
+    await settle(() => !!hook.conflicts.a)
     expect(db.patches).toEqual([])
     expect(hook.notes[0]).toMatchObject({ content: 'offline', updated_at: 'v1' })
     expect(hook.conflicts.a).toMatchObject({ mine: { content: 'offline' }, theirs: { content: 'one' } })

@@ -511,6 +511,13 @@ export interface QuickNote {
   updated_at: string
 }
 
+// ─── API (tokens pessoais) ───────────────────────────────────────────────────
+
+/** API-001: nível de uma subseção no token (excluir ⊃ escrever ⊃ ler). */
+export type ApiScopeLevel = 'read' | 'write' | 'delete'
+/** `secao.subsecao` → nível; sem a chave = Nenhum. Catálogo: supabase/functions/_api/catalog.ts. */
+export type ApiScopes = Partial<Record<string, ApiScopeLevel>>
+
 // ─── Study Module ("Estudos") ────────────────────────────────────────────────
 
 export type StudyTopicStatus = 'planned' | 'studying' | 'paused' | 'completed'
