@@ -48,10 +48,12 @@ vi.mock('../contexts/ToastContext', () => ({ useToast: () => ({ showToast }) }))
 vi.mock('../i18n/LanguageContext', () => ({ useLanguage: () => ({ t: (key: string) => key }) }))
 
 // REL-012: os rascunhos locais (IndexedDB) em memória.
-const offline = vi.hoisted(() => ({ puts: [] as unknown[], drafts: [] as unknown[], deleted: [] as string[] }))
+const offline = vi.hoisted(() => ({
+  puts: [] as unknown[], drafts: [] as unknown[], deleted: [] as string[], current: {} as Record<string, unknown>,
+}))
 vi.mock('../lib/offlineStore', () => ({
   listDrafts: async () => offline.drafts,
-  getDraftFor: async () => null,
+  getDraftFor: async (_userId: string, _table: string, id: string) => offline.current[id] ?? null,
   putDraft: async (draft: unknown) => { offline.puts.push(draft) },
   deleteDraft: async (key: string) => { offline.deleted.push(key) },
   deleteDraftFor: async (userId: string, table: string, id: string) => { offline.deleted.push(`${userId}:${table}:${id}`) },
@@ -90,6 +92,7 @@ beforeEach(() => {
   offline.puts = []
   offline.drafts = []
   offline.deleted = []
+  offline.current = {}
   showToast.mockClear()
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -274,5 +277,115 @@ describe('useQuickNotes offline (REL-012)', () => {
     expect(db.patches).toEqual([])
     expect(hook.notes[0]).toMatchObject({ content: 'offline', updated_at: 'v1' })
     expect(hook.conflicts.a).toMatchObject({ mine: { content: 'offline' }, theirs: { content: 'one' } })
+  })
+})
+
+describe('useQuickNotes: caminhos de borda (API-003)', () => {
+  it('carregar com erro não trava o loading', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    db.results.select = { data: null, error: { message: 'boom' } }
+    await render('u1')
+    expect(hook.loading).toBe(false)
+    expect(hook.notes).toEqual([])
+    consoleError.mockRestore()
+  })
+
+  it('criar põe a nota no topo e já conhece a versão dela', async () => {
+    db.results.select = { data: [note('a', 'one', { updated_at: 'v1' })], error: null }
+    await render('u1')
+    db.results.insert = { data: note('b', 'nova', { updated_at: 'v5' }), error: null }
+    let saved = false
+    await act(async () => { saved = await hook.createNote({ content: 'nova', color: 'yellow' }) })
+    expect(saved).toBe(true)
+    expect(hook.notes.map(n => n.id)).toEqual(['b', 'a'])
+    db.results.update = [{ data: [{ id: 'b', updated_at: 'v6' }], error: null }]
+    await act(async () => { await hook.updateNote('b', { content: 'editada' }) })
+    expect(db.calls.at(-1)).toBe('quick_notes:update:id=b,updated_at=v5')
+  })
+
+  it('sem usuário, criar não grava', async () => {
+    await render(undefined)
+    let saved = true
+    await act(async () => { saved = await hook.createNote({ content: 'x', color: 'yellow' }) })
+    expect(saved).toBe(false)
+    expect(db.calls).toEqual([])
+  })
+
+  it('nota desconhecida ou patch vazio não gravam nada', async () => {
+    db.results.select = { data: [note('a', 'one', { updated_at: 'v1' })], error: null }
+    await render('u1')
+    await act(async () => {
+      await hook.updateNote('zz', { content: 'x' })
+      await hook.updateNote('a', {})
+      await hook.resolveConflict('a', 'keep')
+      await hook.deleteNote('zz')
+    })
+    expect(db.patches).toEqual([])
+    expect(db.calls).toEqual(['quick_notes:select:user_id=u1'])
+  })
+
+  it('gravação online tira do rascunho os campos gravados e deixa o resto sobre a versão nova', async () => {
+    db.results.select = { data: [note('a', 'one', { updated_at: 'v1' })], error: null }
+    await render('u1')
+    offline.current.a = { userId: 'u1', table: 'quick_notes', id: 'a', value: { content: 'x', color: 'blue' }, version: 'v1', savedAt: 1 }
+    db.results.update = [{ data: [{ id: 'a', updated_at: 'v2' }], error: null }]
+    await act(async () => { await hook.updateNote('a', { content: 'online' }) })
+    await settle(() => offline.puts.length > 0)
+    expect(offline.puts[0]).toMatchObject({ id: 'a', value: { color: 'blue' }, version: 'v2' })
+  })
+
+  it('gravação online com o rascunho todo coberto apaga o rascunho', async () => {
+    db.results.select = { data: [note('a', 'one', { updated_at: 'v1' })], error: null }
+    await render('u1')
+    offline.current.a = { userId: 'u1', table: 'quick_notes', id: 'a', value: { content: 'x' }, version: 'v1', savedAt: 1 }
+    db.results.update = [{ data: [{ id: 'a', updated_at: 'v2' }], error: null }]
+    await act(async () => { await hook.updateNote('a', { content: 'online' }) })
+    await settle(() => offline.deleted.includes('u1:quick_notes:a'))
+    expect(offline.deleted).toContain('u1:quick_notes:a')
+  })
+
+  it('em conflito, novas edições entram na "minha versão" sem ir ao servidor', async () => {
+    db.results.select = [
+      { data: [note('a', 'one', { updated_at: 'v1' })], error: null },
+      { data: note('a', 'deles', { updated_at: 'v9' }), error: null },
+    ]
+    await render('u1')
+    db.results.update = [{ data: [], error: null }]
+    await act(async () => { await hook.updateNote('a', { content: 'minha' }) })
+    const writes = db.patches.length
+    await act(async () => { await hook.updateNote('a', { color: 'blue' }) })
+    expect(db.patches).toHaveLength(writes)
+    expect(hook.conflicts.a.mine).toEqual({ content: 'minha', color: 'blue' })
+    expect(hook.notes[0]).toMatchObject({ content: 'minha', color: 'blue' })
+  })
+
+  it('excluir com sucesso tira a nota, o conflito e o rascunho', async () => {
+    db.results.select = { data: [note('a', 'one', { updated_at: 'v1' }), note('b', 'two')], error: null }
+    await render('u1')
+    db.results.delete = { data: [{ id: 'a' }], error: null }
+    await act(async () => { await hook.deleteNote('a') })
+    expect(hook.notes.map(n => n.id)).toEqual(['b'])
+    await settle(() => offline.deleted.includes('u1:quick_notes:a'))
+    expect(offline.deleted).toContain('u1:quick_notes:a')
+  })
+
+  it('rascunho na versão certa é reenviado ao abrir e a nota fica com a versão nova', async () => {
+    offline.drafts = [{ key: 'u1:quick_notes:a', userId: 'u1', table: 'quick_notes', id: 'a', value: { content: 'offline' }, version: 'v1', savedAt: 1 }]
+    db.results.select = { data: [note('a', 'one', { updated_at: 'v1' })], error: null }
+    db.results.update = [{ data: [{ id: 'a', updated_at: 'v2' }], error: null }]
+    await render('u1')
+    await settle(() => hook.notes[0]?.updated_at === 'v2')
+    expect(hook.notes[0]).toMatchObject({ content: 'offline', updated_at: 'v2' })
+    expect(hook.conflicts).toEqual({})
+  })
+
+  it('rascunho de nota apagada em outro lugar: a nota sai e aparece o aviso', async () => {
+    offline.drafts = [{ key: 'u1:quick_notes:a', userId: 'u1', table: 'quick_notes', id: 'a', value: { content: 'offline' }, version: 'v1', savedAt: 1 }]
+    db.results.select = [{ data: [note('a', 'one', { updated_at: 'v1' })], error: null }, { data: null, error: null }]
+    db.results.update = [{ data: [], error: null }]
+    await render('u1')
+    await settle(() => hook.notes.length === 0)
+    expect(hook.notes).toEqual([])
+    expect(showToast).toHaveBeenCalledWith('warning', 'quick_notes_gone')
   })
 })
