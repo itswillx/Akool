@@ -140,7 +140,7 @@ Evidência (harness `supabase/checks/api002-roles-probe.sql`, rodado no staging 
 
 - `restore_site_backup` (service_role), os jobs do pg_cron e a `cards-api` legada (service_role com `p_actor`) rodam com `auth.uid()` nulo.
 - Regra (API-006, `supabase/migrations/README.md`): gatilho que depende do usuário pula só em contexto sem usuário (service_role, postgres, cron), nunca para os papéis `authenticated` e `akool_api`, e valida só as colunas que mudaram (`new.x is distinct from old.x`).
-- O API-006 corrige `finance_guard_workspace`, que hoje recusa o INSERT de linhas de workspace durante o restore.
+- O API-006 (`20261005150000_api006_guards_without_user`, 05/10/2026) corrigiu `finance_guard_workspace`, que recusava com 42501 todo INSERT de linha de workspace sem usuário: nenhum backup com linha de workspace restaurava. A condição exata, que vale para gatilho novo: `auth.uid() is null and coalesce(auth.role(), '') not in ('authenticated', 'anon')` → `return new`. Prova: `supabase/checks/api006-restore.sql` (bloco 2 falha antes da migration e conclui depois, no staging).
 
 ## 2. Guardas no banco
 

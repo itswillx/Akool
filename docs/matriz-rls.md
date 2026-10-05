@@ -57,8 +57,9 @@ Desde o PERF-002 (25/09/2026), cada tabela tem **uma policy por comando**
 de "own" com os acessos extras da tabela abaixo (workspace via
 `is_workspace_member()`, compartilhamento). Antes eram `owner_all` (ALL) + policies
 extras separadas, todas `TO public`; o acesso resultante é o mesmo (conferido
-linha a linha na migration `20260925191300`). Há também um trigger
-`finance_guard_workspace` em 6 delas.
+linha a linha na migration `20260925191300`). O trigger
+`finance_guard_workspace` está em 16 tabelas: as 6 desta seção que têm
+`workspace_id`, as 5 da Loja mais `finance_suppliers` e as 4 de empréstimos.
 
 | Tabela | SELECT extra | INSERT | UPDATE extra | DELETE extra | Trigger de integridade |
 |---|---|---|---|---|---|
@@ -72,10 +73,13 @@ linha a linha na migration `20260925191300`). Há também um trigger
 | `finance_recurring_entries` | via `finance_recurring.workspace_id` (subquery) | own | — | — | nenhum próprio (herda da recorrência pai) |
 | `finance_transactions` | workspace, `shared_with_user_id` | own | workspace | workspace | `trg_finance_transactions_ws_guard` |
 
-`finance_guard_workspace()` (já versionada em `20260708120000_sec_finance_workspace_integrity.sql`)
+`finance_guard_workspace()` (versionada em `20260708120000_sec_finance_workspace_integrity.sql`)
 valida no INSERT/UPDATE que `workspace_id`, quando preenchido, corresponde a um
 workspace do qual o usuário é membro — sem isso um usuário poderia gravar
-`workspace_id` de um workspace alheio direto pelo client.
+`workspace_id` de um workspace alheio direto pelo client. Desde o API-006
+(`20261005150000_api006_guards_without_user`) ela pula o contexto sem usuário
+(restauração pelo service_role, `pg_cron`, migrations); sessão do app ou da API
+continua conferida, e um JWT de cliente sem `sub` também.
 
 ## Finance — workspace / family sharing
 
