@@ -1164,7 +1164,7 @@
     "private.ip_log_label(p_ip inet)": "19ad0824881f2569e612795987df7a66",
     "private.cq_priority_rank(p text)": "a6ff9d2fbe61ef5c90656acb2193233a",
     "private.ip_bucket_key(p_ip inet)": "24fd40f18ac34481bfb7075868638b1a",
-    "public.finance_guard_workspace()": "452b28b131e2663f1db6af84d6c1e216",
+    "public.finance_guard_workspace()": "e466aadb3a1c271693ae68a034796a8e",
     "private.cq_card_json(p_card uuid)": "c82165d717a75ce7517df65e360966c7",
     "public.revoke_all_my_api_tokens()": "d6a90e2563913f0775428fc0c2f00d79",
     "public.study_lookup_cache_prune()": "848f2924669ffba003945adb5809fbf3",
