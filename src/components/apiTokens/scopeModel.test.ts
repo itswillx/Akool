@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import harness from '../../../supabase/checks/api009-token-screen.sql?raw'
 import { COMPOSITE_VIEWS, LEGACY_SCOPES, SECTIONS, SUBSECTIONS } from '../../../supabase/functions/_api/catalog'
 import { normalizeScopes } from '../../../supabase/functions/_api/scopes'
+import { API_TOKEN_COLUMNS } from '../../lib/data/apiTokens'
 import en from '../../i18n/translations.en'
 import { ptBR } from '../../i18n/translations.pt-BR'
 import { PRESET_CHOICES, PRESETS, presetOf } from './presets'
@@ -190,6 +192,12 @@ describe('presets', () => {
       'financas.transacoes': 'write', 'financas.orcamentos_metas': 'write', 'financas.recorrentes': 'write',
       'financas.contas': 'read', 'financas.categorias': 'read',
     })
+  })
+
+  it('o harness SQL (supabase/checks/api009-token-screen.sql) usa os mesmos presets e o select da lista', () => {
+    const line = harness.split('\n').find(l => l.trim().startsWith('presets jsonb :='))
+    expect(JSON.parse(line?.match(/'(.+)';/)?.[1] ?? 'null')).toEqual(PRESETS)
+    expect(harness).toContain(`select ${API_TOKEN_COLUMNS} from public.api_tokens`)
   })
 
   it('presetOf reconhece o preset; mexer vira Personalizado; vazio é null', () => {
