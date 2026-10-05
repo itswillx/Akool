@@ -37,6 +37,8 @@ O seletor no topo alterna entre as visões Tudo, Documentos e Financeiro (`src/c
 
 Criar conta exige um código de convite, que é gerado por quem já usa o app (em Configurações).
 
+A raiz (`/`) é a página pública do app, com Entrar e Criar conta no canto superior direito; `/#entrar` e `/#cadastro` abrem o formulário direto.
+
 ### Portas
 
 | Porta | O quê | Como sobe |
@@ -96,7 +98,7 @@ O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda em todo p
 
 Outros workflows: **Supabase drift** (push na `main` em `supabase/`, toda segunda e manual; `npm run drift`), **Deploy function** (manual, uma function por vez, para o staging ou a produção) e **Preview link** (comenta no PR a URL do preview do Coolify; ver [`docs/deploy-coolify.md`](docs/deploy-coolify.md#51-preview-por-pr-dev-009)).
 
-- **Dependências:** o Dependabot abre PRs toda segunda ([`.github/dependabot.yml`](.github/dependabot.yml)); minor e patch vêm juntas, cada major sozinha. O `audit:ci` falha com vulnerabilidade `high`/`critical` em produção que não esteja em `scripts/audit-allowlist.json`, que tem motivo e validade por advisory: corrija pelo PR do Dependabot e tire a exceção.
+- **Dependências:** o Dependabot abre PRs toda segunda ([`.github/dependabot.yml`](.github/dependabot.yml)); minor e patch vêm juntas, cada major sozinha. O `audit:ci` falha com vulnerabilidade `high`/`critical` em produção que não esteja em `scripts/audit-allowlist.json`, que tem motivo e validade por advisory: corrija pelo PR do Dependabot e tire a exceção. Quando a versão vulnerável vem fixa de outro pacote, um `overrides` no `package.json` troca a transitiva: o `sass` 1.79.4 entra no lugar do 1.51.0 que o Excalidraw fixa e tira o `braces` (GHSA-vfj7-8cjw-p6xm, sem versão corrigida) da produção. Um teste em `scripts/workflows.test.ts` avisa quando o Excalidraw trocar o sass e o override puder sair.
 - **Testes sem segredos:** o `vite.config.ts` injeta um Supabase fictício no Vitest (`test.env`), que vence o `.env.local`. A suíte roda igual no CI e na sua máquina, e nunca aponta para o projeto real.
 - **Catraca do lint:** o projeto tem problemas de lint antigos, contados por arquivo e regra em `scripts/lint-baseline.json`. O `lint:ci` falha se aparecer um problema novo. Quando você corrigir algum, rode `npm run lint:ci -- --update` para baixar a base (ele recusa se houver piora). `npm run lint` continua mostrando tudo.
 - **Segredos:**

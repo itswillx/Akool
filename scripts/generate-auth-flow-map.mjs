@@ -51,13 +51,13 @@ function buildAuthElements() {
 
     container('appGateFlow', { x: lx, y: topY + 220, w: 280, h: 200, title: 'App gate (App.tsx)' }),
     box('gateLoading', { x: lx + 20, y: topY + 265, w: 110, h: 38, label: 'loading → spinner', fontSize: 11 }),
-    box('gateAuthPage', { x: lx + 20, y: topY + 315, w: 200, h: 38, label: '!user → AuthPage', fontSize: 11 }),
+    box('gateAuthPage', { x: lx + 20, y: topY + 315, w: 200, h: 38, label: '!user → AuthPage (landing)', fontSize: 11 }),
     box('gateApp', { x: lx + 20, y: topY + 365, w: 220, h: 38, label: 'user → App autenticado', fontSize: 11 }),
 
     container('dailyLogin', { x: lx, y: topY + 440, w: 280, h: 200, title: 'Daily login check' }),
     box('dailyCond', { x: lx + 20, y: topY + 485, w: 240, h: 50, label: 'last_login_date !== today\n&& !justSignedIn && mount > 5s', fontSize: 10 }),
     box('dailyAction', { x: lx + 20, y: topY + 550, w: 240, h: 38, label: 'signOut + dailyLoginRequired', fontSize: 10 }),
-    box('dailyBanner', { x: lx + 20, y: topY + 595, w: 240, h: 38, label: 'AuthPage banner amarelo', fontSize: 11 }),
+    box('dailyBanner', { x: lx + 20, y: topY + 595, w: 240, h: 38, label: 'AuthForm faixa do login diário', fontSize: 11 }),
   )
 
   // --- Left bottom: AuthProvider init ---
@@ -71,7 +71,7 @@ function buildAuthElements() {
 
   // --- Center top: AuthPage sign in / sign up ---
   push(
-    container('signInUI', { x: cx, y: topY, w: 280, h: 200, title: 'AuthPage — Sign in' }),
+    container('signInUI', { x: cx, y: topY, w: 280, h: 200, title: 'AuthForm — Sign in (#entrar)' }),
     box('signInForm', { x: cx + 20, y: topY + 55, w: 200, h: 38, label: 'email + senha', fontSize: 13 }),
     box('signInCall', { x: cx + 20, y: topY + 100, w: 160, h: 38, label: 'signIn()', fontSize: 13 }),
     box('signInError', { x: cx + 20, y: topY + 145, w: 200, h: 38, label: 'erro na UI / sucesso via listener', fontSize: 10 }),
@@ -83,7 +83,7 @@ function buildAuthElements() {
     box('updateLoginDate', { x: cx + 20, y: topY + 400, w: 240, h: 38, label: 'update last_login_date', fontSize: 11 }),
     box('reloadProfile', { x: cx + 20, y: topY + 445, w: 160, h: 38, label: 'loadProfile()', fontSize: 12 }),
 
-    container('signUpUI', { x: cx + 300, y: topY, w: 280, h: 200, title: 'AuthPage — Sign up' }),
+    container('signUpUI', { x: cx + 300, y: topY, w: 280, h: 200, title: 'AuthForm — Sign up (#cadastro)' }),
     box('signUpForm', { x: cx + 320, y: topY + 55, w: 240, h: 38, label: 'email + senha + convite', fontSize: 11 }),
     box('validateInvite', { x: cx + 320, y: topY + 100, w: 220, h: 38, label: 'validate_invite_code RPC', fontSize: 11 }),
     box('signUpCall', { x: cx + 320, y: topY + 145, w: 160, h: 38, label: 'signUp()', fontSize: 13 }),
@@ -110,7 +110,7 @@ function buildAuthElements() {
 
     container('updateProf', { x: cx + 500, y: topY + 650, w: 280, h: 120, title: 'updateProfile()' }),
     box('profUpdate', { x: cx + 520, y: topY + 695, w: 240, h: 38, label: 'profiles.update(name, lang, theme)', fontSize: 10 }),
-    box('langStorage', { x: cx + 520, y: topY + 740, w: 240, h: 38, label: 'localStorage excalinotion_auth_lang', fontSize: 10 }),
+    box('langStorage', { x: cx + 520, y: topY + 740, w: 240, h: 38, label: 'localStorage akool:auth.lang', fontSize: 10 }),
   )
 
   // --- Center bottom: invite codes ---

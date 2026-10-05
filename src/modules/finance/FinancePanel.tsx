@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, FileDown, PanelLeft, PanelTop, Plus, Users, 
 import { useModuleTour } from '../../hooks/useModuleTour'
 import { onAppEvent } from '../../lib/appEvents'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { LOCAL_KEYS } from '../../lib/localKeys'
 import { Tabs } from '@/shared/ui/Tabs'
 import { useAuth } from '../../contexts/AuthContext'
 import { useToast } from '../../contexts/ToastContext'
@@ -87,7 +88,18 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
 
   const [exporting, setExporting] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
-  const [wsModalOpen, setWsModalOpen] = useState(false)
+  // NOTIF-001: vindo de uma notificação do workspace, o modal abre ao montar
+  // (a chave foi gravada antes de o painel abrir) ou na hora (painel já aberto).
+  const [wsModalOpen, setWsModalOpen] = useState(() => localStorage.getItem(LOCAL_KEYS.financeOpenWorkspace) === '1')
+  useEffect(() => { localStorage.removeItem(LOCAL_KEYS.financeOpenWorkspace) }, [])
+  // Já aberto, os dados podem estar velhos (o convite chegou depois): recarrega junto.
+  useEffect(() => onAppEvent('finance_workspace_open', () => {
+    localStorage.removeItem(LOCAL_KEYS.financeOpenWorkspace)
+    setWsModalOpen(true)
+    void reload()
+  }), [reload])
+  // Convite aceito/recusado pela central de notificações: os dados do workspace mudaram.
+  useEffect(() => onAppEvent('finance_workspace_changed', () => { void reload() }), [reload])
 
   const { tab, setTab, projSection, setProjSection, navigateTo, direction, setDirection } = useFinanceNavigation()
 

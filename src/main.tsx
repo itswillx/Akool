@@ -11,6 +11,7 @@ import { LOCAL_KEYS, migrateLocalKeys } from './lib/localKeys'
 import { installChunkReload } from './lib/chunkReload'
 import { initObservability, reportError } from './lib/observability'
 import { missingEnv } from './lib/env'
+import { applyStoredTheme } from './lib/storedTheme'
 import ConfigErrorScreen from './components/ConfigErrorScreen'
 
 // Antes do primeiro render: readInitialMode() (inicializador de useState) e o
@@ -20,6 +21,10 @@ import ConfigErrorScreen from './components/ConfigErrorScreen'
 // 'projects' lê as chaves já pelo nome novo.
 migrateLocalKeys()
 runLegacyProjectsMigration()
+
+// Tema gravado no aparelho antes do primeiro paint: as telas de entrada
+// (landing, login, MFA, redefinição) nascem no tema certo, sem flash.
+applyStoredTheme()
 
 // SEC-009: fontes do Excalidraw servidas pelo próprio app (sem o CDN esm.sh).
 window.EXCALIDRAW_ASSET_PATH = __EXCALIDRAW_ASSET_PATH__

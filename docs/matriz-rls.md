@@ -34,7 +34,7 @@ Convenção: `own` = linha pertence ao usuário (`user_id`/`owner_id` = `auth.ui
 | `mindmap_contents` / `drawing_contents` / `note_contents` | SELECT | `page_is_readable()` | fn | conteúdo 1:1 com a página, mesma regra para as 3 |
 | idem | INSERT/UPDATE | `page_is_writable()` | fn | |
 | idem | DELETE | dono da página (subquery direta em `pages`, não via fn) | RLS direta | inconsistente com o padrão acima mas equivalente em efeito |
-| `notifications` | SELECT/UPDATE/DELETE | own (user_id) | RLS direta | |
+| `notifications` | SELECT/UPDATE/DELETE | own (user_id) | RLS direta | UPDATE só da coluna `read` (grant por coluna, `notif001`): o dono marca lida/não lida, não reescreve título, corpo nem `data` |
 | `notifications` | INSERT | **nenhuma policy** | — | linhas só entram via `_notify()` (SECURITY DEFINER), nunca por INSERT direto do cliente |
 
 ## Profiles & Invites
@@ -182,7 +182,7 @@ Todas revisadas pelo advisor do Supabase como "callable by authenticated/anon"
 | `admin_add_invite_slots`/`admin_revoke_invite_code`/`generate_invite_code`/`validate_invite_code` | mutam `invite_codes`/`profiles.invite_slots_remaining`, que têm RLS hard-deny para INSERT/UPDATE direto |
 | `create_workspace`/`invite_member`/`accept_workspace_invite`/`decline_workspace_invite`/`remove_workspace_member`/`leave_workspace` | operações multi-tabela com invariantes (ex.: 1 workspace por usuário) que não dá pra expressar só com RLS |
 | `bootstrap_finance_categories`/`bootstrap_workspace_categories` | seed de categorias padrão no primeiro uso |
-| `_notify` | único caminho de escrita em `notifications` (que não tem policy de INSERT) |
+| `_notify` | único caminho de escrita em `notifications` (que não tem policy de INSERT). Desde a `notif001`, um gatilho BEFORE INSERT (`private.notification_enrich`) completa a `data` com `actor_name` e `workspace_name`, e três gatilhos chamam `_notify`: compartilhar página (`page_shares`), compartilhar quadro (`project_shares`) e atribuir card (`project_cards.assignee_user_id`), só quando há um usuário autenticado agindo e ele não é o destinatário |
 | `handle_new_user`/`handle_invite_code_on_signup` | disparam em `auth.users` (trigger), fora do controle de RLS do app |
 
 `validate_invite_code` também é chamável por `anon` (tela de cadastro, antes do

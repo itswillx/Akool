@@ -22,6 +22,13 @@ export async function listOwnPages(userId: string) {
     .order('sort_order', { ascending: true }).order('id').range(from, to)), toPage)
 }
 
+/** Uma página pelo id (NOTIF-001: abrir a página de uma notificação antes de a árvore recarregar). Null se não existe ou o RLS esconde. */
+export async function getPageById(id: string): Promise<Page | null> {
+  const { data, error } = await supabase.from('pages').select('*').eq('id', id).maybeSingle()
+  if (error || !data) return null
+  return toPage(data)
+}
+
 /** Compartilhamentos recebidos, com a página junto (`pages` é null se o RLS esconder). */
 export async function listSharesWithPages(userId: string) {
   const { data, error } = await supabase.from('page_shares').select('role, pages(*)').eq('shared_with_user_id', userId)

@@ -1,84 +1,108 @@
-import { useState } from 'react'
-import { LOCAL_KEYS } from '../lib/localKeys'
-import { ShieldCheck } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { MfaPasskeyOption } from '../components/MfaPasskeyOption'
 import { isTotpCode } from '../lib/mfa'
-import { getT, toLang } from '../i18n/translations'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
+import { Field } from '@/shared/ui/Field'
+import { ghostBtnStyle } from '@/shared/ui/uiTokens'
+import { AuthCardLayout, AuthShell } from './auth/AuthShell'
+import { FormNotice } from './auth/FormNotice'
+import { useAuthLang } from './auth/useAuthLang'
 
 // SEC-004: segunda etapa do login para quem ativou MFA. A sessão existe (senha
 // ok, AAL1), mas o app só abre depois do código TOTP subir a sessão para AAL2.
-// Fica fora do LanguageProvider, como AuthPage e ResetPasswordPage.
+// Mesmo shell da tela de login; o idioma vem da mesma chave de localStorage
+// que o AuthPage grava (o perfil ainda não carregou).
+const LABEL_STYLE = { display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--color-text)', marginBottom: 6 } as const
+
 export default function MfaChallengePage() {
-  const { user, verifyMfa, signOut } = useAuth()
-  const storedLang = toLang(localStorage.getItem(LOCAL_KEYS.authLang))
-  const t = getT(storedLang)
+  const { user, verifyMfa, signOut, recoveryMode, cancelPasswordReset } = useAuth()
+  const isMobile = useIsMobile()
+  const { lang, uiLang, t, changeLang } = useAuthLang()
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [fieldError, setFieldError] = useState('')
+  const [serverError, setServerError] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Foco no campo do código ao abrir (por ref: autoFocus é vetado pelo jsx-a11y).
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!isTotpCode(code)) { setError(t('mfa_invalid_code')); return }
-    setError('')
+    if (loading) return
+    setServerError('')
+    if (!isTotpCode(code)) {
+      setFieldError(t('mfa_invalid_code'))
+      inputRef.current?.focus()
+      return
+    }
+    setFieldError('')
     setLoading(true)
-    const { error: err } = await verifyMfa(code)
-    setLoading(false)
-    if (err === 'invalid_code') setError(t('mfa_invalid_code'))
-    else if (err) setError(t('mfa_error', { message: err }))
+    try {
+      const { error } = await verifyMfa(code)
+      if (error === 'invalid_code') {
+        setFieldError(t('mfa_invalid_code'))
+        inputRef.current?.focus()
+      } else if (error) {
+        setServerError(t('mfa_error', { message: error }))
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const ready = isTotpCode(code) && !loading
+  // Vindo do link de recuperação, sair também desfaz a recuperação (senão a
+  // tela da senha nova voltaria sem sessão).
+  const leave = () => { void (recoveryMode ? cancelPasswordReset() : signOut()) }
+  const action = (
+    <button type="button" onClick={leave} style={{ ...ghostBtnStyle, color: 'var(--color-text)', fontSize: isMobile ? 12.5 : 13.5, padding: isMobile ? '6px 9px' : '8px 14px' }}>
+      {t('mfa_signout')}
+    </button>
+  )
 
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-bg-tertiary)', padding: '24px' }}>
-      <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.14)', padding: '40px', width: '100%', maxWidth: 420 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: 'var(--color-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text)' }}>
-            <ShieldCheck size={20} />
-          </div>
-          <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--color-text)', margin: 0 }}>Akool</p>
-        </div>
-
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text)', margin: '0 0 6px' }}>{t('mfa_challenge_title')}</h2>
+    <AuthShell view="signin" lang={lang} t={t} isMobile={isMobile} onNavigate={leave} onChangeLang={changeLang} title={t('mfa_challenge_title')} focus="none" action={action}>
+      <AuthCardLayout lang={uiLang} t={t} isMobile={isMobile} context="mfa">
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text)', margin: '0 0 6px' }}>{t('mfa_challenge_title')}</h1>
         <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: '0 0 6px', lineHeight: 1.5 }}>{t('mfa_challenge_desc')}</p>
         {user?.email && <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '0 0 20px' }}>{user.email}</p>}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 14, fontWeight: 500, color: 'var(--color-text)' }}>
-            {t('mfa_code_label')}
-            <input
-              value={code}
-              onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              autoFocus
-              placeholder="000000"
-              className="keep-font-size"
-              style={{ width: '100%', padding: '11px 12px', border: '1.5px solid var(--color-border)', borderRadius: 8, fontSize: 22, letterSpacing: '0.4em', textAlign: 'center', fontFamily: 'monospace', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', boxSizing: 'border-box' }}
-            />
-          </label>
+        <form onSubmit={handleSubmit} noValidate aria-busy={loading} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <Field label={t('mfa_code_label')} labelStyle={LABEL_STYLE} error={fieldError || null}>{control => (
+              <input
+                {...control}
+                ref={inputRef}
+                className="auth-input keep-font-size"
+                name="totp"
+                value={code}
+                onChange={e => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setFieldError('') }}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                enterKeyHint="go"
+                readOnly={loading}
+                placeholder="000000"
+                style={{ padding: '11px 12px', fontSize: 22, letterSpacing: '0.4em', textAlign: 'center', fontFamily: 'monospace' }}
+              />
+            )}</Field>
+          </div>
 
-          {error && <p role="alert" style={{ color: '#ef4444', fontSize: 13, margin: 0 }}>{error}</p>}
+          {serverError && <FormNotice tone="error" role="alert">{serverError}</FormNotice>}
 
           <button
             type="submit"
-            disabled={!ready}
-            style={{ width: '100%', backgroundColor: ready ? 'var(--color-btn-primary)' : 'var(--color-btn-disabled)', color: ready ? 'var(--color-btn-primary-text)' : 'var(--color-btn-disabled-text)', padding: '11px', borderRadius: 8, fontSize: 14, fontWeight: 600, border: 'none', cursor: ready ? 'pointer' : 'not-allowed' }}
+            aria-disabled={loading}
+            className="auth-submit"
+            style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'var(--color-btn-primary)', color: 'var(--color-btn-primary-text)', padding: '11px', borderRadius: 8, fontSize: 14, fontWeight: 600, border: 'none', cursor: loading ? 'progress' : 'pointer', opacity: loading ? 0.85 : 1 }}
           >
+            {loading && <span className="auth-spinner" aria-hidden="true" />}
             {loading ? t('mfa_verifying') : t('mfa_verify')}
           </button>
+          <MfaPasskeyOption t={t} />
         </form>
-
-        <p style={{ textAlign: 'center', marginTop: 20, marginBottom: 0 }}>
-          <button
-            type="button"
-            onClick={() => { void signOut() }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 13, textDecoration: 'underline', padding: 0 }}
-          >
-            {t('mfa_signout')}
-          </button>
-        </p>
-      </div>
-    </div>
+      </AuthCardLayout>
+    </AuthShell>
   )
 }

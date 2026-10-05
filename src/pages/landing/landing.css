@@ -1,0 +1,211 @@
+/* Página pública (LandingSections e vizinhos). Importado pelo LandingSections:
+   vai no CSS do chunk da landing, fora do boot. Tokens de movimento e
+   keyframes comuns em src/pages/auth/authMotion.css (carregado antes, com o
+   chunk de auth). Regras de movimento em docs/design-system.md ("Movimento"). */
+
+/* ─── Hero: texto | prévia a partir de 960 px; brilho estático da cor de destaque. */
+.landing-hero-band {
+  background:
+    radial-gradient(ellipse 60% 70% at 85% 10%, var(--color-accent-soft), transparent 70%),
+    radial-gradient(ellipse 45% 50% at 0% 100%, color-mix(in srgb, var(--color-accent-soft) 55%, transparent), transparent 70%);
+}
+.landing-hero {
+  display: grid;
+  gap: 40px;
+  align-items: center;
+}
+@media (min-width: 960px) {
+  /* Alinhado ao topo: a prévia é uma demonstração e muda de altura (cards
+     empilhados, visões); centralizado, o texto pularia junto. */
+  .landing-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    align-items: start;
+    gap: 56px;
+  }
+}
+/* No celular a prévia fica sem a barra lateral (as três colunas não caberiam). */
+@media (max-width: 640px) {
+  .landing-hero-preview .pv-side,
+  .landing-showcase-preview .pv-side { display: none; }
+  .landing-hero-preview .pv,
+  .landing-showcase-preview .pv { font-size: 10.5px; }
+}
+.landing-eyebrow {
+  display: inline-flex;
+  margin: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  /* Pílula numa linha; se quebrar (celular estreito), cantos arredondados. */
+  border-radius: 14px;
+  background-color: var(--color-surface);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-subtle);
+}
+.landing-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--color-text-subtle);
+}
+.landing-facts li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.landing-facts svg { color: var(--color-accent); }
+
+/* ─── Vitrine (LandingShowcase). O display do botão de pausa fica aqui (e não
+   inline) para o bloco de movimento reduzido conseguir escondê-lo. */
+.landing-showcase-toggle { display: inline-flex; }
+.landing-tab {
+  position: relative;
+  overflow: hidden;
+}
+.landing-tab-progress {
+  position: absolute;
+  right: 12px;
+  bottom: 2px;
+  left: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background-color: var(--color-accent);
+  transform-origin: left;
+  scale: 0 1;
+}
+.landing-showcase-panel {
+  display: grid;
+  gap: 28px;
+  align-items: center;
+  border-radius: 12px;
+}
+@media (min-width: 960px) {
+  .landing-showcase-panel { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 48px; }
+}
+
+/* ─── Como funciona: uma linha liga os números quando os três cabem lado a lado. */
+.landing-steps { position: relative; }
+.landing-step-number { position: relative; z-index: 1; }
+@media (min-width: 960px) {
+  .landing-steps::before {
+    content: '';
+    position: absolute;
+    top: 16px;
+    /* Do centro do 1º número ao centro do 3º (3 colunas, 2 vãos de 20 px, raio 16). */
+    right: calc((100% - 40px) / 3 - 16px);
+    left: 16px;
+    height: 1px;
+    background-color: var(--color-border-strong);
+  }
+}
+
+/* ─── Faixa final. */
+.landing-cta {
+  background:
+    radial-gradient(ellipse 60% 90% at 100% 0%, var(--color-accent-soft), transparent 70%),
+    var(--color-bg-secondary);
+}
+
+/* ─── Perguntas frequentes (LandingFaq). */
+.landing-faq-item {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background-color: var(--color-surface);
+}
+.landing-faq-q {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.landing-faq-q::-webkit-details-marker { display: none; }
+.landing-faq-chevron { flex-shrink: 0; color: var(--color-text-muted); }
+.landing-faq-item[open] .landing-faq-chevron { rotate: 180deg; }
+.landing-faq-a {
+  margin: 0;
+  padding: 0 16px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+@keyframes landing-showcase-progress {
+  to { scale: 1 1; }
+}
+
+/* ─── Movimento (só com ele liberado). */
+@media (prefers-reduced-motion: no-preference) {
+  /* Hero: o h1 entra sem atraso; o resto em sequência. Remontar a landing
+     (voltando do login) repete a entrada: é a "subida" da troca de página. */
+  .landing-enter { animation: auth-rise var(--motion-slow) var(--motion-ease) both; }
+  .landing-enter[data-step="2"] { animation-delay: 70ms; }
+  .landing-enter[data-step="3"] { animation-delay: 140ms; }
+  .landing-enter[data-step="4"] { animation-delay: 200ms; }
+
+  /* Seções e cartões surgem ao entrar na tela (animação guiada pela rolagem
+     do .auth-scroll). Longhands, com o timeline depois da duração: o atalho
+     `animation` zeraria o timeline. Sem suporte (Firefox), tudo já visível. */
+  @supports (animation-timeline: view()) {
+    .landing-reveal {
+      animation-name: auth-rise;
+      animation-duration: 1ms;
+      animation-timing-function: var(--motion-ease);
+      animation-fill-mode: both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 70%;
+    }
+  }
+
+  /* Cartões: revelação usa opacity + translate; o hover usa transform. */
+  .landing-card {
+    transition: transform var(--motion-base) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease);
+  }
+
+  /* Vitrine: a barra da aba ativa enche em 6 s e o fim dela troca de aba. */
+  .landing-tab-progress { animation: landing-showcase-progress 6s linear both; }
+  /* Pausa no botão e com o foco de teclado nas abas ou no painel (não no botão
+     de pausa: depois de "Retomar" ele continua focado). */
+  .landing-showcase[data-playing="false"] .landing-tab-progress,
+  .landing-showcase:has([role="tab"]:focus-visible, [role="tabpanel"]:focus-within) .landing-tab-progress { animation-play-state: paused; }
+  .landing-showcase-text { animation: auth-rise var(--motion-base) var(--motion-ease) both; }
+  /* Fora da tela, nada troca: o painel muda de altura e empurraria o que está abaixo. */
+  .landing-showcase[data-inview="false"] .landing-tab-progress { animation-play-state: paused; }
+
+  .landing-faq-chevron { transition: rotate var(--motion-base) var(--motion-ease); }
+  @supports (interpolate-size: allow-keywords) and selector(::details-content) {
+    /* Só aqui: a propriedade é herdada e animaria todo height: auto do app. */
+    .landing-faq { interpolate-size: allow-keywords; }
+    .landing-faq-item::details-content {
+      height: 0;
+      overflow: clip;
+      transition: height var(--motion-base) var(--motion-ease), content-visibility var(--motion-base) allow-discrete;
+    }
+    .landing-faq-item[open]::details-content { height: auto; }
+  }
+}
+
+@media (hover: hover) {
+  .landing-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px -18px rgba(0, 0, 0, 0.45);
+  }
+  /* O mouse sobre as abas ou o painel pausa; sobre o botão de pausa, não. */
+  .landing-showcase:has([role="tablist"]:hover, .landing-showcase-panel:hover) .landing-tab-progress { animation-play-state: paused; }
+}
+
+/* Sem movimento, nada troca sozinho: o botão de pausa não tem o que pausar. */
+@media (prefers-reduced-motion: reduce) {
+  .landing-showcase-toggle,
+  .landing-tab-progress { display: none; }
+}

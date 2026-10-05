@@ -11,6 +11,22 @@ export interface AppEvents {
    * Transações sem F5.
    */
   finance_transactions_changed: undefined
+  /**
+   * NOTIF-001: o convite do workspace foi aceito ou recusado fora do Financeiro
+   * (na central de notificações); o FinancePanel aberto recarrega.
+   */
+  finance_workspace_changed: undefined
+  /** Abrir o modal do workspace da família (o FinancePanel já montado escuta). */
+  finance_workspace_open: undefined
+  /** "Ver" no aviso de notificação nova: o sino abre o item. */
+  notification_open: { id: string }
+  /**
+   * Abrir um quadro (e um card) com o painel de Projetos já aberto: as chaves
+   * do localStorage só são lidas quando ele monta.
+   */
+  projects_open: { boardId: string; cardId?: string }
+  /** Abrir as Configurações numa aba (ex.: Backup, a partir do alerta de backup). */
+  settings_open: { tab: 'backup' | 'notifications' }
 }
 
 type EventName = keyof AppEvents

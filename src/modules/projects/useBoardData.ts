@@ -5,6 +5,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
+import { onAppEvent } from '../../lib/appEvents'
 import { useToast } from '../../contexts/ToastContext'
 import { useLanguage } from '../../i18n/LanguageContext'
 import {
@@ -145,6 +146,19 @@ export function useBoardData() {
   }, [user?.id])
 
   useEffect(() => { loadBoards() }, [loadBoards])
+
+  // NOTIF-001: uma notificação pede um quadro (e um card) com o painel já
+  // aberto. As chaves do localStorage só são lidas ao montar; aqui troca o
+  // quadro (recarregando a lista se ele acabou de ser compartilhado) e pede de
+  // novo a abertura do card.
+  const [openRequest, setOpenRequest] = useState(0)
+  useEffect(() => onAppEvent('projects_open', ({ boardId, cardId }) => {
+    if (cardId) localStorage.setItem(OPEN_CARD_KEY, cardId)
+    modalRestoredRef.current = false
+    setOpenRequest(n => n + 1)
+    if (boardsRef.current.some(b => b.id === boardId)) setActiveBoardId(boardId)
+    else void loadBoards().then(() => setActiveBoardId(boardId))
+  }), [loadBoards])
   useEffect(() => { if (activeBoardId) localStorage.setItem(ACTIVE_BOARD_KEY, activeBoardId) }, [activeBoardId])
 
   useEffect(() => {
@@ -274,7 +288,7 @@ export function useBoardData() {
     const card = saved.cardId ? cards.find(c => c.id === saved.cardId) ?? null : null
     if (saved.cardId && !card) return
     setCardModal({ open: true, card, columnId: saved.columnId })
-  }, [activeBoardId, boardLoading, cards])
+  }, [activeBoardId, boardLoading, cards, openRequest])
 
   useEffect(() => {
     if (cardModal.open && activeBoardId) {

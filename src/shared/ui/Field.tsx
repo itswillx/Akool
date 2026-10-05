@@ -32,7 +32,7 @@ export function Field({ label, labelStyle, hint, error, children }: {
       {children({ id, 'aria-describedby': describedBy, ...(error ? { 'aria-invalid': true as const } : {}) })}
       {hint && <div id={hintId}>{hint}</div>}
       {error && (
-        <p id={errorId} role="alert" style={{ color: '#ef4444', fontSize: 12.5, margin: '6px 0 0' }}>
+        <p id={errorId} role="alert" style={{ color: 'var(--color-error-text)', fontSize: 12.5, margin: '6px 0 0' }}>
           {error}
         </p>
       )}

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { LOCAL_KEYS } from '../lib/localKeys'
 import { localDateKey } from '../lib/localDate'
 import {
   FileText, Pencil, Layers, CheckSquare, Star, ArrowRight,
-  TrendingUp, Wallet, Bell, Check, X, Users, FolderKanban,
+  TrendingUp, Wallet, FolderKanban,
 } from 'lucide-react'
 import QuickNotes from './QuickNotes'
 import DashboardProjects, { useDashboardProjects } from './DashboardProjects'
@@ -11,8 +11,6 @@ import type { Page, PageType, Todo } from '../types'
 import { usePages } from '../contexts/PagesContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useWorkspaceMode } from '../contexts/WorkspaceModeContext'
-import { useNotifications } from '../contexts/NotificationsContext'
-import { supabase } from '../lib/supabase'
 import { setDocsSelection } from '../lib/docsNavigation'
 import { activateProps } from '../lib/a11y'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -151,9 +149,6 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
   const { user, profile } = useAuth()
   const { mode } = useWorkspaceMode()
   const { t, lang } = useLanguage()
-  const { notifications, unreadCount, markAsRead, markAllRead } = useNotifications()
-  const [notifOpen, setNotifOpen] = useState(false)
-  const notifRef = useRef<HTMLDivElement>(null)
   const ym = currentYM()
   // Finance widgets only appear in the "all" (everything) view; in "projects"
   // and "documents" modes they are hidden and their queries are skipped.
@@ -161,15 +156,6 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
   const finance = useDashboardFinance(user?.id, showFinance)
   const showProjects = mode !== 'finance'
   const projects = useDashboardProjects(user?.id, showProjects)
-
-  useEffect(() => {
-    if (!notifOpen) return
-    const handler = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [notifOpen])
 
   // PERF-015: em cache; o realtime de todos invalida (lib/queryClient.ts).
   const { data: todos = NO_TODOS } = useQuery({
@@ -241,39 +227,6 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
             <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-muted)', textTransform: 'capitalize' }}>
               {monthLabel(ym, lang)}
             </p>
-          </div>
-          <div ref={notifRef} style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'relative' }}>
-            <button
-              onClick={() => setNotifOpen(o => !o)}
-              title={t('notif_title')}
-              style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 7, border: '1px solid var(--color-border)', backgroundColor: notifOpen ? 'var(--color-hover)' : 'var(--color-bg)', color: 'var(--color-text-muted)', fontSize: 12, fontWeight: 500, cursor: 'pointer', transition: 'background-color 0.15s' }}
-            >
-              <Bell size={14} />
-              {unreadCount > 0 && (
-                <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 999, backgroundColor: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', lineHeight: 1 }}>
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </button>
-            {notifOpen && (
-              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, width: 340, maxHeight: 420, overflowY: 'auto', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', zIndex: 200 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px 8px', borderBottom: '1px solid var(--color-border)' }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)' }}>{t('notif_title')}</span>
-                  {unreadCount > 0 && (
-                    <button onClick={() => markAllRead()} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--color-accent)', fontWeight: 600, padding: '2px 6px' }}>
-                      {t('notif_mark_all_read')}
-                    </button>
-                  )}
-                </div>
-                {notifications.length === 0 ? (
-                  <div style={{ padding: '32px 14px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>{t('notif_empty')}</div>
-                ) : (
-                  notifications.slice(0, 20).map(n => (
-                    <NotificationItem key={n.id} notification={n} onRead={markAsRead} onClose={() => setNotifOpen(false)} />
-                  ))
-                )}
-              </div>
-            )}
           </div>
         </div>
 
@@ -454,89 +407,6 @@ function DashboardContent({ isMobile = false }: DashboardProps) {
 // ── Sub-components ──────────────────────────────────────────────────────────
 
 export const listStyle: React.CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 1 }
-
-function NotificationItem({ notification: n, onRead, onClose }: {
-  notification: import('../types').AppNotification
-  onRead: (id: string) => Promise<void>
-  onClose: () => void
-}) {
-  const { t } = useLanguage()
-  const [hov, setHov] = useState(false)
-  const [acting, setActing] = useState(false)
-  const [acted, setActed] = useState(false)
-  const inviteId = typeof n.data?.invite_id === 'string' ? n.data.invite_id : undefined
-  const showInviteActions = n.type === 'workspace_invite' && !!inviteId && !acted
-
-  const handleAction = async (action: 'accept' | 'decline') => {
-    if (!inviteId) return
-    setActing(true)
-    try {
-      if (action === 'accept') {
-        await supabase.rpc('accept_workspace_invite', { p_invite_id: inviteId })
-      } else {
-        await supabase.rpc('decline_workspace_invite', { p_invite_id: inviteId })
-      }
-      await onRead(n.id)
-      setActed(true)
-    } catch { /* ignore */ }
-    setActing(false)
-    onClose()
-    window.location.reload()
-  }
-
-  const handleRowClick = () => {
-    if (showInviteActions) return
-    if (!n.read) onRead(n.id)
-  }
-
-  const iconColor = n.type === 'workspace_invite' ? 'var(--color-accent)'
-    : n.type === 'invite_accepted' || n.type === 'member_joined' ? '#22c55e'
-    : n.type === 'invite_declined' ? '#f59e0b'
-    : '#ef4444'
-
-  const ago = (() => {
-    const ms = Date.now() - new Date(n.created_at).getTime()
-    const min = Math.floor(ms / 60000)
-    if (min < 1) return 'agora'
-    if (min < 60) return `${min}m`
-    const h = Math.floor(min / 60)
-    if (h < 24) return `${h}h`
-    return `${Math.floor(h / 24)}d`
-  })()
-
-  return (
-    <div
-      // Linha "clicável" só enquanto não lida e sem botões de convite: marca como lida.
-      {...(!n.read && !showInviteActions ? activateProps(handleRowClick) : {})}
-      onClick={handleRowClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{ display: 'flex', gap: 10, padding: '10px 14px', cursor: (n.read || showInviteActions) ? 'default' : 'pointer', backgroundColor: hov ? 'var(--color-hover)' : (!n.read ? 'var(--color-bg-secondary)' : 'transparent'), borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.1s' }}
-    >
-      <div style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: `${iconColor}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Users size={13} color={iconColor} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ margin: 0, fontSize: 13, fontWeight: n.read ? 400 : 600, color: 'var(--color-text)', lineHeight: 1.35 }}>{n.title}</p>
-        {n.body && <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.3 }}>{n.body}</p>}
-        <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{ago}</span>
-        {showInviteActions && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-            <button disabled={acting} onClick={(e) => { e.stopPropagation(); handleAction('accept') }}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 6, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: acting ? 'not-allowed' : 'pointer', opacity: acting ? 0.6 : 1 }}>
-              <Check size={12} /> {t('finance_workspace_invite_accept')}
-            </button>
-            <button disabled={acting} onClick={(e) => { e.stopPropagation(); handleAction('decline') }}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text-muted)', fontSize: 12, fontWeight: 500, cursor: acting ? 'not-allowed' : 'pointer', opacity: acting ? 0.6 : 1 }}>
-              <X size={12} /> {t('finance_workspace_invite_decline')}
-            </button>
-          </div>
-        )}
-      </div>
-      {!n.read && <div style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: 'var(--color-accent)', flexShrink: 0, marginTop: 4 }} />}
-    </div>
-  )
-}
 
 
 function QuickAction({ onClick, icon, label, primary }: { onClick: () => void; icon: React.ReactNode; label: string; primary?: boolean }) {

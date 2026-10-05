@@ -50,6 +50,18 @@ beforeEach(() => {
 })
 
 describe('UserSettingsModal (montagem completa)', () => {
+  it('NOTIF-001: abre direto na aba pedida; aba de admin para quem não é admin abre no Perfil', async () => {
+    const { unmount } = render(<UserSettingsModal open initialTab="notifications" onClose={() => {}} />)
+    expect(screen.getByText('notif_prefs_title')).toBeTruthy()
+    unmount()
+    const second = render(<UserSettingsModal open initialTab="backup" onClose={() => {}} />)
+    expect(screen.getByLabelText('settings_display_name')).toBeTruthy()
+    second.unmount()
+    auth.isAdmin = true
+    render(<UserSettingsModal open initialTab="backup" onClose={() => {}} />)
+    expect(await screen.findByText('backup-panel')).toBeTruthy()
+  })
+
   it('abre na aba de perfil e salva o nome', async () => {
     render(<UserSettingsModal open onClose={() => {}} />)
     const name = screen.getByLabelText<HTMLInputElement>('settings_display_name')
@@ -88,7 +100,7 @@ describe('UserSettingsModal (montagem completa)', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('conta comum: as 5 abas com o mesmo tamanho (640 px)', () => {
+  it('conta comum: as 6 abas com o mesmo tamanho (640 px)', () => {
     render(<UserSettingsModal open onClose={() => {}} />)
     const dialog = screen.getByRole('dialog')
     const first = dialog.getAttribute('style')
@@ -100,7 +112,7 @@ describe('UserSettingsModal (montagem completa)', () => {
     expect(screen.queryByRole('button', { name: 'sidebar_backup' })).toBeNull()
   })
 
-  it('admin: as 8 abas com o mesmo tamanho (980 px), painéis de admin incluídos', async () => {
+  it('admin: as 9 abas com o mesmo tamanho (980 px), painéis de admin incluídos', async () => {
     auth.isAdmin = true
     render(<UserSettingsModal open onClose={() => {}} />)
     const dialog = screen.getByRole('dialog')
@@ -118,5 +130,5 @@ describe('UserSettingsModal (montagem completa)', () => {
   })
 })
 
-const ACCOUNT_TABS = ['settings_tab_password', 'settings_tab_security', 'settings_tab_invites', 'settings_tab_api', 'settings_tab_profile']
+const ACCOUNT_TABS = ['settings_tab_password', 'settings_tab_security', 'settings_tab_notifications', 'settings_tab_invites', 'settings_tab_api', 'settings_tab_profile']
 const ADMIN_TABS = [['sidebar_users', 'users-panel'], ['sidebar_backup', 'backup-panel'], ['sidebar_audit', 'audit-panel']] as const

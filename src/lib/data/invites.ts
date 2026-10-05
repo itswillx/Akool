@@ -35,3 +35,8 @@ export async function profileEmailsById(ids: readonly string[]): Promise<Record<
 export function generateInviteCode() {
   return supabase.rpc('generate_invite_code')
 }
+
+/** Confere um código antes do cadastro; a RPC devolve jsonb `{ valid, … }`. */
+export function validateInviteCode(code: string) {
+  return supabase.rpc('validate_invite_code', { p_code: code })
+}
