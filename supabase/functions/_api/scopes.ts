@@ -3,7 +3,7 @@
 // o banco é quem decide, isto aqui serve à cards-api, à tela de tokens e aos testes.
 // Só aqui os níveis em português são aceitos: o banco recebe read/write/delete.
 
-import { getSubsection, SCOPE_LEVELS, type ScopeLevel } from './catalog.ts'
+import { getSubsection, MAX_DAYS_WITH_ADMIN, MAX_DAYS_WITH_WRITE, SCOPE_LEVELS, TOKEN_EXPIRY_DAYS, type ScopeLevel } from './catalog.ts'
 
 export type ScopeMap = Partial<Record<string, ScopeLevel>>
 
@@ -88,4 +88,11 @@ export function hasWriteScope(scopes: ScopeMap): boolean {
 
 export function hasAdminScope(scopes: ScopeMap): boolean {
   return Object.keys(scopes).some(key => getSubsection(key)?.adminOnly)
+}
+
+/** Maior validade aceita para estes escopos, em dias (como private.api_token_policy). */
+export function maxTokenDays(scopes: ScopeMap): number {
+  if (hasAdminScope(scopes)) return MAX_DAYS_WITH_ADMIN
+  if (hasWriteScope(scopes)) return MAX_DAYS_WITH_WRITE
+  return Math.max(...TOKEN_EXPIRY_DAYS)
 }

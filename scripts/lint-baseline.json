@@ -1,6 +1,5 @@
 {
   "scripts/import-backlog-cards.ts::prefer-const": 1,
-  "src/components/ApiTokensSection.tsx::akool/no-hex-color": 12,
   "src/components/blocks/ProjectCardBlock.tsx::akool/no-hex-color": 3,
   "src/components/blocks/ProjectCardBlock.tsx::no-useless-assignment": 1,
   "src/components/blocks/ProjectCardBlock.tsx::react-hooks/rules-of-hooks": 2,

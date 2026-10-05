@@ -648,8 +648,8 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 | Lote | Cards (no máximo um L por lote) |
 |---|---|
 | 01 | 001 escopos no token (L); 002 sonda de papéis; 003 notas rápidas (correção) |
-| 02 | 004 papéis do executor; 005 núcleo puro; 009 tela de tokens (editar permissões, revogar e excluir) |
-| 03 | 006 restore e cron sem usuário; 007 guardas no banco (L); 008 registro e cobertura |
+| 02 | 005 núcleo puro; 006 restore e cron sem usuário (veio do 03); 009 tela de tokens (editar permissões, revogar e excluir) |
+| 03 | 004 papéis do executor (veio do 02); 007 guardas no banco (L); 008 registro e cobertura. Remontado quando o 002 fechar |
 | 04 | 010 gateway REST (L); 011 ciclo de vida do token; 012 metas (correção) |
 | 05 | 013 regras de cards (L); 014 auditoria, limites e idempotência; 015 MCP |
 | 06 | 016 recorrentes no servidor (L); 017 OpenAPI; 018 Storage |
@@ -671,6 +671,12 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 | 22 | 063 validação final |
 
 - Nenhum card depende de outro do mesmo lote. Os lotes 21 e 22 são menores de propósito, porque a validação final depende de todo o resto.
+- **Ajuste de 05/10/2026:**
+  - o lote 02 rodou com 005, 006 e 009;
+  - o 006 subiu do lote 03 porque a avaliação mostrou que nenhum backup com linhas de workspace restaurava (corrigido em produção);
+  - o 004 saiu do 02 porque depende do 002, que espera os papéis no staging;
+  - as labels `lote-NN` dos cards continuam as originais;
+  - o lote 03 é remontado quando o 002 fechar, porque o 007 depende do 004 e os dois não podem ficar no mesmo lote.
 - **A fila não segue a ordem da lista.** `cq_insert_queued` ordena por prioridade, depois esforço, coluna e posição. `cq_start` conta só os cards `in_progress`, então cards em Validação ou em Aguardando você não seguram o lote.
 - **Como enfileirar:** espere todos os cards do lote anterior chegarem a Concluído (`npm run cards -- queue`). Só então rode `npm run cards -- enqueue --label=lote-NN` e depois `next --count=3`.
 - **Dependências:** a primeira subtarefa de todo card com dependência confere que elas estão em Concluído; se não estiverem, `release`.

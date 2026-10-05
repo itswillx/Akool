@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { COMPOSITE_VIEWS, describeScope, LEGACY_SCOPES, SECTIONS, SUBSECTIONS } from './catalog.ts'
-import { allows, effectiveScopes, hasAdminScope, hasWriteScope, normalizeScopes } from './scopes.ts'
+import { allows, effectiveScopes, hasAdminScope, hasWriteScope, maxTokenDays, normalizeScopes } from './scopes.ts'
 
 describe('catálogo', () => {
   it('tem 7 seções e 27 subseções, com chaves únicas no formato secao.subsecao', () => {
@@ -102,5 +102,13 @@ describe('escopos efetivos e classificação', () => {
     expect(hasWriteScope({ 'documentos.paginas': 'delete' })).toBe(true)
     expect(hasAdminScope({ 'admin.backups': 'read' })).toBe(true)
     expect(hasAdminScope(LEGACY_SCOPES)).toBe(false)
+  })
+
+  it('validade máxima pelo nível: 30 dias com Administração, 90 com escrita, senão 365', () => {
+    expect(maxTokenDays({})).toBe(365)
+    expect(maxTokenDays({ 'projetos.cards': 'read' })).toBe(365)
+    expect(maxTokenDays(LEGACY_SCOPES)).toBe(90)
+    expect(maxTokenDays({ 'documentos.paginas': 'delete' })).toBe(90)
+    expect(maxTokenDays({ 'admin.auditoria': 'read', 'projetos.fila': 'write' })).toBe(30)
   })
 })
