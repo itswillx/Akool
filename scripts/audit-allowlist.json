@@ -70,5 +70,13 @@
     "title": "React Router: RSC Mode CSRF Bypass Allows Action Execution Before 400 Response",
     "motivo": "Transitiva de @sentry/react (o app não usa router); aguardando o PR do Dependabot com a versão corrigida.",
     "ate": "2026-11-30"
+  },
+  {
+    "id": "GHSA-vfj7-8cjw-p6xm",
+    "package": "braces",
+    "severity": "high",
+    "title": "braces vulnerable to stack-exhaustion denial of service through deeply nested patterns",
+    "motivo": "Sem versão corrigida publicada (3.0.3 é a última). Transitiva de @excalidraw/excalidraw → sass → chokidar; o dist do Excalidraw não importa sass, então não entra no bundle do navegador. Reavaliar quando sair a correção.",
+    "ate": "2026-11-30"
   }
 ]
