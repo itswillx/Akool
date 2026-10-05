@@ -1,6 +1,6 @@
 {
   "src": 0,
-  "src/components": 33.7,
+  "src/components": 41.12,
   "src/contexts": 68.61,
   "src/hooks": 95.63,
   "src/i18n": 94.64,
@@ -13,6 +13,7 @@
   "src/modules/study": 16.16,
   "src/pages": 98.86,
   "src/shared": 82.68,
+  "supabase/functions/_api": 99.56,
   "supabase/functions/_shared": 98.67,
   "supabase/functions/admin-ops": 12.62,
   "supabase/functions/cards-api": 0,

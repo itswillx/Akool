@@ -82,7 +82,7 @@ O API-002 decide entre os planos; o API-004 cria os papéis.
 | Papel | Atributos e grants | Para quê |
 |---|---|---|
 | `akool_api` | NOLOGIN; `grant authenticated to akool_api with inherit true, set false`; `grant akool_api to postgres with inherit false, set true` | Herda as policies `TO authenticated` e os grants por coluna (`has_privs_of_role`), mas ninguém consegue `set role authenticated` através dele. Recebe EXECUTE dos 11 `cq_*` revogados no SEC-012 e, depois, dos `loan_*`. É o alvo das RESTRICTIVE. |
-| `akool_api_login` | LOGIN NOINHERIT; `grant akool_api to akool_api_login with set true`; `grant akool_api_login to postgres with admin option, inherit false, set true`; senha fora do git | Sozinho, só executa `resolve_api_token_v2` e as funções de `api_rt`. Depois de `reset role`, não lê nenhuma tabela pública. |
+| `akool_api_login` | LOGIN NOINHERIT; `grant akool_api to akool_api_login with inherit false, set true`; `grant akool_api_login to postgres with inherit false, set true` (o ADMIN o postgres já recebe ao criar o papel; ver a sonda abaixo); senha fora do git | Sozinho, só executa `resolve_api_token_v2` e as funções de `api_rt`. Depois de `reset role`, não lê nenhuma tabela pública. |
 
 - O Supavisor aceita papel custom com LOGIN (documentação do Supabase). As credenciais ficam em cache depois de trocar a senha.
 - **Plano B**, se o postgres do Supabase não tiver ADMIN OPTION sobre `authenticated`:
@@ -93,6 +93,29 @@ O API-002 decide entre os planos; o API-004 cria os papéis.
 
   Nesse plano, `reset role` deixa de ser barreira. A defesa contra SQL arbitrário passa a ser o teste estático `sqlSafety.test.ts`.
 - `supabase/checks/schema-snapshot.sql` ganha um bloco `roles` com os atributos de `akool_%` e as linhas de `pg_auth_members` (admin/inherit/set). Assim o drift pega mudança feita pelo painel.
+
+#### Sonda do API-002 (05/10/2026)
+
+**Decisão: plano A**, provisória até a prova pelo pooler (último item da tabela). Se o login pelo Supavisor falhar, vale o plano B.
+
+Evidência (harness `supabase/checks/api002-roles-probe.sql`, rodado no staging em transação desfeita):
+
+| Fato | Resultado |
+|---|---|
+| `postgres` sobre `authenticated` (staging e produção) | `admin=t inherit=t set=t`: pode conceder `authenticated` a outro papel |
+| Papel do caminho do MCP `apply_migration` | `postgres`, sem superusuário, com CREATEROLE (sonda `DO … RAISE`, sem registro no ledger) |
+| `grant … to postgres with admin option` | **Falha** com 0LP01 ("ADMIN option cannot be granted back to your own grantor"). No PG 16+, quem cria o papel já recebe ADMIN dele, concedido pelo `supabase_admin` com `inherit=f set=f` (`createrole_self_grant` vazio). O grant do postgres fica só `with inherit false, set true` |
+| `akool_api` | herda `authenticated` (USAGE `t`), sem SET em `authenticated` (`f`) |
+| Como `akool_api` com os claims de uma pessoa | `auth.uid()` lê os claims; policies `TO authenticated` valem (vê só a própria nota, insere a própria, a de outra pessoa é barrada pelo RLS); grants por coluna de `profiles` valem (`display_name` lê e altera, `role` dá *permission denied* nas duas) |
+| `akool_api_login` sozinho (NOINHERIT) | SET `akool_api` `t`; não herda `akool_api`; sem USAGE nem SET em `authenticated`; *permission denied* em `quick_notes` e `profiles`; 0 funções de `public` executáveis |
+| `set role authenticated` como `akool_api_login` e login pelo Supavisor (`akool_api_login.<ref>`, porta 6543) | **Pendente.** SET ROLE confere o `session_user`, então só uma sessão real pelo pooler prova. Depende da senha definida pelo usuário |
+
+**Claim `amr`** (documentação do Supabase: *JWT Claims Reference* e *Multi-Factor Authentication*):
+- É um array de `{method, timestamp}`, com `timestamp` em segundos Unix. O método mais recente vem primeiro, como em `[{"method":"totp","timestamp":1666086056},{"method":"password","timestamp":1666085924}]`.
+- É um claim opcional: só some se um *Custom Access Token Hook* o tirar, e o projeto não tem hook.
+- O `timestamp` é o do login com aquele método; renovar o token não o atualiza.
+- Regra do API-011: "autenticou há no máximo 10 minutos" é `max(amr[].timestamp) >= extract(epoch from now()) - 600`, lido de `auth.jwt() -> 'amr'`.
+- O fallback (MFA obrigatório para token de escrita) não é necessário.
 
 ### 1.3 Por que funciona
 
@@ -117,7 +140,7 @@ O API-002 decide entre os planos; o API-004 cria os papéis.
 
 - `restore_site_backup` (service_role), os jobs do pg_cron e a `cards-api` legada (service_role com `p_actor`) rodam com `auth.uid()` nulo.
 - Regra (API-006, `supabase/migrations/README.md`): gatilho que depende do usuário pula só em contexto sem usuário (service_role, postgres, cron), nunca para os papéis `authenticated` e `akool_api`, e valida só as colunas que mudaram (`new.x is distinct from old.x`).
-- O API-006 corrige `finance_guard_workspace`, que hoje recusa o INSERT de linhas de workspace durante o restore.
+- O API-006 (`20261005150000_api006_guards_without_user`, 05/10/2026) corrigiu `finance_guard_workspace`, que recusava com 42501 todo INSERT de linha de workspace sem usuário: nenhum backup com linha de workspace restaurava. A condição exata, que vale para gatilho novo: `auth.uid() is null and coalesce(auth.role(), '') not in ('authenticated', 'anon')` → `return new`. Prova: `supabase/checks/api006-restore.sql` (bloco 2 falha antes da migration e conclui depois, no staging).
 
 ## 2. Guardas no banco
 
@@ -251,8 +274,9 @@ supabase/functions/
 
 **Compilação e fronteira de imports (API-005):**
 
-- `tsconfig.functions.json`: strict, ES2023 sem DOM, `allowImportingTsExtensions`, `noEmit`. Inclui `_api/**` e `_domain/**`, exclui `runtime/**` e `*/index.ts`, e fica referenciado no `tsconfig.json`, então `npx tsc -b` checa os módulos puros. Opcional: rodar `deno check supabase/functions/api/index.ts` no CI.
-- `importBoundary.test.ts`: fora de `runtime/`, `_api` e `_domain` só importam caminhos relativos com `.ts` dentro de `supabase/functions`. Ficam proibidos `src/`, `@/`, `../types`, pacote nu, `npm:` e `jsr:`.
+- `tsconfig.functions.json` (API-005): strict, ES2023 sem DOM, `types: ["node"]` (os testes leem migrations com `node:fs`), `allowImportingTsExtensions`, `noEmit`, `tsBuildInfoFile` em `node_modules/.tmp`. `include: ["supabase/functions/_api", "supabase/functions/_domain"]` (um padrão terminado em `/**` é ignorado pelo TypeScript) e `exclude: ["supabase/functions/**/runtime", "supabase/functions/**/index.ts"]` (relativos ao arquivo). Fica referenciado no `tsconfig.json`, então `npx tsc -b` checa os módulos puros. Opcional: rodar `deno check supabase/functions/api/index.ts` no CI.
+- `_api/importBoundary.test.ts` (API-005): fora de `runtime/`, `_api` e `_domain` só importam caminhos relativos com `.ts` dentro de `supabase/functions` (inclusive `import type`, `export … from` e `import()`), e o que importarem de fora (ex.: `_shared`) segue a mesma regra. Ficam proibidos `src/`, `@/`, pacote nu, `npm:`, `jsr:`, import de efeito colateral e importar `runtime/` ou um `index.ts`. Testes podem importar `vitest` e `node:*`. O `exclude` do tsconfig não basta: um arquivo importado é checado do mesmo jeito.
+- Globais do Node (`process`, `Buffer`, `require`, `__dirname`…) ficam proibidos em `_api` e `_domain` fora dos testes, pela regra `no-restricted-globals` do `eslint.config.js`. O `types: ["node"]` do `tsconfig.functions.json` existe só por causa dos testes, então o `tsc` sozinho deixaria passar.
 
 **Porte de módulos de `src/lib`.** Cada card de porte:
 
@@ -469,16 +493,20 @@ A chave vem no cabeçalho `Idempotency-Key` (REST) ou no campo `idempotency_key`
 
 ## 10. Erros
 
-Códigos estáveis: `unauthenticated`, `token_invalid`, `insufficient_scope` (com `required`), `not_found`, `conflict`, `version_conflict`, `validation_failed` (com JSON Pointer), `rate_limited`, `idempotency_in_progress`, `idempotency_mismatch`, `timeout` e `internal`.
+Implementação: `supabase/functions/_api/errors.ts` (API-005). Códigos estáveis: `unauthenticated`, `token_invalid`, `insufficient_scope` (com `required`, lista de `secao.subsecao:nivel`), `forbidden`, `not_found`, `conflict`, `version_conflict`, `validation_failed` (com `details` em JSON Pointer), `rate_limited`, `idempotency_in_progress`, `idempotency_mismatch`, `timeout`, `unavailable` e `internal`. `forbidden` e `unavailable` entraram no API-005: a tabela abaixo precisava de nome para o 42501 e para o 503.
 
-| SQLSTATE | HTTP |
-|---|---|
-| 42501 | 403 |
-| P0002 | 404 |
-| 22023, 22P02, 23514, 23503, 23502, 22001, 22003 | 422 |
-| P0001, 23505 | 409 |
-| 40001, 40P01, 55P03 | 503 com retry |
-| 57014 | 504 com retry |
+| SQLSTATE | HTTP | `code` |
+|---|---|---|
+| 42501 | 403 | `forbidden` |
+| P0002 | 404 | `not_found` |
+| 22023, 22P02, 23514, 23503, 23502, 22001, 22003 | 422 | `validation_failed` |
+| P0001, 23505 | 409 | `conflict` |
+| 40001, 40P01, 55P03 | 503 | `unavailable`, `retry_after` 1 e `Retry-After` |
+| 57014 | 504 | `timeout`, `retry_after` 2 e `Retry-After` |
+| PGRST com JSON `rate_limited` (`private.raise_rate_limited`) | 429 | `rate_limited`, `retry_after` do hint |
+| qualquer outro | 500 | `internal` (vai para o Sentry) |
+
+- 401 leva `WWW-Authenticate: Bearer realm="akool"` (com `error="invalid_token"` em `token_invalid`). `detail`, `details` e o `hint` do Postgres nunca vão no corpo.
 
 - O texto do Postgres só passa adiante quando vem de um RAISE do app: código P0001, ou outro código com `hint = 'akool'` (convenção para as funções novas). Nos demais casos, a resposta leva uma mensagem genérica em pt-BR e o `code`.
 - Um 500 chama `captureException` (`_shared/sentry.ts`, com scrub). `scrub.ts` ganha uma regra para `postgres://`.
@@ -621,8 +649,8 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 | Lote | Cards (no máximo um L por lote) |
 |---|---|
 | 01 | 001 escopos no token (L); 002 sonda de papéis; 003 notas rápidas (correção) |
-| 02 | 004 papéis do executor; 005 núcleo puro; 009 tela de tokens (editar permissões, revogar e excluir) |
-| 03 | 006 restore e cron sem usuário; 007 guardas no banco (L); 008 registro e cobertura |
+| 02 | 005 núcleo puro; 006 restore e cron sem usuário (veio do 03); 009 tela de tokens (editar permissões, revogar e excluir) |
+| 03 | 004 papéis do executor (veio do 02); 007 guardas no banco (L); 008 registro e cobertura. Remontado quando o 002 fechar |
 | 04 | 010 gateway REST (L); 011 ciclo de vida do token; 012 metas (correção) |
 | 05 | 013 regras de cards (L); 014 auditoria, limites e idempotência; 015 MCP |
 | 06 | 016 recorrentes no servidor (L); 017 OpenAPI; 018 Storage |
@@ -644,6 +672,12 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 | 22 | 063 validação final |
 
 - Nenhum card depende de outro do mesmo lote. Os lotes 21 e 22 são menores de propósito, porque a validação final depende de todo o resto.
+- **Ajuste de 05/10/2026:**
+  - o lote 02 rodou com 005, 006 e 009;
+  - o 006 subiu do lote 03 porque a avaliação mostrou que nenhum backup com linhas de workspace restaurava (corrigido em produção);
+  - o 004 saiu do 02 porque depende do 002, que espera os papéis no staging;
+  - as labels `lote-NN` dos cards continuam as originais;
+  - o lote 03 é remontado quando o 002 fechar, porque o 007 depende do 004 e os dois não podem ficar no mesmo lote.
 - **A fila não segue a ordem da lista.** `cq_insert_queued` ordena por prioridade, depois esforço, coluna e posição. `cq_start` conta só os cards `in_progress`, então cards em Validação ou em Aguardando você não seguram o lote.
 - **Como enfileirar:** espere todos os cards do lote anterior chegarem a Concluído (`npm run cards -- queue`). Só então rode `npm run cards -- enqueue --label=lote-NN` e depois `next --count=3`.
 - **Dependências:** a primeira subtarefa de todo card com dependência confere que elas estão em Concluído; se não estiverem, `release`.

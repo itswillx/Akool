@@ -76,6 +76,16 @@ export default defineConfig([
     },
   },
   {
+    // API-005: _api e _domain rodam no Deno e no navegador. O tsconfig.functions.json
+    // tem types: ["node"] só por causa dos testes, então o tsc deixaria passar
+    // globais do Node; a fronteira de imports não vê globais.
+    files: ['supabase/functions/_api/**/*.ts', 'supabase/functions/_domain/**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: {
+      'no-restricted-globals': ['error', 'process', 'Buffer', 'require', 'module', 'exports', '__dirname', '__filename', 'global', 'setImmediate'],
+    },
+  },
+  {
     files: ['src/i18n/translations.*.ts', 'src/i18n/helpContent.ts', 'src/types/index.ts'],
     rules: { 'max-lines': 'off' },
   },

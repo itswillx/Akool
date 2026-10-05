@@ -66,12 +66,13 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
   antes de mexer:
   1. **O `raise` que produz o 429 desfaz o próprio INSERT do contador** — o
      PostgREST roda cada RPC numa transação e não há autonomous transaction
-     (sem `pg_cron`/`pg_net`/`dblink` neste projeto). O desenho depende do
+     (sem `dblink` neste projeto; `pg_cron` e `pg_net` existem desde
+     `20260928185440_rel008_backup_cron`, mas não servem para isso). O desenho depende do
      contador de janela fixa ser *auto-saturante*; o cabeçalho do arquivo
      explica em detalhe. Não "conserte" isso sem ler.
   2. **`public.check_rate_limit` (usada pelas edge functions) não dá raise de
      propósito** — devolve `jsonb` e o 429 é montado em TypeScript.
-  3. **Sem `pg_cron`, a limpeza é oportunística** dentro de
+  3. **A limpeza é oportunística** (não há job do `pg_cron` para ela) dentro de
      `rate_limit_touch` (duas varreduras deliberadamente *disjuntas*, senão dão
      deadlock entre si).
   Verificado por HTTP real em 2026-08-12: o 429 chega com corpo
@@ -132,3 +133,25 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
 1. Escreva o arquivo aqui (`YYYYMMDDHHMMSS_nome_em_snake_case.sql`).
 2. Aplique no remoto via MCP `apply_migration` com o mesmo `nome_em_snake_case`.
 3. Commite o arquivo. (O ledger remoto ganhará um timestamp próprio — esperado.)
+
+**Mensagens de erro que chegam à API (API-005).** A API (`supabase/functions/_api/errors.ts`) só repassa o texto de um `raise` quando ele é do app: código `P0001` (o padrão de `raise exception` sem `errcode`) ou qualquer código com `hint = 'akool'`. O resto vira uma mensagem genérica com o código estável, para não vazar detalhe de RLS, constraint ou tabela. Função nova que valida entrada e tem uma mensagem útil para quem chama usa o código certo e marca:
+
+```sql
+raise exception 'Validade deve ser de 7, 30, 90 ou 365 dias'
+  using errcode = '22023', hint = 'akool';
+```
+
+O texto vai como está (em pt-BR) para o app, para o MCP e para o REST; nada de dado de outra pessoa nem nome de tabela na mensagem.
+
+**Gatilhos que dependem do usuário (API-006).** Restauração de backup (service_role), jobs do `pg_cron` e migrations rodam sem usuário: `auth.uid()` é nulo e `auth.role()` é `service_role` ou nulo. Um gatilho que confere filiação ou dono pelo usuário recusaria tudo nesses contextos (foi o caso da `finance_guard_workspace` até a `20261005150000_api006_guards_without_user`: nenhum backup com linha de workspace restaurava). Regra para gatilho novo ou alterado:
+
+```sql
+-- Sem usuário (restauração, cron, migration): não há de quem conferir.
+if auth.uid() is null and coalesce(auth.role(), '') not in ('authenticated', 'anon') then
+  return new;
+end if;
+```
+
+- Nunca pule para sessão do app ou da API (`authenticated`, `akool_api`): elas sempre têm `sub`, e um JWT de cliente sem `sub` continua conferido.
+- No UPDATE, valide só as colunas que mudaram (`new.x is distinct from old.x`).
+- O harness do card inclui um INSERT sem claims, imitando a restauração e o cron (`supabase/checks/api006-restore.sql` é o modelo).

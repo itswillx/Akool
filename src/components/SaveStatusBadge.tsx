@@ -61,10 +61,14 @@ export function EditorLoadError({ onRetry }: { onRetry: () => void }) {
 // REL-009: alguém salvou esta página depois da versão que este editor carregou.
 // A edição local continua guardada até a pessoa escolher: carregar a versão
 // salva (descarta a sua) ou manter a sua (grava por cima, de propósito).
-export function EditConflictBanner({ onLoadSaved, onKeepMine, busy }: {
+// API-003: as notas rápidas usam o mesmo aviso, com texto próprio e dentro do card.
+export function EditConflictBanner({ onLoadSaved, onKeepMine, busy, message, inline = false }: {
   onLoadSaved: () => void
   onKeepMine: () => void
   busy?: boolean
+  message?: string
+  /** Dentro do conteúdo (card), em vez de flutuar sobre o editor. */
+  inline?: boolean
 }) {
   const { t } = useLanguage()
   const button = {
@@ -75,14 +79,14 @@ export function EditConflictBanner({ onLoadSaved, onKeepMine, busy }: {
     <div
       role="alert"
       style={{
-        position: 'absolute', top: 10, left: 14, right: 14, zIndex: 6,
+        ...(inline ? {} : { position: 'absolute' as const, top: 10, left: 14, right: 14, zIndex: 6 }),
         display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 10,
         backgroundColor: 'var(--color-surface)', border: '1px solid #f59e0b', boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
         fontSize: 13, color: 'var(--color-text)',
       }}
     >
       <AlertTriangle size={14} color="#f59e0b" style={{ flexShrink: 0 }} />
-      <span style={{ flex: '1 1 220px', lineHeight: 1.4 }}>{t('editor_conflict_title')}</span>
+      <span style={{ flex: inline ? '1 1 100%' : '1 1 220px', lineHeight: 1.4 }}>{message ?? t('editor_conflict_title')}</span>
       <button type="button" onClick={onLoadSaved} disabled={busy} style={button}>{t('editor_conflict_load')}</button>
       <button type="button" onClick={onKeepMine} disabled={busy} style={{ ...button, borderColor: '#f59e0b' }}>{t('editor_conflict_keep')}</button>
     </div>

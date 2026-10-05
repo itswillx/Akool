@@ -26,10 +26,12 @@ export type Database = {
           created_at: string
           expires_at: string
           id: string
+          last_client: string | null
           last_used_at: string | null
           name: string
           prefix: string
           revoked_at: string | null
+          scopes: Json
           token_hash: string
           user_id: string
         }
@@ -37,10 +39,12 @@ export type Database = {
           created_at?: string
           expires_at?: string
           id?: string
+          last_client?: string | null
           last_used_at?: string | null
           name?: string
           prefix: string
           revoked_at?: string | null
+          scopes?: Json
           token_hash: string
           user_id: string
         }
@@ -48,10 +52,12 @@ export type Database = {
           created_at?: string
           expires_at?: string
           id?: string
+          last_client?: string | null
           last_used_at?: string | null
           name?: string
           prefix?: string
           revoked_at?: string | null
+          scopes?: Json
           token_hash?: string
           user_id?: string
         }
@@ -2626,7 +2632,7 @@ export type Database = {
         Returns: Json
       }
       create_api_token: {
-        Args: { p_expires_in_days?: number; p_name?: string }
+        Args: { p_expires_in_days?: number; p_name?: string; p_scopes?: Json }
         Returns: Json
       }
       create_project_board: {
@@ -2647,6 +2653,7 @@ export type Database = {
         Args: { p_invite_id: string }
         Returns: undefined
       }
+      delete_api_token: { Args: { p_id: string }; Returns: undefined }
       generate_invite_code: { Args: never; Returns: Json }
       get_my_profile: {
         Args: never
@@ -2747,7 +2754,12 @@ export type Database = {
         Returns: number
       }
       resolve_api_token: { Args: { p_hash: string }; Returns: string }
+      resolve_api_token_v2: {
+        Args: { p_client?: string; p_hash: string }
+        Returns: Json
+      }
       restore_site_backup: { Args: { p_tables: Json }; Returns: Json }
+      revoke_all_my_api_tokens: { Args: never; Returns: number }
       revoke_api_token: { Args: { p_id: string }; Returns: undefined }
       schedule_project_cards: {
         Args: { p_board: string; p_patches: Json }
@@ -2770,6 +2782,10 @@ export type Database = {
       }
       study_lookup_cache_prune: { Args: never; Returns: number }
       try_cast_uuid: { Args: { p_text: string }; Returns: string }
+      update_api_token_scopes: {
+        Args: { p_id: string; p_scopes: Json }
+        Returns: Json
+      }
       user_can_access_board: {
         Args: { p_board_id: string; p_min_role?: string }
         Returns: boolean
