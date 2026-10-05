@@ -13,6 +13,7 @@
   "src/modules/study": 16.16,
   "src/pages": 98.86,
   "src/shared": 82.68,
+  "supabase/functions/_api": 99.56,
   "supabase/functions/_shared": 98.67,
   "supabase/functions/admin-ops": 12.62,
   "supabase/functions/cards-api": 0,

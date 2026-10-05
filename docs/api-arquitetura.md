@@ -274,8 +274,8 @@ supabase/functions/
 
 **Compilação e fronteira de imports (API-005):**
 
-- `tsconfig.functions.json`: strict, ES2023 sem DOM, `allowImportingTsExtensions`, `noEmit`. Inclui `_api/**` e `_domain/**`, exclui `runtime/**` e `*/index.ts`, e fica referenciado no `tsconfig.json`, então `npx tsc -b` checa os módulos puros. Opcional: rodar `deno check supabase/functions/api/index.ts` no CI.
-- `importBoundary.test.ts`: fora de `runtime/`, `_api` e `_domain` só importam caminhos relativos com `.ts` dentro de `supabase/functions`. Ficam proibidos `src/`, `@/`, `../types`, pacote nu, `npm:` e `jsr:`.
+- `tsconfig.functions.json` (API-005): strict, ES2023 sem DOM, `types: ["node"]` (os testes leem migrations com `node:fs`), `allowImportingTsExtensions`, `noEmit`, `tsBuildInfoFile` em `node_modules/.tmp`. `include: ["supabase/functions/_api", "supabase/functions/_domain"]` (um padrão terminado em `/**` é ignorado pelo TypeScript) e `exclude: ["supabase/functions/**/runtime", "supabase/functions/**/index.ts"]` (relativos ao arquivo). Fica referenciado no `tsconfig.json`, então `npx tsc -b` checa os módulos puros. Opcional: rodar `deno check supabase/functions/api/index.ts` no CI.
+- `_api/importBoundary.test.ts` (API-005): fora de `runtime/`, `_api` e `_domain` só importam caminhos relativos com `.ts` dentro de `supabase/functions` (inclusive `import type`, `export … from` e `import()`), e o que importarem de fora (ex.: `_shared`) segue a mesma regra. Ficam proibidos `src/`, `@/`, pacote nu, `npm:`, `jsr:`, import de efeito colateral e importar `runtime/` ou um `index.ts`. Testes podem importar `vitest` e `node:*`. O `exclude` do tsconfig não basta: um arquivo importado é checado do mesmo jeito.
 
 **Porte de módulos de `src/lib`.** Cada card de porte:
 
@@ -492,16 +492,20 @@ A chave vem no cabeçalho `Idempotency-Key` (REST) ou no campo `idempotency_key`
 
 ## 10. Erros
 
-Códigos estáveis: `unauthenticated`, `token_invalid`, `insufficient_scope` (com `required`), `not_found`, `conflict`, `version_conflict`, `validation_failed` (com JSON Pointer), `rate_limited`, `idempotency_in_progress`, `idempotency_mismatch`, `timeout` e `internal`.
+Implementação: `supabase/functions/_api/errors.ts` (API-005). Códigos estáveis: `unauthenticated`, `token_invalid`, `insufficient_scope` (com `required`, lista de `secao.subsecao:nivel`), `forbidden`, `not_found`, `conflict`, `version_conflict`, `validation_failed` (com `details` em JSON Pointer), `rate_limited`, `idempotency_in_progress`, `idempotency_mismatch`, `timeout`, `unavailable` e `internal`. `forbidden` e `unavailable` entraram no API-005: a tabela abaixo precisava de nome para o 42501 e para o 503.
 
-| SQLSTATE | HTTP |
-|---|---|
-| 42501 | 403 |
-| P0002 | 404 |
-| 22023, 22P02, 23514, 23503, 23502, 22001, 22003 | 422 |
-| P0001, 23505 | 409 |
-| 40001, 40P01, 55P03 | 503 com retry |
-| 57014 | 504 com retry |
+| SQLSTATE | HTTP | `code` |
+|---|---|---|
+| 42501 | 403 | `forbidden` |
+| P0002 | 404 | `not_found` |
+| 22023, 22P02, 23514, 23503, 23502, 22001, 22003 | 422 | `validation_failed` |
+| P0001, 23505 | 409 | `conflict` |
+| 40001, 40P01, 55P03 | 503 | `unavailable`, `retry_after` 1 e `Retry-After` |
+| 57014 | 504 | `timeout`, `retry_after` 2 e `Retry-After` |
+| PGRST com JSON `rate_limited` (`private.raise_rate_limited`) | 429 | `rate_limited`, `retry_after` do hint |
+| qualquer outro | 500 | `internal` (vai para o Sentry) |
+
+- 401 leva `WWW-Authenticate: Bearer realm="akool"` (com `error="invalid_token"` em `token_invalid`). `detail`, `details` e o `hint` do Postgres nunca vão no corpo.
 
 - O texto do Postgres só passa adiante quando vem de um RAISE do app: código P0001, ou outro código com `hint = 'akool'` (convenção para as funções novas). Nos demais casos, a resposta leva uma mensagem genérica em pt-BR e o `code`.
 - Um 500 chama `captureException` (`_shared/sentry.ts`, com scrub). `scrub.ts` ganha uma regra para `postgres://`.

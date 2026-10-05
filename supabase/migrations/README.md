@@ -132,3 +132,12 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
 1. Escreva o arquivo aqui (`YYYYMMDDHHMMSS_nome_em_snake_case.sql`).
 2. Aplique no remoto via MCP `apply_migration` com o mesmo `nome_em_snake_case`.
 3. Commite o arquivo. (O ledger remoto ganhará um timestamp próprio — esperado.)
+
+**Mensagens de erro que chegam à API (API-005).** A API (`supabase/functions/_api/errors.ts`) só repassa o texto de um `raise` quando ele é do app: código `P0001` (o padrão de `raise exception` sem `errcode`) ou qualquer código com `hint = 'akool'`. O resto vira uma mensagem genérica com o código estável, para não vazar detalhe de RLS, constraint ou tabela. Função nova que valida entrada e tem uma mensagem útil para quem chama usa o código certo e marca:
+
+```sql
+raise exception 'Validade deve ser de 7, 30, 90 ou 365 dias'
+  using errcode = '22023', hint = 'akool';
+```
+
+O texto vai como está (em pt-BR) para o app, para o MCP e para o REST; nada de dado de outra pessoa nem nome de tabela na mensagem.
