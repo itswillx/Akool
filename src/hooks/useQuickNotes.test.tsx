@@ -48,9 +48,10 @@ vi.mock('../contexts/ToastContext', () => ({ useToast: () => ({ showToast }) }))
 vi.mock('../i18n/LanguageContext', () => ({ useLanguage: () => ({ t: (key: string) => key }) }))
 
 // REL-012: os rascunhos locais (IndexedDB) em memória.
-const offline = vi.hoisted(() => ({
-  puts: [] as unknown[], drafts: [] as unknown[], deleted: [] as string[], current: {} as Record<string, unknown>,
-}))
+const offline = vi.hoisted(() => {
+  const current: Record<string, unknown> = {}
+  return { puts: [] as unknown[], drafts: [] as unknown[], deleted: [] as string[], current }
+})
 vi.mock('../lib/offlineStore', () => ({
   listDrafts: async () => offline.drafts,
   getDraftFor: async (_userId: string, _table: string, id: string) => offline.current[id] ?? null,
