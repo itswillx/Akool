@@ -14,7 +14,6 @@
   "src/contexts/NotificationsContext.tsx": 3,
   "src/hooks/usePagePresence.ts": 3,
   "src/hooks/usePageShared.ts": 1,
-  "src/hooks/useQuickNotes.ts": 4,
   "src/modules/audit/AuditLogPanel.tsx": 1,
   "src/modules/finance/modals/WorkspaceModal.tsx": 6,
   "src/modules/finance/modals/pickers.tsx": 2,

@@ -44,7 +44,7 @@
   "src/components/PageTree.tsx::jsx-a11y/no-static-element-interactions": 1,
   "src/components/PasswordFields.tsx::akool/no-hex-color": 6,
   "src/components/PasswordFields.tsx::react-refresh/only-export-components": 2,
-  "src/components/QuickNotes.tsx::@typescript-eslint/no-floating-promises": 5,
+  "src/components/QuickNotes.tsx::@typescript-eslint/no-floating-promises": 3,
   "src/components/QuickNotes.tsx::akool/no-hex-color": 1,
   "src/components/QuickNotes.tsx::jsx-a11y/click-events-have-key-events": 1,
   "src/components/QuickNotes.tsx::jsx-a11y/no-static-element-interactions": 1,

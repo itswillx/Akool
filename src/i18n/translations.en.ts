@@ -527,6 +527,8 @@ const en: Record<TranslationKey, string> = {
   quick_notes_color_pink: 'Pink',
   quick_notes_color_blue: 'Blue',
   quick_notes_color_purple: 'Purple',
+  quick_notes_conflict: 'This note changed somewhere else while you were editing. Your edit has not been saved yet.',
+  quick_notes_gone: 'A quick note was deleted somewhere else.',
   item_picker_placeholder: 'Search pages and cards...',
   item_picker_group_pages: 'Pages',
   item_picker_group_cards: 'Project cards',

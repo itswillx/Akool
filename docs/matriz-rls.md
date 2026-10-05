@@ -109,7 +109,7 @@ já versionadas (`finance_store_module.sql`/`finance_projects_module.sql`/
 
 | Tabela | Operação | Quem |
 |---|---|---|
-| `quick_notes` | SELECT/INSERT/UPDATE/DELETE | own |
+| `quick_notes` | SELECT/INSERT/UPDATE/DELETE | own; `updated_at` é do servidor (gatilho `quick_notes_updated_at`, API-003) e serve de versão: o app grava condicionado a ela |
 | `study_topics` / `study_cards` / `study_logs` | SELECT/INSERT/UPDATE/DELETE | own |
 | `site_backups` / `site_backup_settings` | SELECT | admin apenas |
 | `site_backups` / `site_backup_settings` | INSERT/UPDATE/DELETE | **nenhuma policy** | só `service_role` (edge function `site-backup`) escreve |
