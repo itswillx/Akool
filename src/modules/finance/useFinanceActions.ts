@@ -2,6 +2,7 @@
 import { useAuth } from '../../contexts/AuthContext'
 import { useToast } from '../../contexts/ToastContext'
 import { useLanguage } from '../../i18n/LanguageContext'
+import { requireRows } from '../../lib/optimistic'
 import { supabase } from '../../lib/supabase'
 import type { FinanceAccount, FinanceBudget, FinanceCategory, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceTransaction } from '../../types'
 import { fetchFullHistoryTx, type useFinanceData } from './useFinanceData'
@@ -16,7 +17,7 @@ export function useFinanceActions({ data, modals }: {
   const { user } = useAuth()
   const { t } = useLanguage()
   const { showToast } = useToast()
-  const { goals, contributions, partnerProfiles, recurringEntries, reload, ensureMonthLoaded, ensureMonthsLoaded, setAccounts, setCategories, setBudgets, setGoals, setContributions, setGoalShares, setPartnerProfiles, setRecurring, setRecurringEntries, setFamilyBudgets, setFamilyAccounts, setFamilyCategories, applyTxUpsert, applyTxRemove, resolvePartnerProfile, refetchTransactions, refetchRecurringAndEntries, workspace } = data
+  const { partnerProfiles, recurringEntries, reload, ensureMonthLoaded, ensureMonthsLoaded, setAccounts, setCategories, setBudgets, setGoals, setContributions, setGoalShares, setPartnerProfiles, setRecurring, setRecurringEntries, setFamilyBudgets, setFamilyAccounts, setFamilyCategories, applyTxUpsert, applyTxRemove, resolvePartnerProfile, refetchTransactions, refetchRecurringAndEntries, workspace } = data
   const { txModal, accModal, budgetModal, goalModal, catModal, recurringModal, setPayModal, setImportHistoryTxs, setImportModal } = modals
 
   // Runs a mutation's write+local-patch; on failure, logs, toasts, and (for
@@ -144,10 +145,12 @@ export function useFinanceActions({ data, modals }: {
 
   const saveGoalShare = async (goalId: string, sharedWithUserId: string) => {
     if (!user) return
+    // API-012: share não tem UPDATE; repetido não faz nada (ON CONFLICT DO NOTHING).
     const { data: row, error } = await supabase.from('finance_goal_shares')
-      .upsert({ goal_id: goalId, owner_id: user.id, shared_with_user_id: sharedWithUserId }, { onConflict: 'goal_id,shared_with_user_id' })
-      .select().single()
+      .upsert({ goal_id: goalId, owner_id: user.id, shared_with_user_id: sharedWithUserId }, { onConflict: 'goal_id,shared_with_user_id', ignoreDuplicates: true })
+      .select().maybeSingle()
     if (error) throw error
+    if (!row) return
     let profile = partnerProfiles.find(p => p.id === sharedWithUserId)
     if (!profile) {
       const resolved = await resolvePartnerProfile(sharedWithUserId)
@@ -205,35 +208,29 @@ export function useFinanceActions({ data, modals }: {
     }, t('finance_save_error'))
   }
 
+  // API-012: o servidor grava o aporte, soma tudo e conclui a meta ao atingir o
+  // alvo, na mesma transação (antes era um segundo passo aqui, que falhava para
+  // quem aportava sem ser dono e somava só os aportes visíveis).
   const saveContribution = async (data: { goal_id: string; amount: number; note: string; date: string }) => {
     if (!user) return
-    const { data: row, error } = await supabase.from('finance_goal_contributions').insert({ ...data, user_id: user.id }).select().single()
+    const { data: result, error } = await supabase.rpc('finance_goal_contribute', {
+      p_goal: data.goal_id, p_amount_cents: data.amount, p_date: data.date, p_note: data.note,
+    })
     if (error) throw error
-    const contribution: FinanceGoalContribution = row
+    const { contribution_id, status } = result as { contribution_id: string; status: FinanceGoal['status']; total_cents: number }
+    const contribution: FinanceGoalContribution = { id: contribution_id, ...data, user_id: user.id, created_at: new Date().toISOString() }
     setContributions(prev => [contribution, ...prev])
-    // Auto-complete goal if accumulated >= target. This second write is
-    // best-effort: if it fails, the contribution is still saved (matches
-    // prior behavior) — just toast a distinct warning instead of throwing,
-    // since the modal shouldn't treat the whole save as failed.
-    const goal = goals.find(g => g.id === data.goal_id)
-    if (goal && goal.status === 'active') {
-      const total = contributions.filter(c => c.goal_id === data.goal_id).reduce((s, c) => s + c.amount, 0) + data.amount
-      if (total >= goal.target_amount) {
-        const { data: goalRow, error: goalErr } = await supabase.from('finance_goals').update({ status: 'completed' }).eq('id', data.goal_id).select().single()
-        if (goalErr) {
-          console.error('[Finance] goal auto-complete failed:', goalErr)
-          showToast('error', t('finance_goal_complete_error'))
-        } else {
-          setGoals(prev => upsertById(prev, goalRow as FinanceGoal))
-        }
-      }
-    }
+    setGoals(prev => prev.map(g => (g.id === data.goal_id && g.status !== status ? { ...g, status } : g)))
   }
 
+  // API-012: só o autor apaga o aporte (policy de DELETE). O DELETE barrado
+  // afeta 0 linhas sem erro; com o select('id') + requireRows isso vira erro e
+  // o aporte não some só da tela.
   const deleteContribution = async (id: string) => {
     await withToast(async () => {
-      const { error } = await supabase.from('finance_goal_contributions').delete().eq('id', id)
-      if (error) throw error
+      const { error } = requireRows(await supabase.from('finance_goal_contributions').delete().eq('id', id).select('id'))
+      // requireRows devolve um objeto simples; vira Error com code/hint para o log.
+      if (error) throw Object.assign(new Error(error.message), error)
       // Preserve prior behavior: doesn't un-complete an auto-completed goal.
       setContributions(prev => prev.filter(c => c.id !== id))
     }, t('finance_delete_error'))

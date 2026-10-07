@@ -1,4 +1,5 @@
 import type { ProjectCard, ProjectColumn } from '../types'
+import { DEPENDS_ON_MAX } from './cardLimits'
 import { addDays, diffDays } from './ganttLayout'
 import { todayStr } from './projectCardFilters'
 import { PRIORITY_ORDER } from './projectStats'
@@ -57,10 +58,33 @@ function allocateBoundaries(weights: number[], totalDays: number): number[] {
   return boundaries
 }
 
-function mergeDependsOn(card: ProjectCard, predecessorId: string | null): string[] {
-  return predecessorId
-    ? Array.from(new Set([...(card.depends_on ?? []), predecessorId]))
-    : (card.depends_on ?? [])
+/** `from` chega em `to` seguindo depends_on? */
+function reaches(dependsOn: Map<string, string[]>, from: string, to: string): boolean {
+  const seen = new Set<string>()
+  const stack = [from]
+  while (stack.length) {
+    const id = stack.pop()!
+    if (id === to) return true
+    if (seen.has(id)) continue
+    seen.add(id)
+    stack.push(...(dependsOn.get(id) ?? []))
+  }
+  return false
+}
+
+/**
+ * Encadeia o card no anterior da coluna. API-013: o servidor recusa
+ * dependência em ciclo e acima de 100 por card (e o cronograma é atômico),
+ * então, se o anterior já depende deste card ou o card já está no limite, o
+ * elo não entra. `dependsOn` acompanha os elos novos.
+ */
+function mergeDependsOn(card: ProjectCard, predecessorId: string | null, dependsOn: Map<string, string[]>): string[] {
+  const current = card.depends_on ?? []
+  if (!predecessorId || current.includes(predecessorId) || current.length >= DEPENDS_ON_MAX
+      || reaches(dependsOn, predecessorId, card.id)) return current
+  const next = [...current, predecessorId]
+  dependsOn.set(card.id, next)
+  return next
 }
 
 export function buildAutoSchedule(
@@ -71,6 +95,7 @@ export function buildAutoSchedule(
 ): AutoScheduleResult {
   const patches: SchedulePatch[] = []
   let overflowDays = 0
+  const graph = new Map(cards.map(c => [c.id, c.depends_on ?? []]))
 
   const byColumn = new Map<string, ProjectCard[]>()
   for (const c of cards) {
@@ -109,7 +134,7 @@ export function buildAutoSchedule(
       ordered.forEach((card, i) => {
         const start = addDays(today, prevBoundary)
         const due = addDays(start, boundaries[i] - prevBoundary - 1)
-        const dependsOn = mergeDependsOn(card, lastCardId)
+        const dependsOn = mergeDependsOn(card, lastCardId, graph)
 
         patches.push({ cardId: card.id, start_date: start, due_date: due, depends_on: dependsOn })
 
@@ -134,7 +159,7 @@ export function buildAutoSchedule(
       const duration = Math.max(1, card.estimated_days ?? DEFAULT_ESTIMATED_DAYS)
       const start = cursor
       const due = addDays(start, duration - 1)
-      const dependsOn = mergeDependsOn(card, lastCardId)
+      const dependsOn = mergeDependsOn(card, lastCardId, graph)
 
       patches.push({ cardId: card.id, start_date: start, due_date: due, depends_on: dependsOn })
       cursor = addDays(due, 1)

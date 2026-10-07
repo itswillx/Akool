@@ -1949,7 +1949,7 @@ export type Database = {
           links?: Json
           parent_card_id?: string | null
           priority?: string
-          sort_order?: number
+          sort_order: number
           start_date?: string | null
           title?: string
           updated_at?: string
@@ -2654,6 +2654,16 @@ export type Database = {
         Returns: undefined
       }
       delete_api_token: { Args: { p_id: string }; Returns: undefined }
+      finance_goal_contribute: {
+        Args: {
+          p_amount_cents: number
+          p_date?: string
+          p_goal: string
+          p_note?: string
+        }
+        Returns: Json
+      }
+      finance_goal_owned: { Args: { p_goal: string }; Returns: boolean }
       generate_invite_code: { Args: never; Returns: Json }
       get_my_profile: {
         Args: never

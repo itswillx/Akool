@@ -120,7 +120,7 @@ describe('FinancePanel: 1.000 transações, 1 render + 20 re-renders', () => {
   )), opts)
 
   bench('Metas', () => renderCycle(i => (
-    <GoalsTab goals={goals} contributions={contributions} accounts={accounts} goalShares={[]} incomingGoalShares={[]}
+    <GoalsTab userId={undefined} goals={goals} contributions={contributions} accounts={accounts} goalShares={[]} incomingGoalShares={[]}
       partnerProfiles={[]} onNewGoal={() => void i} onEditGoal={noop} onDeleteGoal={noopAsync} onAddContribution={noop}
       onDeleteContribution={noopAsync} onUpdateStatus={noopAsync} onShareGoal={noop} />
   )), opts)

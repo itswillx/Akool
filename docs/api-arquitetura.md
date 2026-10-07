@@ -141,6 +141,7 @@ Evidência (harness `supabase/checks/api002-roles-probe.sql`, rodado no staging 
 - `restore_site_backup` (service_role), os jobs do pg_cron e a `cards-api` legada (service_role com `p_actor`) rodam com `auth.uid()` nulo.
 - Regra (API-006, `supabase/migrations/README.md`): gatilho que depende do usuário pula só em contexto sem usuário (service_role, postgres, cron), nunca para os papéis `authenticated` e `akool_api`, e valida só as colunas que mudaram (`new.x is distinct from old.x`).
 - O API-006 (`20261005150000_api006_guards_without_user`, 05/10/2026) corrigiu `finance_guard_workspace`, que recusava com 42501 todo INSERT de linha de workspace sem usuário: nenhum backup com linha de workspace restaurava. A condição exata, que vale para gatilho novo: `auth.uid() is null and coalesce(auth.role(), '') not in ('authenticated', 'anon')` → `return new`. Prova: `supabase/checks/api006-restore.sql` (bloco 2 falha antes da migration e conclui depois, no staging).
+- O API-013 (`project_cards_integrity`) segue a regra e mostra a exceção: o que é padrão da linha, e não validação, vale também sem usuário. O card sem `sort_order` vai para o fim da coluna, e o `updated_at` é a versão do conteúdo (mover não muda). Só as validações pulam. Prova: `supabase/checks/api013-project-cards.sql` (bloco 2, restore no staging).
 
 ## 2. Guardas no banco
 
@@ -295,23 +296,30 @@ supabase/functions/
 **Campos de `ActionDef`:**
 
 - `id` no formato `secao.subsecao.acao`, e `title`;
+- `kind`: `read`, `create`, `update` ou `delete` (as invariantes de anotação dependem dele);
 - `description`, com até 300 caracteres e sem instruções ao modelo;
 - `requires`: `allOf`/`anyOf` de `{sub, level}`;
 - `input` e `output`: JSON Schema 2020-12, no subconjunto de `_api/schema.ts`;
 - `annotations`: `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint:false`;
 - `idempotent`, `tables`, `maxResultChars` e `deprecated`;
-- `run(ctx, input)`, com `ctx = {tx, principal, can(sub, level), storage, tz, now, request:{surface, client, ip_bucket}}`.
+- `examples: {input[], output[]}`, validados contra os schemas;
+- `run(ctx, input)`, com `ctx = {tx, principal, can(sub, level), storage, tz, now, request:{surface, client, ip_bucket}, hooks, actions}`. Os `hooks` de auditoria, limites e idempotência ficam vazios até o API-014; `actions` é o registro, que o `meta.acoes.listar` lista.
 
 **Invariantes testadas (API-008):**
 
 - ids únicos, só `[a-z_]`, em 3 segmentos;
 - nome MCP = id com `_`, com até 48 caracteres. O Claude Code prefixa `mcp__akool__` e recusa nomes acima de 64;
-- leituras com `readOnlyHint` e entrada plana;
-- exclusões com `destructiveHint` e nível `delete`;
+- nome MCP único: ids diferentes que dão o mesmo nome (`documentos.notas.rapidas_listar` e `documentos.notas_rapidas.listar`) são recusados;
+- título de até 120 caracteres (`MAX_TITLE`), o limite da saída do `meta.acoes.listar`;
+- leituras com `readOnlyHint`, sem `destructiveHint`, só exigindo Ler e com entrada plana (objeto só com propriedades escalares, para virar query de GET);
+- criações sem `destructiveHint`; atualizações e exclusões com `destructiveHint`; exclusões com nível `delete`; `openWorldHint` sempre `false`;
 - `requires` só referencia subseções reais, sem passar do nível máximo de cada uma;
 - namespaces compostos (`meta`, `painel`, `documentos.rede`, `financas.relatorios`) declarados no catálogo, sem nível próprio e com `requires.anyOf`;
-- ordem determinística;
-- toda ação tem um exemplo de entrada válido.
+- namespace composto só tem leitura: criar, atualizar ou excluir ali é recusado;
+- a ação comum exige a própria subseção (`secao.subsecao` do id) no `allOf` (ou num `anyOf` de um item), no nível do tipo: leitura em Ler, criação e atualização em Escrever ou Excluir, exclusão em Excluir. Num `anyOf` com outras subseções não vale, porque outra delas bastaria para chamar a ação;
+- descrição de até 300 caracteres, sem frase dirigida ao modelo (lista `MODEL_DIRECTED` em `registry.ts`: "você deve", "sempre chame", "ignore", "IMPORTANT"…);
+- ordem determinística (o registro é ordenado por id);
+- toda ação tem ao menos um exemplo de entrada e um de saída, válidos nos schemas.
 
 **Convenções:**
 
@@ -678,6 +686,11 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
   - o 004 saiu do 02 porque depende do 002, que espera os papéis no staging;
   - as labels `lote-NN` dos cards continuam as originais;
   - o lote 03 é remontado quando o 002 fechar, porque o 007 depende do 004 e os dois não podem ficar no mesmo lote.
+- **Ajuste de 07/10/2026:**
+  - o lote 03 rodou com 008 (do 03), 012 (do 04) e 013 (do 05), que não dependem do 002;
+  - continua um L por lote (o 013), e nenhum dos três depende de outro do lote;
+  - o 004, o 007, o 010 e o 011 esperam o 002;
+  - as migrations do 012 e do 013 passaram no staging e no ensaio desfeito em produção. O apply em produção espera o OK do dono, e o app só sai no merge, depois dele.
 - **A fila não segue a ordem da lista.** `cq_insert_queued` ordena por prioridade, depois esforço, coluna e posição. `cq_start` conta só os cards `in_progress`, então cards em Validação ou em Aguardando você não seguram o lote.
 - **Como enfileirar:** espere todos os cards do lote anterior chegarem a Concluído (`npm run cards -- queue`). Só então rode `npm run cards -- enqueue --label=lote-NN` e depois `next --count=3`.
 - **Dependências:** a primeira subtarefa de todo card com dependência confere que elas estão em Concluído; se não estiverem, `release`.

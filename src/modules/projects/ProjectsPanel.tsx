@@ -20,7 +20,6 @@ import { dndAccessibility } from '../../lib/dndAccessibility'
 import type { Page, ProjectCard, ProjectColumn } from '../../types'
 import { CardView } from './board/Card'
 import { Column, SortableColumn } from './board/Column'
-import { loadCardDraft } from './card/cardDraft'
 import { CardModal } from './card/CardModal'
 import CardFilterBar from './CardFilterBar'
 import ImportCardsModal from './ImportCardsModal'
@@ -58,11 +57,11 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
 
   // Estado, carga, realtime e fila do quadro: useBoardData.ts
   const boardData = useBoardData()
-  const { boards, activeBoardId, setActiveBoardId, columns, cards, members, view, setView, loading, boardLoading, activeDragId, cardSaveStatus, cardSaveErrorKind, persistError, cardFilters, setCardFilters, boardError, boardsError, boardModal, setBoardModal, boardSelectorOpen, setBoardSelectorOpen, cardModal, setCardModal, columnModal, setColumnModal, shareOpen, setShareOpen, importOpen, setImportOpen, queueOpen, setQueueOpen, queueRows, queueRefreshKey, deleteConfirm, setDeleteConfirm, activeBoard, canEdit, isOwner, sensors, pLabel, loadBoards, loadBoardData, queueBadgeMap, filteredCards, availableLabels, filtersActive, cardsByColumn } = boardData
+  const { boards, activeBoardId, setActiveBoardId, columns, cards, members, view, setView, loading, boardLoading, activeDragId, persistError, cardFilters, setCardFilters, boardError, boardsError, boardModal, setBoardModal, boardSelectorOpen, setBoardSelectorOpen, cardModal, setCardModal, columnModal, setColumnModal, shareOpen, setShareOpen, importOpen, setImportOpen, queueOpen, setQueueOpen, queueRows, queueRefreshKey, deleteConfirm, setDeleteConfirm, activeBoard, canEdit, isOwner, sensors, pLabel, loadBoards, loadBoardData, queueBadgeMap, filteredCards, availableLabels, filtersActive, cardsByColumn } = boardData
 
   // Gravações (quadros, colunas, cards, fila): useBoardActions.ts
   const boardActions = useBoardActions({ board: boardData, onOpenPage })
-  const { createBoard, updateBoard, deleteBoard, enqueueCard, saveColumn, deleteColumn, closeCardModal, validateCard, handleDraftChange, cardDraftKey, autoSaveCard, saveCard, deleteCard, openLinkedPage, handleRescheduleCard, handleGenerateSchedule } = boardActions
+  const { createBoard, updateBoard, deleteBoard, enqueueCard, saveColumn, deleteColumn, cardIO, cardColumnId, closeCardModal, finishCardSave, validateCard, deleteCard, openLinkedPage, handleRescheduleCard, handleGenerateSchedule } = boardActions
 
   // PERF-011: handlers estáveis para o memo das colunas e dos cards segurar.
   const openNewCard = useCallback((columnId: string) => setCardModal({ open: true, card: null, columnId }), [setCardModal])
@@ -309,23 +308,19 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
       {columnModal.open && (
         <ColumnModal column={columnModal.column ?? null} onClose={() => setColumnModal({ open: false })} onSave={saveColumn} />
       )}
-      {cardModal.open && activeBoardId && (
+      {cardModal.open && activeBoardId && cardIO && (
         <CardModal
           card={cardModal.card ?? null}
           boardId={activeBoardId}
-          columnId={cardModal.columnId}
-          columnName={columns.find(c => c.id === (cardModal.card?.column_id ?? cardModal.columnId))?.name}
+          columnId={cardColumnId}
+          columnName={columns.find(c => c.id === (cardModal.card?.column_id ?? cardColumnId))?.name}
           members={members}
           allCards={cards}
           canEdit={canEdit}
           isMobile={isMobile}
-          initialDraft={cardDraftKey ? loadCardDraft(cardDraftKey) : null}
-          saveStatus={cardSaveStatus}
-          saveErrorKind={cardSaveErrorKind}
+          io={cardIO}
           onClose={closeCardModal}
-          onSave={saveCard}
-          onAutoSave={autoSaveCard}
-          onDraftChange={handleDraftChange}
+          onSaved={() => { void finishCardSave() }}
           onDelete={cardModal.card ? deleteCard : undefined}
           onOpenPage={openLinkedPage}
           queueBadge={cardModal.card ? queueBadgeMap.get(cardModal.card.id) : undefined}

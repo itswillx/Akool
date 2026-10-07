@@ -4,6 +4,7 @@ import { Filter, Search, ChevronDown, ChevronUp, X } from 'lucide-react'
 import type { ProjectColumn, ProjectCardPriority } from '../../types'
 import type { DueDatePreset, ProjectCardFilters, CompletionFilter } from '../../lib/projectCardFilters'
 import { countActiveFilters, defaultCardFilters } from '../../lib/projectCardFilters'
+import { labelKey } from '../../lib/cardLabels'
 import { useLanguage } from '../../i18n/LanguageContext'
 
 interface Member {
@@ -68,9 +69,15 @@ export default function CardFilterBar({
     onChange({ ...filters, priorities: next })
   }
 
+  // Rótulos comparam sem caixa (como o filtro do quadro): o chip mostra a
+  // primeira grafia vista, e um filtro salvo com outra grafia continua ativo
+  // nele e sai com um clique. Os selecionados contam e aparecem uma vez por tema.
+  const isLabelActive = (label: string) => filters.labels.some(l => labelKey(l) === labelKey(label))
+  const selectedLabels = filters.labels.filter((l, i) => filters.labels.findIndex(x => labelKey(x) === labelKey(l)) === i)
+
   const toggleLabel = (label: string) => {
-    const next = filters.labels.includes(label)
-      ? filters.labels.filter(x => x !== label)
+    const next = isLabelActive(label)
+      ? filters.labels.filter(x => labelKey(x) !== labelKey(label))
       : [...filters.labels, label]
     onChange({ ...filters, labels: next })
   }
@@ -103,7 +110,7 @@ export default function CardFilterBar({
             <span>{t('projects_labels')}:</span>
             {filters.labels.length > 0 && (
               <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-accent)', backgroundColor: 'var(--color-accent-soft)', padding: '1px 6px', borderRadius: 999 }}>
-                {t('projects_filter_labels_selected').replace('{count}', String(filters.labels.length))}
+                {t('projects_filter_labels_selected').replace('{count}', String(selectedLabels.length))}
               </span>
             )}
             <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>
@@ -131,16 +138,16 @@ export default function CardFilterBar({
                   key={label}
                   type="button"
                   onClick={() => toggleLabel(label)}
-                  style={chipStyle(filters.labels.includes(label))}
+                  style={chipStyle(isLabelActive(label))}
                 >
                   {label}
                 </button>
               ))}
             </div>
           )}
-          {!labelsExpanded && filters.labels.length > 0 && (
+          {!labelsExpanded && selectedLabels.length > 0 && (
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-              {filters.labels.map(label => (
+              {selectedLabels.map(label => (
                 <button
                   key={label}
                   type="button"
@@ -161,7 +168,7 @@ export default function CardFilterBar({
               key={label}
               type="button"
               onClick={() => toggleLabel(label)}
-              style={chipStyle(filters.labels.includes(label))}
+              style={chipStyle(isLabelActive(label))}
             >
               {label}
             </button>

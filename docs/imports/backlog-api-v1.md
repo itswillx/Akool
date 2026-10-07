@@ -338,7 +338,7 @@ Esforço: 9 S, 38 M, 16 L.
 
 **Problema:** Não existe um lugar único que descreva o que a API faz nem uma lista do que o sistema faz: a cards-api é um switch de 17 ações sem schema, e sem um registro com invariantes e um manifesto das operações do sistema não dá para gerar MCP, REST e OpenAPI do mesmo jeito nem provar que a API cobre todas as funcionalidades.
 
-**Contexto:** Lote 03. Depende de: API-001, API-005. Aceite: registry.test.ts falha com nome MCP de 49 caracteres, com leitura sem readOnlyHint e com requires de subseção inexistente; coverage.ts lista as 367 operações e o teste mostra quantas estão pendentes por card. Arquitetura: docs/api-arquitetura.md.
+**Contexto:** Lote 03. Depende de: API-001, API-005. Aceite: registry.test.ts falha com nome MCP de 49 caracteres, com leitura sem readOnlyHint e com requires de subseção inexistente; coverage.ts lista as 357 operações e o teste mostra quantas estão pendentes por card. Arquitetura: docs/api-arquitetura.md.
 
 **Subtarefas Kanban:**
 
@@ -351,7 +351,7 @@ Esforço: 9 S, 38 M, 16 L.
 - [ ] Invariantes gerais: ordem determinística; descrição até 300 caracteres, sem frases dirigidas ao modelo
 - [ ] Teste: toda ação tem exemplo de entrada válido no schema e exemplo de saída válido no outputSchema
 - [ ] Ações meta.token.obter e meta.acoes.listar, com definição e handler puro
-- [ ] _api/coverage.ts com as 367 operações da avaliação, cada uma → action id, never:<motivo> ou pending:API-0NN; se o understand.json não estiver disponível, reconstruir por domínio a partir de docs/api-arquitetura.md §14
+- [ ] _api/coverage.ts com as 357 operações da avaliação, cada uma → action id, never:<motivo> ou pending:API-0NN; se o understand.json não estiver disponível, reconstruir por domínio a partir de docs/api-arquitetura.md §14
 - [ ] coverage.test.ts falha com action id inexistente e imprime o total pendente por card
 - [ ] Fechamento: npm test, npm run lint:ci, npx tsc -b e npm run build
 - [ ] Você: Anexar ao card a lista de operações da avaliação (understand.json), se o agente pedir
@@ -2327,7 +2327,7 @@ Esforço: 9 S, 38 M, 16 L.
 
 - [ ] Conferir que API-026, API-031, API-034, API-041, API-044, API-045, API-049 e API-052 estão em Concluído; se não, release e avisar o usuário
 - [ ] Conferir que API-053 a API-057 e API-059 a API-062 estão em Concluído; se não, release e avisar o usuário
-- [ ] _api/coverage.ts sem nenhum pending: cada uma das 367 operações virou ação ou never com motivo
+- [ ] _api/coverage.ts sem nenhum pending: cada uma das 357 operações virou ação ou never com motivo
 - [ ] Matriz E2E completa no staging cobrindo 100% das ações do registro
 - [ ] Drift de produção zerado: migrations, papéis e functions publicadas iguais ao repo, com a cards-api fora
 - [ ] get_advisors de segurança e performance em produção, sem alerta novo

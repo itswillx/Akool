@@ -1,7 +1,8 @@
 import { supabase } from '../supabase'
 import type { CardPlacement } from '../boardMoves'
-import type { ProjectShareRole } from '../../types'
-import type { TableInsert, TableUpdate } from '../../types/db'
+import type { WriteError } from '../optimistic'
+import type { ProjectCard, ProjectShareRole } from '../../types'
+import type { TableInsert, TableRow } from '../../types/db'
 
 // ARCH-003: consultas de Projetos num lugar só (antes espalhadas no
 // ProjectsPanel e no QueueModal). Cada função devolve a mesma consulta de
@@ -50,17 +51,108 @@ export function deleteColumn(columnId: string) {
 
 // ── Cards ────────────────────────────────────────────────────────────────────
 
-export function insertCard(values: TableInsert<'project_cards'>) {
+// API-013: o gatilho project_cards_integrity é dono de duas colunas. A posição
+// de um card novo é o fim da coluna, e o updated_at é a versão do conteúdo
+// (mover não muda). O app não manda nenhuma das duas.
+
+/** Os campos que a pessoa edita no card (são os do formulário). */
+export const CARD_FIELDS = [
+  'title', 'description', 'priority', 'start_date', 'due_date', 'estimated_days', 'assignee_user_id', 'labels',
+  'linked_page_id', 'parent_card_id', 'depends_on', 'completed', 'checklist', 'links', 'attachments',
+] as const
+
+export type CardField = typeof CARD_FIELDS[number]
+export type CardFields = Pick<ProjectCard, CardField>
+export type CardPatch = Partial<CardFields>
+export type CardInsert = Omit<TableInsert<'project_cards'>, 'sort_order' | 'updated_at'>
+
+/** Uma versão do card: o updated_at do servidor e os campos daquele momento. */
+export interface CardBase {
+  version: string
+  fields: CardFields
+}
+
+/**
+ * Chaves em ordem: o jsonb devolve os objetos (itens de checklist, anexos,
+ * links) com as chaves na ordem dele, não na que o app gravou.
+ */
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value) ? value.map(canonical)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical((value as Record<string, unknown>)[key])]))
+      : value
+
+export const sameCardValue = (a: unknown, b: unknown) => JSON.stringify(canonical(a ?? null)) === JSON.stringify(canonical(b ?? null))
+const sameValue = sameCardValue
+
+/** Linha do banco com os jsonb nulos como lista vazia (como a carga do quadro faz). */
+export function normalizeCard(row: TableRow<'project_cards'>): ProjectCard {
+  return {
+    ...row,
+    labels: row.labels ?? [],
+    checklist: row.checklist ?? [],
+    links: row.links ?? [],
+    attachments: row.attachments ?? [],
+    depends_on: row.depends_on ?? [],
+  }
+}
+
+export function cardFields(card: CardFields): CardFields {
+  return Object.fromEntries(CARD_FIELDS.map(key => [key, card[key]])) as CardFields
+}
+
+export const baseOf = (card: ProjectCard): CardBase => ({ version: card.updated_at, fields: cardFields(card) })
+
+/** Os campos de `next` que mudaram em relação a `base`. */
+export function diffCardFields(base: CardPatch, next: CardPatch): CardPatch {
+  return Object.fromEntries(
+    (Object.keys(next) as CardField[]).filter(key => !sameValue(base[key], next[key])).map(key => [key, next[key]]),
+  )
+}
+
+/** Os campos de `patch` já estão assim em `row`? */
+export function cardPatchMatches(row: CardPatch, patch: CardPatch): boolean {
+  return (Object.keys(patch) as CardField[]).every(key => sameValue(row[key], patch[key]))
+}
+
+export function insertCard(values: CardInsert) {
   return supabase.from('project_cards').insert(values).select('*').single()
 }
 
-/** Só o id de volta (o modal de card rápido não precisa do resto). */
-export function insertCardReturningId(values: TableInsert<'project_cards'>) {
-  return supabase.from('project_cards').insert(values).select('id').single()
+/** Datas da linha do tempo, sem versão: a última que chega vale. */
+export function rescheduleCard(cardId: string, dates: { start_date: string | null; due_date: string | null }) {
+  return supabase.from('project_cards').update(dates).eq('id', cardId).select('id, updated_at')
 }
 
-export function updateCard(cardId: string, values: TableUpdate<'project_cards'>) {
-  return supabase.from('project_cards').update(values).eq('id', cardId)
+export type CardSave =
+  | { status: 'saved'; at: string; current?: ProjectCard }
+  | { status: 'conflict'; current: ProjectCard }
+  | { status: 'gone' }
+  | { status: 'denied' }
+  | { status: 'error'; error: WriteError }
+
+/**
+ * Grava `patch` só se o card ainda estiver na versão `expected` (o updated_at
+ * que o servidor devolveu por último). Com zero linhas, relê o card:
+ * - não existe mais (ou saiu do alcance da pessoa) → `gone`;
+ * - já tem exatamente esses campos (reenvio duplicado) → `saved`, com o card
+ *   de lá (outra pessoa pode ter mudado outros campos);
+ * - na mesma versão e sem o patch → `denied`: a linha não mudou e mesmo assim
+ *   o UPDATE não pegou, então o RLS recusou (editor que virou leitor);
+ * - outra versão → `conflict`, com o card como está no servidor.
+ */
+export async function saveCardVersioned(id: string, patch: CardPatch, expected: string): Promise<CardSave> {
+  const { data, error } = await supabase.from('project_cards').update(patch).eq('id', id).eq('updated_at', expected).select('id, updated_at')
+  if (error) return { status: 'error', error }
+  if (data.length > 0) return { status: 'saved', at: data[0].updated_at }
+
+  const { data: row, error: readError } = await supabase.from('project_cards').select('*').eq('id', id).maybeSingle()
+  if (readError) return { status: 'error', error: readError }
+  if (!row) return { status: 'gone' }
+  const current = normalizeCard(row)
+  if (cardPatchMatches(current, patch)) return { status: 'saved', at: current.updated_at, current }
+  if (current.updated_at === expected) return { status: 'denied' }
+  return { status: 'conflict', current }
 }
 
 export function deleteCard(cardId: string) {
