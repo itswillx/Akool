@@ -66,9 +66,9 @@ linha a linha na migration `20260925191300`). O trigger
 | `finance_accounts` | workspace | own | — | — | `trg_finance_accounts_ws_guard` |
 | `finance_categories` | workspace | own | workspace | workspace | `trg_finance_categories_ws_guard` |
 | `finance_budgets` | workspace, `shared_with_user_id` | own | workspace | workspace | `trg_finance_budgets_ws_guard` |
-| `finance_goals` | workspace, via `finance_goal_shares` | own | — | — | `trg_finance_goals_ws_guard` |
-| `finance_goal_shares` | invitee (`shared_with_user_id`) | own | — | — | nenhum (goal sharing é pessoa-a-pessoa, sem workspace) |
-| `finance_goal_contributions` | owner-da-meta vê tudo, invitee vê o próprio | own; **invitee também pode INSERT** (via `finance_goal_shares`, no `finance_goal_contributions_insert`) | — | — | nenhum |
+| `finance_goals` | workspace, via `finance_goal_shares` emitido pelo dono da meta (API-012) | own | — | — | `trg_finance_goals_ws_guard` |
+| `finance_goal_shares` | invitee (`shared_with_user_id`) | own, e só de meta própria (`finance_goal_owned`, API-012); **sem UPDATE** (sem policy nem grant: outro alvo é outro share) | — | — | nenhum (goal sharing é pessoa-a-pessoa, sem workspace) |
+| `finance_goal_contributions` | quem vê a meta vê os aportes: dono da meta, invitee com share válido e membros do workspace (API-012) | own; invitee e membro do workspace também podem INSERT; UPDATE só em `amount`, `note` e `date` (grant por coluna: `goal_id` e `user_id` travados, API-012). Aporte pelo app: `finance_goal_contribute` | — | — | nenhum |
 | `finance_recurring` | workspace | own | — | — | `trg_finance_recurring_ws_guard` |
 | `finance_recurring_entries` | via `finance_recurring.workspace_id` (subquery) | own | — | — | nenhum próprio (herda da recorrência pai) |
 | `finance_transactions` | workspace, `shared_with_user_id` | own | workspace | workspace | `trg_finance_transactions_ws_guard` |
@@ -88,7 +88,7 @@ continua conferida, e um JWT de cliente sem `sub` também.
 | `finance_workspaces` | SELECT | owner ou membro (`is_workspace_member`) | |
 | `finance_workspaces` | INSERT/UPDATE/DELETE | owner | uma policy por comando desde o PERF-002; todas as policies desta seção são `TO authenticated` |
 | `finance_workspace_members` | SELECT | qualquer membro do workspace | |
-| `finance_workspace_members` | INSERT | só quem já é `role='owner'` do workspace | |
+| `finance_workspace_members` | INSERT | ninguém direto: só pelas RPCs `create_workspace` e `accept_workspace_invite` (o SEC-013 removeu a policy `wm_owner_insert`) | |
 | `finance_workspace_members` | DELETE | owner (remove qualquer um) ou o próprio membro (sai sozinho) | |
 | `finance_workspace_members` | UPDATE | **nenhuma policy** | troca de `role` (member→owner) só acontece dentro das funções `create_workspace`/`leave_workspace` (SECURITY DEFINER), nunca via UPDATE direto do cliente — achado documentado, não é bug |
 | `finance_workspace_invites` | SELECT | membro do workspace, ou convidado (por `invited_user_id` ou `auth.email()`) | usa `auth.email()` embutido — corrige bug histórico de policy antiga que fazia join direto em `auth.users` sem permissão |
@@ -185,7 +185,8 @@ Todas revisadas pelo advisor do Supabase como "callable by authenticated/anon"
 | `search_users_for_share` | busca limitada (mín. 3 caracteres, limit 6) para o modal de compartilhamento, sem listar todos os perfis |
 | `admin_add_invite_slots`/`admin_revoke_invite_code`/`generate_invite_code`/`validate_invite_code` | mutam `invite_codes`/`profiles.invite_slots_remaining`, que têm RLS hard-deny para INSERT/UPDATE direto |
 | `create_workspace`/`invite_member`/`accept_workspace_invite`/`decline_workspace_invite`/`remove_workspace_member`/`leave_workspace` | operações multi-tabela com invariantes (ex.: 1 workspace por usuário) que não dá pra expressar só com RLS |
-| `bootstrap_finance_categories`/`bootstrap_workspace_categories` | seed de categorias padrão no primeiro uso |
+| `bootstrap_finance_categories`/`bootstrap_workspace_categories` | seed de categorias padrão no primeiro uso; rodar de novo não duplica nem recria o que a pessoa apagou (API-012) |
+| `finance_goal_contribute` | aporte atômico: grava, soma no servidor e conclui a meta ao atingir o alvo, mesmo quando quem aporta não é o dono (API-012) |
 | `_notify` | único caminho de escrita em `notifications` (que não tem policy de INSERT). Desde a `notif001`, um gatilho BEFORE INSERT (`private.notification_enrich`) completa a `data` com `actor_name` e `workspace_name`, e três gatilhos chamam `_notify`: compartilhar página (`page_shares`), compartilhar quadro (`project_shares`) e atribuir card (`project_cards.assignee_user_id`), só quando há um usuário autenticado agindo e ele não é o destinatário |
 | `handle_new_user`/`handle_invite_code_on_signup` | disparam em `auth.users` (trigger), fora do controle de RLS do app |
 
@@ -197,13 +198,13 @@ login) — único caso, intencional (validar o código antes de criar a conta).
 Migration `20260928145254_sec012_grants_hardening.sql`. Verificação:
 `supabase/checks/sec012-grants.sql` (transação desfeita). Depois dela, o
 advisor passou a listar 34 funções `SECURITY DEFINER` para `authenticated` (eram 54)
-e só a `validate_invite_code` para `anon`. Com o API-001 (05/10/2026) são **37**,
-todas intencionais:
+e só a `validate_invite_code` para `anon`. Com o API-001 (05/10/2026) eram 37; com o
+API-012 (07/10/2026) são **39**, todas intencionais:
 
 | Grupo | Funções | Por que continuam com EXECUTE para `authenticated` |
 |---|---|---|
-| Helpers de RLS (10) | `page_is_readable`, `page_is_writable`, `current_user_can_share_page`, `user_can_access_board`, `is_admin`, `is_workspace_member`, `profile_is_related`, `loan_is_owner`, `loan_is_visible`, `loan_file_is_readable` | a política roda como quem consulta: sem o EXECUTE, o RLS quebra. Tirá-las da API exige movê-las para o schema `private` e refazer as políticas (card à parte) |
-| RPCs do frontend (27) | convites (`generate_invite_code`, `validate_invite_code`, `admin_add_invite_slots`, `admin_revoke_invite_code`), workspaces (`create_workspace`, `invite_member`, `accept_/decline_workspace_invite`, `remove_workspace_member`, `leave_workspace`, `bootstrap_*_categories`), `create_project_board`, `search_users_for_share`, perfil (`get_my_profile`, `admin_list_profiles`), tokens (`create_api_token`, `revoke_api_token`, `update_api_token_scopes`, `revoke_all_my_api_tokens`, `delete_api_token`) e a fila no `QueueModal` (`cq_list`, `cq_enqueue`, `cq_move`, `cq_remove`, `cq_reprioritize`, `cq_validate`) | chamadas com o JWT do usuário; cada uma confere quem chama. As de token recusam claims de token da API (API-001) |
+| Helpers de RLS (11) | `page_is_readable`, `page_is_writable`, `current_user_can_share_page`, `user_can_access_board`, `is_admin`, `is_workspace_member`, `profile_is_related`, `loan_is_owner`, `loan_is_visible`, `loan_file_is_readable`, `finance_goal_owned` (API-012: a policy de share não pode ler `finance_goals` direto, que lê os shares → recursão 42P17) | a política roda como quem consulta: sem o EXECUTE, o RLS quebra. Tirá-las da API exige movê-las para o schema `private` e refazer as políticas (card à parte) |
+| RPCs do frontend (28) | convites (`generate_invite_code`, `validate_invite_code`, `admin_add_invite_slots`, `admin_revoke_invite_code`), workspaces (`create_workspace`, `invite_member`, `accept_/decline_workspace_invite`, `remove_workspace_member`, `leave_workspace`, `bootstrap_*_categories`), `create_project_board`, `search_users_for_share`, perfil (`get_my_profile`, `admin_list_profiles`), tokens (`create_api_token`, `revoke_api_token`, `update_api_token_scopes`, `revoke_all_my_api_tokens`, `delete_api_token`), aporte de meta (`finance_goal_contribute`) e a fila no `QueueModal` (`cq_list`, `cq_enqueue`, `cq_move`, `cq_remove`, `cq_reprioritize`, `cq_validate`) | chamadas com o JWT do usuário; cada uma confere quem chama. As de token recusam claims de token da API (API-001) |
 
 **Só `service_role`** (sem EXECUTE para `anon`/`authenticated`):
 - `cq_block`, `cq_boards`, `cq_card`, `cq_cards`, `cq_check`, `cq_complete`, `cq_next`, `cq_note`, `cq_release`, `cq_setup_flow`, `cq_start`: só a `cards-api` usa;

@@ -1083,7 +1083,6 @@ export const ptBR = {
   finance_save: 'Salvar',
   finance_save_error: 'Não foi possível salvar. Verifique suas permissões e tente novamente.',
   finance_delete_error: 'Não foi possível excluir. Verifique suas permissões e tente novamente.',
-  finance_goal_complete_error: 'Contribuição salva, mas não foi possível marcar a meta como concluída.',
   finance_cancel: 'Cancelar',
   finance_delete: 'Excluir',
   finance_account_name: 'Nome da conta',

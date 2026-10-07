@@ -16,12 +16,14 @@ import type { PartnerProfile } from '../useFinanceData'
 
 // ─── Goals Tab ────────────────────────────────────────────────────────────────
 
-export function GoalsTab({ goals, contributions, accounts, goalShares, incomingGoalShares, partnerProfiles, onNewGoal, onEditGoal, onDeleteGoal, onAddContribution, onDeleteContribution, onUpdateStatus, onShareGoal }: {
+export function GoalsTab({ userId, goals, contributions, accounts, goalShares, incomingGoalShares, partnerProfiles, onNewGoal, onEditGoal, onDeleteGoal, onAddContribution, onDeleteContribution, onUpdateStatus, onShareGoal }: {
   goals: FinanceGoal[]
   contributions: FinanceGoalContribution[]
   accounts: FinanceAccount[]
   goalShares: FinanceGoalShare[]
   incomingGoalShares: FinanceGoalShare[]
+  /** Quem está logado: só o dono da meta compartilha, edita, muda o status e exclui. */
+  userId: string | undefined
   partnerProfiles: PartnerProfile[]
   onNewGoal: () => void
   onEditGoal: (g: FinanceGoal) => void
@@ -39,7 +41,6 @@ export function GoalsTab({ goals, contributions, accounts, goalShares, incomingG
 
   const accMap = new Map(accounts.map(a => [a.id, a]))
   const profileMap = new Map(partnerProfiles.map(p => [p.id, p]))
-  const sharedGoalIds = new Set(incomingGoalShares.map(s => s.goal_id))
   const sharerMap = new Map(incomingGoalShares.map(s => [s.goal_id, profileMap.get(s.owner_id)]))
 
   // PERF-005: aportes indexados por meta uma vez (antes, dois filtros da lista
@@ -93,8 +94,11 @@ export function GoalsTab({ goals, contributions, accounts, goalShares, incomingG
     return <span style={{ color: raw <= 30 ? '#f59e0b' : FIN_POS, fontWeight: 600 }}>{days === 1 ? t('finance_goal_days_left', { n: days }) : t('finance_goal_days_left_plural', { n: days })}</span>
   }
 
-  const ownedGoals = goals.filter(g => !sharedGoalIds.has(g.id))
-  const sharedGoals = goals.filter(g => sharedGoalIds.has(g.id))
+  // API-012: dono é quem criou a meta. Meta de workspace de outro membro vai
+  // para "compartilhadas", sem os botões de dono (antes aparecia como sua, e
+  // compartilhar a meta alheia passava no banco).
+  const ownedGoals = goals.filter(g => g.user_id === userId)
+  const sharedGoals = goals.filter(g => g.user_id !== userId)
   const active = ownedGoals.filter(g => g.status !== 'cancelled')
   const cancelled = ownedGoals.filter(g => g.status === 'cancelled')
 

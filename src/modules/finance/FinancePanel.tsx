@@ -446,6 +446,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                   contributions={contributions}
                   goalsSlot={(
                     <GoalsTab
+                      userId={user?.id}
                       goals={goals}
                       contributions={contributions}
                       accounts={accounts}

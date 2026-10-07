@@ -14,7 +14,7 @@
   "src/modules/finance/store/useFinanceStore.ts": 30,
   "src/modules/finance/useAllocationSummary.ts": 4,
   "src/modules/finance/useAutoRecurringBudgets.ts": 1,
-  "src/modules/finance/useFinanceActions.ts": 31,
+  "src/modules/finance/useFinanceActions.ts": 30,
   "src/modules/finance/useFinanceData.ts": 28,
   "src/modules/study/useStudyTopics.ts": 14
 }

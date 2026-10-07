@@ -1083,7 +1083,6 @@ const en: Record<TranslationKey, string> = {
   finance_save: 'Save',
   finance_save_error: 'Could not save. Check your permissions and try again.',
   finance_delete_error: 'Could not delete. Check your permissions and try again.',
-  finance_goal_complete_error: 'Contribution saved, but the goal could not be marked as completed.',
   finance_cancel: 'Cancel',
   finance_delete: 'Delete',
   finance_account_name: 'Account name',
