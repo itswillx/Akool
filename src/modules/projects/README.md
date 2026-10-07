@@ -34,15 +34,26 @@ Era um painel irmão de Documentos (`activePanel: 'projects'` + modo
 - O servidor guarda as regras do card: o gatilho `project_cards_integrity` (veja
   `docs/matriz-rls.md`) põe o card novo no fim da coluna e cuida do
   `updated_at`, que é a versão do conteúdo (mover não muda). O app nunca manda
-  `sort_order` de card novo nem `updated_at`.
-- O modal grava pelo `saveCardVersioned` (`lib/data/projects.ts`): só os campos
-  que mudaram desde a versão em que a edição começou (`useBoardActions`, base
-  por abertura do modal, gravações em fila).
+  `updated_at`, nem `sort_order` de card novo — exceto a importação
+  (`lib/importProjectCards.ts`), que manda o max+1 da coluna por lote para os
+  importados ficarem na ordem do arquivo.
+- Cada abertura do modal é um editor (`card/useCardEditor.ts`), com uma
+  gravação em voo por vez. Cada gravação lê o formulário mais novo e manda pelo
+  `saveCardVersioned` (`lib/data/projects.ts`) só o que mudou desde a base
+  (versão + campos). As decisões puras ficam em `card/cardSession.ts`; o
+  `useBoardActions` só faz a E/S (inserir, subir imagens, gravar com versão,
+  atualizar a lista).
 - Se outra pessoa gravou no meio:
   - **em outros campos:** a gravação é refeita por cima da versão dela, e o
     modal adota o que ela mudou;
-  - **nos mesmos campos:** nada é gravado, e o `CardConflictBanner` pergunta
-    "Carregar a versão salva / Manter a minha".
+  - **nos mesmos campos:** nada é gravado, e o `CardConflictBanner` pergunta.
+    "Carregar a versão salva" pega a versão salva só nos campos em conflito;
+    "Manter a minha" sobrepõe tudo o que a pessoa mudou.
+- O rascunho do sessionStorage (`akool:projects.card-draft:<quadro>:<card>:`, ou
+  `…:new:<coluna>` para card novo) guarda também a base
+  de onde partiu: retomado, ele grava só o que mudou e cai no mesmo conflito.
+- Perdeu a permissão de editar o quadro no meio: o editor para de gravar e
+  avisa.
 - Rótulo não diferencia caixa (`lib/cardLabels.ts`: filtro, modal e
   importação), como no `cq_cards` e no `cq_enqueue`.
 

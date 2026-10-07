@@ -66,7 +66,24 @@ export type CardFields = Pick<ProjectCard, CardField>
 export type CardPatch = Partial<CardFields>
 export type CardInsert = Omit<TableInsert<'project_cards'>, 'sort_order' | 'updated_at'>
 
-const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+/** Uma versão do card: o updated_at do servidor e os campos daquele momento. */
+export interface CardBase {
+  version: string
+  fields: CardFields
+}
+
+/**
+ * Chaves em ordem: o jsonb devolve os objetos (itens de checklist, anexos,
+ * links) com as chaves na ordem dele, não na que o app gravou.
+ */
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value) ? value.map(canonical)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical((value as Record<string, unknown>)[key])]))
+      : value
+
+export const sameCardValue = (a: unknown, b: unknown) => JSON.stringify(canonical(a ?? null)) === JSON.stringify(canonical(b ?? null))
+const sameValue = sameCardValue
 
 /** Linha do banco com os jsonb nulos como lista vazia (como a carga do quadro faz). */
 export function normalizeCard(row: TableRow<'project_cards'>): ProjectCard {
@@ -84,16 +101,13 @@ export function cardFields(card: CardFields): CardFields {
   return Object.fromEntries(CARD_FIELDS.map(key => [key, card[key]])) as CardFields
 }
 
+export const baseOf = (card: ProjectCard): CardBase => ({ version: card.updated_at, fields: cardFields(card) })
+
 /** Os campos de `next` que mudaram em relação a `base`. */
 export function diffCardFields(base: CardPatch, next: CardPatch): CardPatch {
   return Object.fromEntries(
     (Object.keys(next) as CardField[]).filter(key => !sameValue(base[key], next[key])).map(key => [key, next[key]]),
   )
-}
-
-/** Dos `keys`, os que têm valor diferente em `a` e `b`. */
-export function changedFields(a: CardPatch, b: CardPatch, keys: CardField[]): CardField[] {
-  return keys.filter(key => !sameValue(a[key], b[key]))
 }
 
 /** Os campos de `patch` já estão assim em `row`? */
@@ -111,16 +125,20 @@ export function rescheduleCard(cardId: string, dates: { start_date: string | nul
 }
 
 export type CardSave =
-  | { status: 'saved'; at: string }
+  | { status: 'saved'; at: string; current?: ProjectCard }
   | { status: 'conflict'; current: ProjectCard }
   | { status: 'gone' }
+  | { status: 'denied' }
   | { status: 'error'; error: WriteError }
 
 /**
  * Grava `patch` só se o card ainda estiver na versão `expected` (o updated_at
  * que o servidor devolveu por último). Com zero linhas, relê o card:
  * - não existe mais (ou saiu do alcance da pessoa) → `gone`;
- * - já tem exatamente esses campos (reenvio duplicado) → `saved`;
+ * - já tem exatamente esses campos (reenvio duplicado) → `saved`, com o card
+ *   de lá (outra pessoa pode ter mudado outros campos);
+ * - na mesma versão e sem o patch → `denied`: a linha não mudou e mesmo assim
+ *   o UPDATE não pegou, então o RLS recusou (editor que virou leitor);
  * - outra versão → `conflict`, com o card como está no servidor.
  */
 export async function saveCardVersioned(id: string, patch: CardPatch, expected: string): Promise<CardSave> {
@@ -132,7 +150,9 @@ export async function saveCardVersioned(id: string, patch: CardPatch, expected: 
   if (readError) return { status: 'error', error: readError }
   if (!row) return { status: 'gone' }
   const current = normalizeCard(row)
-  return cardPatchMatches(current, patch) ? { status: 'saved', at: current.updated_at } : { status: 'conflict', current }
+  if (cardPatchMatches(current, patch)) return { status: 'saved', at: current.updated_at, current }
+  if (current.updated_at === expected) return { status: 'denied' }
+  return { status: 'conflict', current }
 }
 
 export function deleteCard(cardId: string) {

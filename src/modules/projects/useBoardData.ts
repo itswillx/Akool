@@ -30,7 +30,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import type { ProjectBoard, ProjectCard, ProjectCardPriority, ProjectColumn } from '../../types'
 import { fetchBoardData, loadLatestBoard, type BoardData, type BoardLoadDeps } from './boardLoader'
-import { clearCardModalState, loadCardModalState, saveCardModalState, type CardConflict } from './card/cardDraft'
+import { clearCardModalState, loadCardModalState, saveCardModalState } from './card/cardDraft'
 import { type ViewMode } from './ProjectsNav'
 import type { Member } from './projectsShared'
 import { ACTIVE_BOARD_KEY, OPEN_CARD_KEY, VALID_VIEWS, VIEW_KEY } from './projectsShared'
@@ -54,10 +54,6 @@ export function useBoardData() {
   const [loading, setLoading] = useState(true)
   const [boardLoading, setBoardLoading] = useState(false)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
-  const [cardSaveStatus, setCardSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [cardSaveErrorKind, setCardSaveErrorKind] = useState<'upload' | 'general'>('general')
-  // API-013: outra pessoa mudou os mesmos campos do card aberto; o modal pergunta o que fica.
-  const [cardConflict, setCardConflict] = useState<CardConflict | null>(null)
   const [persistError, setPersistError] = useState<string | null>(null)
   const [cardFilters, setCardFilters] = useState<ProjectCardFilters>(defaultCardFilters)
   const [boardError, setBoardError] = useState(false)
@@ -67,7 +63,6 @@ export function useBoardData() {
   boardsRef.current = boards
   const cardModalOpenRef = useRef(false)
   const modalRestoredRef = useRef(false)
-  const cardSaveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragSourceColumnRef = useRef<string | null>(null)
   // PERF-004: posições no início do drag (o drag-over já muda `cards` no caminho).
   const dragSnapshotRef = useRef<CardPlacement[] | null>(null)
@@ -114,10 +109,11 @@ export function useBoardData() {
 
   useEffect(() => { localStorage.setItem(VIEW_KEY, view) }, [view])
 
-  const loadBoards = useCallback(async () => {
+  /** `silent`: relê os quadros e papéis sem trocar o painel pelo "carregando" (o modal aberto continua). */
+  const loadBoards = useCallback(async (opts?: { silent?: boolean }) => {
     const userId = user?.id
     if (!userId) return
-    setLoading(true)
+    if (!opts?.silent) setLoading(true)
     const [{ data: own, error: ownError }, { data: shared, error: sharedError }] = await Promise.all([
       listOwnBoards(userId),
       listSharedBoards(userId),
@@ -317,5 +313,5 @@ export function useBoardData() {
     return map
   }, [columns, filteredCards])
 
-  return { boards, setBoards, activeBoardId, setActiveBoardId, columns, setColumns, cards, setCards, members, setMembers, view, setView, loading, setLoading, boardLoading, setBoardLoading, activeDragId, setActiveDragId, cardSaveStatus, setCardSaveStatus, cardSaveErrorKind, setCardSaveErrorKind, cardConflict, setCardConflict, persistError, setPersistError, cardFilters, setCardFilters, boardError, setBoardError, boardsError, setBoardsError, boardsRef, cardModalOpenRef, modalRestoredRef, cardSaveStatusTimerRef, dragSourceColumnRef, dragSnapshotRef, userId, activeBoardIdRef, boardRequestRef, notifyRef, boardModal, setBoardModal, boardSelectorOpen, setBoardSelectorOpen, cardModal, setCardModal, columnModal, setColumnModal, shareOpen, setShareOpen, importOpen, setImportOpen, queueOpen, setQueueOpen, queueRows, setQueueRows, queueRefreshKey, setQueueRefreshKey, queueReloadTimerRef, boardBusyRef, boardReloadRef, deleteConfirm, setDeleteConfirm, activeBoard, canEdit, isOwner, sensors, pLabel, loadBoards, loadBoardData, queueBadgeMap, filteredCards, availableLabels, filtersActive, cardsByColumn }
+  return { boards, setBoards, activeBoardId, setActiveBoardId, columns, setColumns, cards, setCards, members, setMembers, view, setView, loading, setLoading, boardLoading, setBoardLoading, activeDragId, setActiveDragId, persistError, setPersistError, cardFilters, setCardFilters, boardError, setBoardError, boardsError, setBoardsError, boardsRef, cardModalOpenRef, modalRestoredRef, dragSourceColumnRef, dragSnapshotRef, userId, activeBoardIdRef, boardRequestRef, notifyRef, boardModal, setBoardModal, boardSelectorOpen, setBoardSelectorOpen, cardModal, setCardModal, columnModal, setColumnModal, shareOpen, setShareOpen, importOpen, setImportOpen, queueOpen, setQueueOpen, queueRows, setQueueRows, queueRefreshKey, setQueueRefreshKey, queueReloadTimerRef, boardBusyRef, boardReloadRef, deleteConfirm, setDeleteConfirm, activeBoard, canEdit, isOwner, sensors, pLabel, loadBoards, loadBoardData, queueBadgeMap, filteredCards, availableLabels, filtersActive, cardsByColumn }
 }

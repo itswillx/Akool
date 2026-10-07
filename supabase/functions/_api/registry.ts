@@ -4,14 +4,22 @@
 // o registro real (zero problemas) e contra uma fixture quebrada por regra.
 
 import { META_ACTIONS } from './actions/meta.ts'
-import { COMPOSITE_VIEWS, getSubsection } from './catalog.ts'
+import { COMPOSITE_VIEWS, getSubsection, type ScopeLevel } from './catalog.ts'
 import { schemaProblems, validate, type JsonSchema, type JsonType } from './schema.ts'
 import { levelRank } from './scopes.ts'
-import type { ActionDef } from './types.ts'
+import type { ActionDef, ActionKind } from './types.ts'
 
 /** O Claude Code prefixa `mcp__akool__` e recusa nomes acima de 64. */
 export const MAX_MCP_NAME = 48
+/** A saída do meta.acoes.listar limita o título a 120 e a descrição a 300. */
+export const MAX_TITLE = 120
 export const MAX_DESCRIPTION = 300
+
+const KIND_LABEL: Record<ActionKind, string> = { read: 'leitura', create: 'criação', update: 'atualização', delete: 'exclusão' }
+
+/** Nível mínimo da própria subseção pelo tipo (leitura acima de Ler já é acusada à parte). */
+const OWN_MIN_LEVEL: Record<ActionKind, ScopeLevel> = { read: 'read', create: 'write', update: 'write', delete: 'delete' }
+const OWN_LEVEL_TEXT: Record<ActionKind, string> = { read: 'read', create: 'write ou delete', update: 'write ou delete', delete: 'delete' }
 
 const ID_PATTERN = /^[a-z_]+\.[a-z_]+\.[a-z_]+$/
 const SCALAR_TYPES: ReadonlySet<JsonType> = new Set(['string', 'integer', 'number', 'boolean', 'null'])
@@ -39,7 +47,7 @@ export function isFlatInput(schema: JsonSchema): boolean {
 
 const compositeOf = (id: string) => COMPOSITE_VIEWS.find(view => id.startsWith(`${view.key}.`))
 
-/** Problemas de uma ação, sem as regras que dependem das vizinhas (id repetido e ordem). */
+/** Problemas de uma ação, sem as regras que dependem das vizinhas (id repetido, nome MCP repetido e ordem). */
 function actionProblems(action: ActionDef): string[] {
   const out: string[] = []
   const { annotations: ann, kind } = action
@@ -47,6 +55,7 @@ function actionProblems(action: ActionDef): string[] {
   if (!ID_PATTERN.test(action.id)) out.push('id precisa de 3 segmentos só com [a-z_]')
   if (mcpName(action.id).length > MAX_MCP_NAME) out.push(`nome MCP com mais de ${MAX_MCP_NAME} caracteres`)
   if (!action.title.trim()) out.push('sem título')
+  if (action.title.length > MAX_TITLE) out.push(`título com mais de ${MAX_TITLE} caracteres`)
   if (!action.description.trim()) out.push('sem descrição')
   if (action.description.length > MAX_DESCRIPTION) out.push(`descrição com mais de ${MAX_DESCRIPTION} caracteres`)
   if (MODEL_DIRECTED.some(re => re.test(action.description))) out.push('descrição com frase dirigida ao modelo')
@@ -71,20 +80,30 @@ function actionProblems(action: ActionDef): string[] {
     else if (levelRank(req.level) > levelRank(sub.maxLevel)) out.push(`requires acima do máximo de ${req.sub} (${sub.maxLevel})`)
   }
   if (kind === 'read' && requirements.some(req => req.level !== 'read')) out.push('leitura exigindo mais que Ler')
-  if (kind === 'delete' && !requirements.some(req => req.level === 'delete')) out.push('exclusão sem nível delete no requires')
 
-  // Namespace composto: sem nível próprio, anyOf igual ao da visão. Senão, a
-  // ação é de uma subseção do catálogo e a exige.
+  // Namespace composto: só leitura, sem nível próprio, anyOf igual ao da visão.
+  // Senão, a ação é de uma subseção do catálogo e a exige sozinha (allOf ou
+  // anyOf de um item), no nível do tipo: num anyOf com outras, outra subseção
+  // bastaria para chamar a ação.
   const view = compositeOf(action.id)
   if (view) {
     const anyOf = action.requires.anyOf ?? []
     const sameSources = [...view.anyOf].sort().join() === anyOf.map(req => req.sub).sort().join()
+    if (kind !== 'read') out.push(`namespace composto ${view.key} só aceita leitura`)
     if (action.requires.allOf?.length) out.push(`namespace composto ${view.key} sem nível próprio: só requires.anyOf`)
     if (!sameSources || anyOf.some(req => req.level !== 'read')) out.push(`requires.anyOf difere da visão ${view.key}`)
   } else {
     const own = action.id.split('.').slice(0, 2).join('.')
+    const anyOf = action.requires.anyOf ?? []
+    const direct = [...(action.requires.allOf ?? []), ...(anyOf.length === 1 ? anyOf : [])].filter(req => req.sub === own)
     if (!getSubsection(own)) out.push(`${own} não é subseção nem namespace composto do catálogo`)
-    else if (!requirements.some(req => req.sub === own)) out.push(`requires não cita a própria subseção ${own}`)
+    else if (direct.length === 0) {
+      out.push(anyOf.some(req => req.sub === own)
+        ? `a própria subseção ${own} só aparece num anyOf com outras: precisa estar no allOf (ou num anyOf de um item)`
+        : `requires não cita a própria subseção ${own}`)
+    } else if (!direct.some(req => levelRank(req.level) >= levelRank(OWN_MIN_LEVEL[kind]))) {
+      out.push(`${KIND_LABEL[kind]} precisa exigir a própria subseção ${own} em ${OWN_LEVEL_TEXT[kind]}`)
+    }
   }
 
   // Schemas no subconjunto e exemplos válidos.
@@ -105,11 +124,20 @@ function actionProblems(action: ActionDef): string[] {
 /** Todas as violações das invariantes do §4; vazio = registro válido. */
 export function registryProblems(actions: readonly ActionDef[]): string[] {
   const seen = new Set<string>()
+  // Ids diferentes podem dar o mesmo nome MCP (documentos.notas.rapidas_listar
+  // e documentos.notas_rapidas.listar); o MCP só fica com uma das duas.
+  const byMcpName = new Map<string, string>()
   return actions.flatMap((action, i) => {
     const out = actionProblems(action)
+    const name = mcpName(action.id)
+    const clash = byMcpName.get(name)
     if (seen.has(action.id)) out.push('id repetido')
-    else if (i > 0 && actions[i - 1].id > action.id) out.push('fora de ordem (o registro é ordenado por id)')
+    else {
+      if (clash !== undefined) out.push(`nome MCP ${name} repetido (já é de ${clash})`)
+      if (i > 0 && actions[i - 1].id > action.id) out.push('fora de ordem (o registro é ordenado por id)')
+    }
     seen.add(action.id)
+    if (clash === undefined) byMcpName.set(name, action.id)
     return out.map(problem => `${action.id || `#${i}`}: ${problem}`)
   })
 }

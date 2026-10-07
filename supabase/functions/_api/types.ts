@@ -44,7 +44,8 @@ export interface ActionStorage {
   createSignedUrl(bucket: string, path: string, expiresInSeconds: number): Promise<string>
 }
 
-export type Surface = 'rest' | 'mcp' | 'cards-api'
+/** Por onde a chamada entrou; `legacy` é a cards-api traduzida para o registro (§5). */
+export type Surface = 'rest' | 'mcp' | 'legacy'
 
 export interface RequestInfo {
   surface: Surface

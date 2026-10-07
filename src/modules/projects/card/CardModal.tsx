@@ -20,152 +20,64 @@ import { copyToClipboard } from '../../../lib/clipboard'
 import { prepareUpload } from '../../../lib/uploadValidation'
 import type { ProjectCard, ProjectCardChecklistItem, ProjectCardPriority } from '../../../types'
 import type { Member } from '../projectsShared'
-import { AUTOSAVE_DEBOUNCE_MS, inputStyle, labelStyle, PRIORITY_COLORS, queueBadgeLabel } from '../projectsShared'
+import { inputStyle, labelStyle, PRIORITY_COLORS, queueBadgeLabel } from '../projectsShared'
 import QueueReviewBanner from '../QueueReviewBanner'
 import { GhostBtn, Modal, PrimaryBtn } from '../ui'
 import { addCardLabel, CARD_LABEL_MAX_LENGTH, CARD_LABELS_MAX } from '../../../lib/cardLabels'
-import type { AutoSaveResult, CardConflict, CardDraftStored, CardForm, CardSaveExtras, PendingFile } from './cardDraft'
-import { cardFormFrom } from './cardDraft'
+import { ATTACHMENTS_MAX, DEPENDS_ON_MAX } from '../../../lib/cardLimits'
+import type { PendingFile } from './cardDraft'
 import { CardConflictBanner } from './CardConflictBanner'
+import { useCardEditor, type CardIO } from './useCardEditor'
 import { dependentIds, descendantIds } from './cardRelations'
 import { CardAttachmentsSection, CardChecklistSection, CardLinksSection, CollapsibleSection } from './CardSections'
 import { PagePicker } from './PagePicker'
 
 // QA-003: exportado para o teste de componente (CardModal.test.tsx).
-export function CardModal({ card, boardId: _boardId, columnId: _columnId, columnName, members, allCards, canEdit, isMobile, initialDraft, saveStatus, saveErrorKind, queueBadge, conflict, onClose, onSave, onDelete, onOpenPage, onAutoSave, onDraftChange, onEnqueue, onValidate, onResolveConflict }: {
+export function CardModal({ card, boardId, columnId, columnName, members, allCards, canEdit, isMobile, queueBadge, io, onClose, onSaved, onDelete, onOpenPage, onEnqueue, onValidate }: {
   card: ProjectCard | null; boardId: string; columnId?: string; columnName?: string; members: Member[]; allCards: ProjectCard[]; canEdit: boolean; isMobile?: boolean;
-  initialDraft?: CardDraftStored | null; saveStatus?: 'idle' | 'saving' | 'saved' | 'error'; saveErrorKind?: 'upload' | 'general';
   queueBadge?: QueueBadge; onEnqueue?: () => void;
+  /** API-013: a E/S do quadro; versão, conflito e rascunho ficam no editor (useCardEditor). */
+  io: CardIO;
   onValidate?: (approve: boolean, note?: string) => Promise<boolean>;
-  /** API-013: outra pessoa gravou os mesmos campos; nada é gravado até a escolha. */
-  conflict?: CardConflict | null;
-  onResolveConflict?: (choice: 'theirs' | 'mine', form: CardForm) => CardForm | null;
-  onClose: () => void; onSave: (f: CardForm, extras: CardSaveExtras) => void; onDelete?: () => void; onOpenPage: (id: string) => void;
-  onAutoSave?: (form: CardForm, extras: CardSaveExtras) => Promise<AutoSaveResult | null> | AutoSaveResult | null;
-  onDraftChange?: (form: CardForm, removedAttachmentIds: string[]) => void;
+  /** Fecha o modal. `keepDraft`: há um aviso de conflito pendente, e o rascunho fica para a próxima abertura. */
+  onClose: (opts?: { keepDraft?: boolean }) => void;
+  /** Salvar gravou tudo: o quadro fecha e recarrega. */
+  onSaved: () => void;
+  /** Excluir: o editor para de gravar antes do DELETE e volta se ele falhar. */
+  onDelete?: (editor: { stop: () => Promise<void>; resume: () => void }) => void;
+  onOpenPage: (id: string) => void;
 }) {
   const { t } = useLanguage()
   const { showToast } = useToast()
+  const editor = useCardEditor({ card, boardId, columnId, canEdit, io })
+  const { form, patchForm, conflict } = editor
 
-  const resolveInitialForm = (): CardForm => {
-    if (initialDraft?.form) {
-      const cardUpdated = card?.updated_at ? new Date(card.updated_at).getTime() : 0
-      const draftSaved = new Date(initialDraft.savedAt).getTime()
-      if (!card || draftSaved >= cardUpdated) return initialDraft.form
-    }
-    return cardFormFrom(card)
-  }
-
-  const [form, setForm] = useState<CardForm>(resolveInitialForm)
   const [labelInput, setLabelInput] = useState('')
-  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
-  const [removedAttachmentIds, setRemovedAttachmentIds] = useState<string[]>(initialDraft?.removedAttachmentIds ?? [])
   const [editingDesc, setEditingDesc] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Cada clique em Salvar (ou Aprovar) com o aviso na tela devolve o foco a ele.
+  const [conflictFocus, setConflictFocus] = useState(0)
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const autoSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const formRef = useRef(form)
-  const removedIdsRef = useRef(removedAttachmentIds)
-  const pendingFilesRef = useRef<PendingFile[]>([])
-  formRef.current = form
-  removedIdsRef.current = removedAttachmentIds
-  pendingFilesRef.current = pendingFiles
+  const titleInputRef = useRef<HTMLInputElement>(null)
 
   const priorities: ProjectCardPriority[] = ['low', 'medium', 'high', 'urgent']
   const pLabel = (p: ProjectCardPriority) => t(`projects_priority_${p}`)
 
-  const getExtras = useCallback((): CardSaveExtras => ({
-    pendingFiles: pendingFilesRef.current,
-    removedAttachmentIds: removedIdsRef.current,
-  }), [])
-
-  // `sent` é o formulário que foi gravado. Do que outra pessoa mudou (merged),
-  // só entra o campo que a pessoa não mexeu enquanto a gravação ia.
-  const applyAutoSaveResult = useCallback((result: AutoSaveResult, sent: CardForm) => {
-    setForm(f => {
-      const theirs = Object.fromEntries(Object.entries(result.merged ?? {})
-        .filter(([key]) => JSON.stringify(f[key as keyof CardForm]) === JSON.stringify(sent[key as keyof CardForm])))
-      const next = { ...f, ...theirs, attachments: result.attachments }
-      formRef.current = next
-      return next
-    })
-    setRemovedAttachmentIds([])
-    removedIdsRef.current = []
-    if (result.uploadedPendingIds.length > 0) {
-      setPendingFiles(prev => {
-        const next = prev.filter(p => {
-          if (result.uploadedPendingIds.includes(p.id)) URL.revokeObjectURL(p.preview)
-          return !result.uploadedPendingIds.includes(p.id)
-        })
-        pendingFilesRef.current = next
-        return next
-      })
-    }
-  }, [])
-
-  const runAutoSave = useCallback(async (nextForm: CardForm, immediate: boolean) => {
-    if (!onAutoSave || !canEdit) return
-    if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current)
-    const execute = async () => {
-      const result = await onAutoSave(nextForm, getExtras())
-      if (result) applyAutoSaveResult(result, nextForm)
-    }
-    if (immediate) await execute()
-    else autoSaveDebounceRef.current = setTimeout(() => { void execute() }, AUTOSAVE_DEBOUNCE_MS)
-  }, [onAutoSave, canEdit, getExtras, applyAutoSaveResult])
-
-  const scheduleAutoSave = useCallback((nextForm: CardForm, immediate: boolean) => {
-    void runAutoSave(nextForm, immediate)
-  }, [runAutoSave])
-
-  const patchForm = useCallback((updater: (f: CardForm) => CardForm, immediate = false) => {
-    let nextForm: CardForm | null = null
-    setForm(prev => {
-      nextForm = updater(prev)
-      formRef.current = nextForm
-      return nextForm
-    })
-    if (nextForm) {
-      onDraftChange?.(nextForm, removedIdsRef.current)
-      scheduleAutoSave(nextForm, immediate)
-    }
-  }, [onDraftChange, scheduleAutoSave])
-
   // PERF-010: a foto é comprimida já ao entrar na lista de pendentes, então a
   // prévia e o upload usam o arquivo reduzido (e uma foto de 12 MB é aceita).
+  // Se o modal fechar antes de a compressão acabar, a foto não entra (API-013).
   const addPendingFile = (file: File) => {
     void prepareUpload('card-image', file).then(result => {
       if (!result.ok) {
         showToast('error', t(result.reason === 'too_large' ? 'upload_error_too_large' : 'upload_error_invalid_type'))
         return
       }
-      const id = crypto.randomUUID()
-      const pending: PendingFile = { id, file: result.file, preview: URL.createObjectURL(result.file) }
-      setPendingFiles(prev => {
-        const next = [...prev, pending]
-        pendingFilesRef.current = next
-        return next
-      })
-      void runAutoSave(formRef.current, true)
+      const pending: PendingFile = { id: crypto.randomUUID(), file: result.file, preview: URL.createObjectURL(result.file) }
+      const added = editor.addPending(pending)
+      if (added === 'added') return
+      URL.revokeObjectURL(pending.preview)
+      if (added === 'full') showToast('error', t('projects_attachments_limit').replace('{max}', String(ATTACHMENTS_MAX)), { dedupeKey: 'card-attachments-limit' })
     })
-  }
-
-  const removePendingFile = (id: string) => {
-    setPendingFiles(prev => {
-      const item = prev.find(p => p.id === id)
-      if (item) URL.revokeObjectURL(item.preview)
-      const next = prev.filter(p => p.id !== id)
-      pendingFilesRef.current = next
-      return next
-    })
-  }
-
-  const removeExistingAttachment = (id: string) => {
-    const next = [...removedIdsRef.current, id]
-    removedIdsRef.current = next
-    setRemovedAttachmentIds(next)
-    onDraftChange?.(formRef.current, next)
-    void runAutoSave(formRef.current, true)
   }
 
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -179,26 +91,36 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
     }
   }
 
-  const handleSave = () => {
-    onSave(form, { pendingFiles, removedAttachmentIds })
+  const handleClose = () => {
+    const keepDraft = !!editor.conflict
+    editor.finish()
+    onClose({ keepDraft })
   }
 
+  const handleSave = async () => {
+    if (editor.conflict) { setConflictFocus(n => n + 1); return }
+    if (await editor.flush()) {
+      editor.finish()
+      onSaved()
+    }
+  }
+
+  // Validação (fluxo v2): grava o que falta antes; com aviso pendente, não valida.
+  const handleValidate = onValidate ? async (approve: boolean, note?: string) => {
+    if (editor.conflict) { setConflictFocus(n => n + 1); return false }
+    if (!await editor.flush()) return false
+    const ok = await onValidate(approve, note)
+    // O quadro fechou o modal: o editor termina (grava o que mudou durante a
+    // validação e apaga imagens que não entraram no card).
+    if (ok) editor.finish()
+    return ok
+  } : undefined
+
+  const handleDelete = onDelete ? () => onDelete({ stop: editor.stop, resume: editor.resume }) : undefined
+
   useEffect(() => () => {
-    if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current)
     if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current)
   }, [])
-
-  useEffect(() => {
-    const flushDraft = () => {
-      if (onDraftChange) onDraftChange(formRef.current, removedIdsRef.current)
-    }
-    document.addEventListener('visibilitychange', flushDraft)
-    window.addEventListener('pagehide', flushDraft)
-    return () => {
-      document.removeEventListener('visibilitychange', flushDraft)
-      window.removeEventListener('pagehide', flushDraft)
-    }
-  }, [onDraftChange])
 
   const updateChecklist = (checklist: ProjectCardChecklistItem[], immediate: boolean) => {
     patchForm(f => ({ ...f, checklist }), immediate)
@@ -211,22 +133,18 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
     setLabelInput('')
   }
 
+  // Depois da escolha o aviso some: o foco vai para o título, e não para o nada.
   const resolveConflict = (choice: 'theirs' | 'mine') => {
-    const next = onResolveConflict?.(choice, formRef.current)
-    if (!next) return
-    if (choice === 'theirs') {
-      removedIdsRef.current = []
-      setRemovedAttachmentIds([])
-    }
-    patchForm(() => next, true)
+    editor.resolve(choice)
+    titleInputRef.current?.focus()
   }
 
-  const saveStatusLabel = saveStatus === 'saving'
+  const saveStatusLabel = editor.status === 'saving'
     ? t('projects_saving')
-    : saveStatus === 'saved'
+    : editor.status === 'saved'
       ? t('projects_saved')
-      : saveStatus === 'error'
-        ? (saveErrorKind === 'upload' ? t('projects_attachments_upload_error') : t('projects_autosave_error'))
+      : editor.status === 'error'
+        ? (editor.errorKind === 'upload' ? t('projects_attachments_upload_error') : t('projects_autosave_error'))
         : null
 
   const priorityButtons = (
@@ -316,7 +234,7 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
         </div>
       )}
       {canEdit && (
-        <select value="" disabled={dependencyOptions.length === 0} onChange={e => { const id = e.target.value; if (id) patchForm(f => ({ ...f, depends_on: [...f.depends_on, id] }), true) }} style={inputStyle}>
+        <select value="" disabled={dependencyOptions.length === 0 || form.depends_on.length >= DEPENDS_ON_MAX} onChange={e => { const id = e.target.value; if (id) patchForm(f => ({ ...f, depends_on: [...f.depends_on, id] }), true) }} style={inputStyle}>
           <option value="">{t('projects_dependencies_add')}</option>
           {dependencyOptions.map(c => <option key={c.id} value={c.id}>{c.title || t('projects_new_card')}</option>)}
         </select>
@@ -414,8 +332,8 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
       ...(isMobile ? { position: 'sticky', bottom: 0, backgroundColor: 'var(--color-bg)', paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 16 } : {}),
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        {canEdit && onDelete && (
-          <button onClick={onDelete} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: '#ef4444', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+        {canEdit && handleDelete && (
+          <button onClick={handleDelete} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: '#ef4444', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <Trash2 size={14} />{t('projects_delete')}
           </button>
         )}
@@ -439,13 +357,13 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {saveStatusLabel && (
-          <span style={{ fontSize: 12, fontWeight: 600, color: saveStatus === 'error' ? '#ef4444' : 'var(--color-text-muted)' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: editor.status === 'error' ? '#ef4444' : 'var(--color-text-muted)' }}>
             {saveStatusLabel}
           </span>
         )}
         <div style={{ display: 'flex', gap: 8 }}>
-          <GhostBtn onClick={onClose}>{t('projects_cancel')}</GhostBtn>
-          {canEdit && <PrimaryBtn onClick={handleSave} disabled={!form.title.trim()}>{t('projects_save')}</PrimaryBtn>}
+          <GhostBtn onClick={handleClose}>{t('projects_cancel')}</GhostBtn>
+          {canEdit && <PrimaryBtn onClick={() => { void handleSave() }} disabled={!form.title.trim()}>{t('projects_save')}</PrimaryBtn>}
         </div>
       </div>
     </div>
@@ -454,19 +372,19 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
   const attachmentsField = (
     <CardAttachmentsSection
       attachments={form.attachments}
-      pendingFiles={pendingFiles}
-      removedIds={removedAttachmentIds}
+      pendingFiles={editor.pendingFiles}
+      removedIds={editor.removedAttachmentIds}
       canEdit={canEdit}
       onAddPending={addPendingFile}
-      onRemoveExisting={removeExistingAttachment}
-      onRemovePending={removePendingFile}
+      onRemoveExisting={editor.removeAttachment}
+      onRemovePending={editor.removePending}
     />
   )
 
   const titleField = (
     <div>
       <label style={labelStyle}>{t('projects_card_title')}</label>
-      <input disabled={!canEdit} value={form.title} onChange={e => patchForm(f => ({ ...f, title: e.target.value }))} placeholder={t('projects_card_title_placeholder')} style={{ ...inputStyle, fontSize: isMobile ? 14 : 16, fontWeight: 600 }} autoFocus={!isMobile} />
+      <input ref={titleInputRef} disabled={!canEdit} value={form.title} onChange={e => patchForm(f => ({ ...f, title: e.target.value }))} placeholder={t('projects_card_title_placeholder')} style={{ ...inputStyle, fontSize: isMobile ? 14 : 16, fontWeight: 600 }} autoFocus={!isMobile} />
     </div>
   )
 
@@ -476,7 +394,11 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
       <label style={labelStyle}>{t('projects_card_description')}</label>
       {canEdit && editingDesc ? (
         <div>
+          {/* O editor de texto só lê o markdown ao montar: quando a descrição
+              muda por fora (o que outra pessoa gravou, ou a escolha no aviso),
+              ele remonta, senão a próxima tecla desfaria a mudança. */}
           <RichTextEditor
+            key={editor.descRev}
             markdown={form.description}
             onChange={md => patchForm(f => ({ ...f, description: md }))}
             onBlur={() => setEditingDesc(false)}
@@ -519,17 +441,17 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
   )
 
   // Fila (fluxo v2): card em Validação esperando o usuário aprovar ou reprovar.
-  const reviewBanner = card && canEdit && onValidate && queueBadge?.kind === 'review'
-    ? <QueueReviewBanner onApprove={() => onValidate(true)} onReject={reason => onValidate(false, reason)} />
+  const reviewBanner = card && canEdit && handleValidate && queueBadge?.kind === 'review'
+    ? <QueueReviewBanner onApprove={() => handleValidate(true)} onReject={reason => handleValidate(false, reason)} />
     : null
   const conflictBanner = conflict && canEdit
-    ? <CardConflictBanner fields={conflict.fields} onLoadSaved={() => resolveConflict('theirs')} onKeepMine={() => resolveConflict('mine')} />
+    ? <CardConflictBanner fields={conflict.fields} focusSignal={conflictFocus} onLoadSaved={() => resolveConflict('theirs')} onKeepMine={() => resolveConflict('mine')} />
     : null
 
   return (
     <Modal
       title={card ? t('projects_edit_card') : t('projects_new_card')}
-      onClose={onClose}
+      onClose={handleClose}
       closeOnBackdrop={false}
       isMobile={isMobile}
       width={1040}

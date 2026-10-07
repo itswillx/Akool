@@ -2,6 +2,7 @@
 import { useAuth } from '../../contexts/AuthContext'
 import { useToast } from '../../contexts/ToastContext'
 import { useLanguage } from '../../i18n/LanguageContext'
+import { requireRows } from '../../lib/optimistic'
 import { supabase } from '../../lib/supabase'
 import type { FinanceAccount, FinanceBudget, FinanceCategory, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceTransaction } from '../../types'
 import { fetchFullHistoryTx, type useFinanceData } from './useFinanceData'
@@ -222,10 +223,14 @@ export function useFinanceActions({ data, modals }: {
     setGoals(prev => prev.map(g => (g.id === data.goal_id && g.status !== status ? { ...g, status } : g)))
   }
 
+  // API-012: só o autor apaga o aporte (policy de DELETE). O DELETE barrado
+  // afeta 0 linhas sem erro; com o select('id') + requireRows isso vira erro e
+  // o aporte não some só da tela.
   const deleteContribution = async (id: string) => {
     await withToast(async () => {
-      const { error } = await supabase.from('finance_goal_contributions').delete().eq('id', id)
-      if (error) throw error
+      const { error } = requireRows(await supabase.from('finance_goal_contributions').delete().eq('id', id).select('id'))
+      // requireRows devolve um objeto simples; vira Error com code/hint para o log.
+      if (error) throw Object.assign(new Error(error.message), error)
       // Preserve prior behavior: doesn't un-complete an auto-completed goal.
       setContributions(prev => prev.filter(c => c.id !== id))
     }, t('finance_delete_error'))

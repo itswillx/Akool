@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isAllowed } from './access.ts'
-import { getAction, isFlatInput, MAX_MCP_NAME, mcpName, REGISTRY, registryProblems } from './registry.ts'
+import { metaAcoesListar } from './actions/meta.ts'
+import { getAction, isFlatInput, MAX_DESCRIPTION, MAX_MCP_NAME, MAX_TITLE, mcpName, REGISTRY, registryProblems } from './registry.ts'
 import type { ActionDef } from './types.ts'
 
 // API-008: as invariantes do §4. O registro real não tem problema nenhum, e
@@ -60,6 +61,20 @@ describe('invariantes de nome', () => {
     expect(registryProblems([valid, b])).toEqual(['projetos.cards.buscar: fora de ordem (o registro é ordenado por id)'])
     expect(registryProblems([b, valid])).toEqual([])
   })
+
+  it('ids diferentes com o mesmo nome MCP são acusados (id repetido não)', () => {
+    const notas = { ...valid, id: 'documentos.notas.rapidas_listar', requires: { allOf: [{ sub: 'documentos.notas', level: 'read' as const }] } }
+    const rapidas = { ...valid, id: 'documentos.notas_rapidas.listar', requires: { allOf: [{ sub: 'documentos.notas_rapidas', level: 'read' as const }] } }
+    expect(registryProblems([notas])).toEqual([])
+    expect(registryProblems([rapidas])).toEqual([])
+    expect(registryProblems([notas, rapidas])).toEqual([
+      'documentos.notas_rapidas.listar: nome MCP documentos_notas_rapidas_listar repetido (já é de documentos.notas.rapidas_listar)',
+    ])
+    expect(registryProblems([notas, rapidas, rapidas])).toEqual([
+      'documentos.notas_rapidas.listar: nome MCP documentos_notas_rapidas_listar repetido (já é de documentos.notas.rapidas_listar)',
+      'documentos.notas_rapidas.listar: id repetido',
+    ])
+  })
 })
 
 describe('invariantes de tipo de ação', () => {
@@ -80,7 +95,7 @@ describe('invariantes de tipo de ação', () => {
     const del = { id: 'projetos.cards.excluir', kind: 'delete' as const, annotations: write, requires: { allOf: [{ sub: 'projetos.cards', level: 'delete' as const }] } }
     expect(problemsOf(del)).toEqual([])
     expect(problemsOf({ ...del, annotations: { ...write, destructiveHint: false } })).toEqual(['projetos.cards.excluir: delete sem destructiveHint'])
-    expect(problemsOf({ ...del, requires: { allOf: [{ sub: 'projetos.cards', level: 'write' }] } })).toEqual(['projetos.cards.excluir: exclusão sem nível delete no requires'])
+    expect(problemsOf({ ...del, requires: { allOf: [{ sub: 'projetos.cards', level: 'write' }] } })).toEqual(['projetos.cards.excluir: exclusão precisa exigir a própria subseção projetos.cards em delete'])
   })
 
   it('criação sem destructiveHint e escrita sem readOnlyHint', () => {
@@ -113,6 +128,39 @@ describe('invariantes de escopo', () => {
     expect(problemsOf({ id: 'projetos.tudo.listar' })).toEqual(['projetos.tudo.listar: projetos.tudo não é subseção nem namespace composto do catálogo'])
   })
 
+  it('a própria subseção vale no allOf ou num anyOf de um item, no nível do tipo', () => {
+    const create = { id: 'projetos.cards.criar', kind: 'create' as const, annotations: { ...write, destructiveHint: false } }
+    expect(problemsOf({ ...create, requires: { allOf: [{ sub: 'projetos.cards', level: 'write' }] } })).toEqual([])
+    expect(problemsOf({ ...create, requires: { anyOf: [{ sub: 'projetos.cards', level: 'delete' }] } })).toEqual([])
+    expect(problemsOf({ ...create, requires: { allOf: [{ sub: 'projetos.cards', level: 'read' }] } }))
+      .toEqual(['projetos.cards.criar: criação precisa exigir a própria subseção projetos.cards em write ou delete'])
+    expect(problemsOf({ ...create, kind: 'update', annotations: write, requires: { anyOf: [{ sub: 'projetos.cards', level: 'read' }] } }))
+      .toEqual(['projetos.cards.criar: atualização precisa exigir a própria subseção projetos.cards em write ou delete'])
+  })
+
+  it('a própria subseção num anyOf com outras falha (outra subseção bastaria)', () => {
+    expect(problemsOf({
+      id: 'financas.transacoes.criar',
+      kind: 'create',
+      annotations: { ...write, destructiveHint: false },
+      requires: { anyOf: [{ sub: 'financas.transacoes', level: 'write' }, { sub: 'financas.contas', level: 'write' }] },
+    })).toEqual(['financas.transacoes.criar: a própria subseção financas.transacoes só aparece num anyOf com outras: precisa estar no allOf (ou num anyOf de um item)'])
+  })
+
+  it('exclusão com delete em outra subseção e só Ler na própria falha', () => {
+    expect(problemsOf({
+      id: 'projetos.cards.excluir',
+      kind: 'delete',
+      annotations: write,
+      requires: { allOf: [{ sub: 'projetos.cards', level: 'read' }, { sub: 'projetos.quadros', level: 'delete' }] },
+    })).toEqual(['projetos.cards.excluir: exclusão precisa exigir a própria subseção projetos.cards em delete'])
+  })
+
+  it('namespace composto só aceita leitura', () => {
+    expect(problemsOf({ id: 'meta.token.renomear', kind: 'update', annotations: write, requires: { anyOf: [] } }))
+      .toEqual(['meta.token.renomear: namespace composto meta só aceita leitura'])
+  })
+
   it('namespace composto: só anyOf, igual às fontes da visão, em Ler', () => {
     const view = {
       id: 'financas.relatorios.visao_geral',
@@ -134,6 +182,17 @@ describe('invariantes gerais', () => {
       expect(problemsOf({ description })).toEqual(['projetos.cards.listar: descrição com frase dirigida ao modelo'])
     }
     expect(problemsOf({ title: '' })).toEqual(['projetos.cards.listar: sem título'])
+  })
+
+  it('título com 121 caracteres falha; com 120 passa', () => {
+    expect(problemsOf({ title: 'x'.repeat(MAX_TITLE) })).toEqual([])
+    expect(problemsOf({ title: 'x'.repeat(121) })).toEqual(['projetos.cards.listar: título com mais de 120 caracteres'])
+  })
+
+  it('os limites de título e descrição batem com a saída do meta.acoes.listar', () => {
+    const props = metaAcoesListar.output.properties?.items.items?.properties
+    expect(props?.title.maxLength).toBe(MAX_TITLE)
+    expect(props?.description.maxLength).toBe(MAX_DESCRIPTION)
   })
 
   it('schemas fora do subconjunto e exemplos ausentes ou inválidos falham', () => {

@@ -143,8 +143,13 @@ export function ContributionModal({ goal, onClose, onSave }: {
     try {
       await onSave({ goal_id: goal.id, amount: amt, note: note.trim(), date })
       onClose()
-    } catch {
-      setError(t('finance_save_error'))
+    } catch (err) {
+      // API-012: regra recusada pela RPC (ex.: nota acima de 500 caracteres)
+      // chega com hint 'akool' e a mensagem do servidor; o resto, aviso genérico.
+      const rule = err as { hint?: unknown; message?: unknown } | null
+      setError(rule?.hint === 'akool' && typeof rule.message === 'string' && rule.message
+        ? t('finance_rule_error').replace('{message}', rule.message)
+        : t('finance_save_error'))
     } finally {
       setSaving(false)
     }
@@ -171,7 +176,7 @@ export function ContributionModal({ goal, onClose, onSave }: {
         </div>
         <div>
           <Field label={t('finance_goal_contribution_note')} labelStyle={labelStyle}>{control => (
-            <input {...control} style={inputStyle} type="text" value={note}
+            <input {...control} style={inputStyle} type="text" value={note} maxLength={500}
               onChange={e => setNote(e.target.value)} placeholder={t('finance_contribution_note_placeholder')} />
           )}</Field>
         </div>

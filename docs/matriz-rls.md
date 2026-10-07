@@ -141,15 +141,29 @@ O RLS diz quem edita o quadro; o gatilho `private.project_card_integrity`
 (SECURITY DEFINER, `search_path=''`) diz o que um card pode conter. Ele faz
 duas coisas mesmo sem usuário: põe o card sem `sort_order` no fim da coluna (a
 coluna não tem mais DEFAULT) e cuida do `updated_at`, que é a versão do
-conteúdo. Mudar o conteúdo grava `now()`. Mover (`column_id`/`sort_order`) mantém
-a versão, e o valor mandado pelo cliente é sempre ignorado. Sem usuário
+conteúdo. Mudar o conteúdo grava `clock_timestamp()`, e a versão sempre avança
+(`greatest` com `old.updated_at` + 1 µs), mesmo duas vezes na mesma transação:
+o gatilho da fila `cq_on_card_change` muda o card depois do RETURNING do app, e
+com `now()` a versão ficaria igual. Mover (`column_id`/`sort_order`) mantém
+a versão, e o valor mandado pelo cliente é ignorado (menos no INSERT sem
+usuário: o restore mantém o `updated_at` do backup). Sem usuário
 (restore, `cards-api`, seed: regra do §1.5 do `api-arquitetura.md`), o resto
-pula. Com usuário, valida só o que mudou:
+pula. Com usuário, no INSERT, quem não edita o quadro recebe só a recusa
+genérica `42501` "Sem permissão para editar este quadro", antes de qualquer
+regra: o gatilho roda antes do WITH CHECK do RLS, e as mensagens abaixo
+contariam quem é membro e que cards e colunas existem (no UPDATE, o USING já
+esconde a linha). Depois, valida só o que mudou:
 - **Quadro e coluna:** a coluna é do mesmo quadro, e `board_id` não muda.
 - **Pai:** do mesmo quadro, sem ciclo.
 - **Dependências:** só as acrescentadas são conferidas (existem, são do mesmo
   quadro, não são o próprio card e não fecham ciclo), até 100. As antigas e as
   órfãs ficam.
+- **Grafo:** mudar pai ou dependência (e criar card) espera a vez numa trava
+  do site (`pg_advisory_xact_lock`, gatilho por instrução
+  `project_cards_graph_lock`), para duas gravações ao mesmo tempo não fecharem
+  um ciclo que nenhuma das duas vê. A trava vem antes de qualquer linha travada,
+  então uma instrução de várias linhas (o cronograma) não entra em deadlock com
+  outra.
 - **Responsável:** tem acesso ao quadro (`private.cq_board_role`).
 - **Página vinculada:** legível (`page_is_readable`).
 - **Formas:**
@@ -157,11 +171,19 @@ pula. Com usuário, valida só o que mudou:
   - rótulos: até 30, de 1 a 50 caracteres sem espaço nas pontas, sem repetir
     ignorando a caixa;
   - anexos: até 50 `{id, url, name}`. Um anexo novo só aceita caminho sob
-    `<quem envia>/<quadro>/`.
+    `<quem envia>/<quadro>/`. "Novo" é o par (`id`, `url`) que não estava no
+    card: trocar a URL de um id antigo não escapa.
 
-As recusas saem com `hint='akool'`, e o app mostra o motivo. `cq_cards` e
-`cq_enqueue` comparam rótulo sem caixa (`private.cq_labels_match`). Prova:
-`supabase/checks/api013-project-cards.sql` (bloco 2, só no staging: o restore).
+As recusas das regras saem com `hint='akool'`, e o app mostra o motivo (a
+recusa genérica de quem não edita o quadro sai sem hint, de propósito, e o app
+diz que a pessoa não tem permissão). Quem grava sem
+usuário fica dentro das mesmas formas: `cq_block` recusa item "Você" acima de
+2000 caracteres ou checklist acima de 500 itens, e `cq_setup_flow` não repete
+rótulo ignorando a caixa nem passa de 50 caracteres/30 rótulos. `cq_cards` e
+`cq_enqueue` comparam rótulo sem caixa (`private.cq_labels_match`, que devolve
+false quando os rótulos não são lista). Prova:
+`supabase/checks/api013-project-cards.sql` (46 checagens no bloco 1; bloco 2,
+só no staging: o restore).
 
 Achado à parte (fora do escopo de RLS, registrado aqui por ter aparecido na
 mesma auditoria): `project_boards`/`project_columns`/`project_cards`/`project_shares`

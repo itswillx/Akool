@@ -27,7 +27,7 @@ vi.mock('../supabase', () => ({
   },
 }))
 
-const { cardPatchMatches, changedFields, diffCardFields, insertCard, normalizeCard, rescheduleCard, saveCardVersioned } = await import('./projects')
+const { baseOf, cardPatchMatches, diffCardFields, insertCard, normalizeCard, rescheduleCard, saveCardVersioned } = await import('./projects')
 
 const row = (title: string, updated_at: string, extra: Record<string, unknown> = {}) => ({
   id: 'c1', board_id: 'b1', column_id: 'col1', title, description: '', priority: 'medium', start_date: null, due_date: null,
@@ -41,15 +41,22 @@ beforeEach(() => {
   db.values = []
 })
 
-describe('diffCardFields, changedFields e cardPatchMatches', () => {
+describe('diffCardFields, cardPatchMatches e baseOf', () => {
   it('só os campos que mudaram, comparando listas e objetos pelo conteúdo', () => {
     const base = { title: 'a', labels: ['x'], checklist: [{ id: '1', text: 't', completed: false }], due_date: null }
     expect(diffCardFields(base, { title: 'a', labels: ['x'], checklist: [{ id: '1', text: 't', completed: true }], due_date: null }))
       .toEqual({ checklist: [{ id: '1', text: 't', completed: true }] })
     expect(diffCardFields(base, { ...base })).toEqual({})
-    expect(changedFields(base, { ...base, title: 'b' }, ['title', 'labels'])).toEqual(['title'])
+    expect(baseOf(normalizeCard(row('a', 'v7') as never))).toMatchObject({ version: 'v7', fields: { title: 'a', labels: [] } })
     expect(cardPatchMatches({ title: 'a', labels: ['x'] }, { labels: ['x'] })).toBe(true)
     expect(cardPatchMatches({ title: 'a', labels: ['x'] }, { labels: ['X'] })).toBe(false)
+  })
+
+  it('a ordem das chaves não conta (o jsonb devolve na ordem dele)', () => {
+    const mine = { links: [{ title: 'Docs', url: 'https://x', id: 'l1' }] }
+    const fromServer = { links: [{ id: 'l1', url: 'https://x', title: 'Docs' }] }
+    expect(diffCardFields(fromServer, mine)).toEqual({})
+    expect(cardPatchMatches(fromServer, mine)).toBe(true)
   })
 
   it('normalizeCard troca jsonb nulo por lista vazia', () => {
@@ -73,9 +80,16 @@ describe('saveCardVersioned', () => {
     expect(db.calls[1]).toBe('project_cards:select(*),id=c1')
   })
 
-  it('zero linhas, mas o servidor já tem o patch (reenvio duplicado): gravado', async () => {
-    db.queue = [{ data: [], error: null }, { data: row('x', 'v2'), error: null }]
-    expect(await saveCardVersioned('c1', { title: 'x' }, 'v1')).toEqual({ status: 'saved', at: 'v2' })
+  it('zero linhas, mas o servidor já tem o patch (reenvio duplicado): gravado, com o card de lá', async () => {
+    db.queue = [{ data: [], error: null }, { data: row('x', 'v2', { description: 'de outra pessoa' }), error: null }]
+    expect(await saveCardVersioned('c1', { title: 'x' }, 'v1')).toMatchObject({
+      status: 'saved', at: 'v2', current: { title: 'x', description: 'de outra pessoa' },
+    })
+  })
+
+  it('zero linhas na mesma versão e sem o patch: o RLS recusou (denied), não é conflito', async () => {
+    db.queue = [{ data: [], error: null }, { data: row('antigo', 'v1'), error: null }]
+    expect(await saveCardVersioned('c1', { title: 'x' }, 'v1')).toEqual({ status: 'denied' })
   })
 
   it('zero linhas e o card não existe mais: gone', async () => {

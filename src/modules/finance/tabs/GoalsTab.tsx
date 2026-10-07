@@ -252,7 +252,9 @@ export function GoalsTab({ userId, goals, contributions, accounts, goalShares, i
                       {t('finance_goal_contribution_by')} {c.contributor_profile.display_name || c.contributor_profile.email}
                     </span>
                   )}
-                    {confirmDeleteContrib === c.id ? (
+                    {/* API-012: dono e membros veem os aportes dos outros, mas só
+                        o autor apaga (policy de DELETE). Sem lixeira no aporte alheio. */}
+                    {c.user_id !== userId ? null : confirmDeleteContrib === c.id ? (
                       <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
                         <button onClick={() => { onDeleteContribution(c.id); setConfirmDeleteContrib(null) }}
                           style={{ width: 22, height: 22, borderRadius: 4, border: 'none', backgroundColor: '#ef4444', color: '#fff', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>

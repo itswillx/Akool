@@ -106,6 +106,14 @@ describe('buildAutoSchedule', () => {
     expect(byId.low.depends_on).toEqual(['medium'])
   })
 
+  it('does not chain onto a card that already has 100 dependencies (server limit)', () => {
+    const many = Array.from({ length: 100 }, (_, i) => `dep${i}`)
+    const urgent = card({ id: 'urgent', priority: 'urgent' })
+    const full = card({ id: 'full', priority: 'medium', depends_on: many })
+    const { patches } = buildAutoSchedule([urgent, full], [column()], TODAY)
+    expect(patches.find(p => p.cardId === 'full')!.depends_on).toHaveLength(100)
+  })
+
   it('excludes completed cards from scheduling entirely', () => {
     const done = card({ id: 'done', completed: true, priority: 'urgent' })
     const open = card({ id: 'open', priority: 'low' })

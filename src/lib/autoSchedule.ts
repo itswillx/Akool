@@ -1,4 +1,5 @@
 import type { ProjectCard, ProjectColumn } from '../types'
+import { DEPENDS_ON_MAX } from './cardLimits'
 import { addDays, diffDays } from './ganttLayout'
 import { todayStr } from './projectCardFilters'
 import { PRIORITY_ORDER } from './projectStats'
@@ -73,12 +74,14 @@ function reaches(dependsOn: Map<string, string[]>, from: string, to: string): bo
 
 /**
  * Encadeia o card no anterior da coluna. API-013: o servidor recusa
- * dependência em ciclo (e o cronograma é atômico), então, se o anterior já
- * depende deste card, o elo não entra. `dependsOn` acompanha os elos novos.
+ * dependência em ciclo e acima de 100 por card (e o cronograma é atômico),
+ * então, se o anterior já depende deste card ou o card já está no limite, o
+ * elo não entra. `dependsOn` acompanha os elos novos.
  */
 function mergeDependsOn(card: ProjectCard, predecessorId: string | null, dependsOn: Map<string, string[]>): string[] {
   const current = card.depends_on ?? []
-  if (!predecessorId || current.includes(predecessorId) || reaches(dependsOn, predecessorId, card.id)) return current
+  if (!predecessorId || current.includes(predecessorId) || current.length >= DEPENDS_ON_MAX
+      || reaches(dependsOn, predecessorId, card.id)) return current
   const next = [...current, predecessorId]
   dependsOn.set(card.id, next)
   return next

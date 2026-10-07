@@ -6,8 +6,10 @@
 --
 -- Bloco 1 (staging e produção): pessoas descartáveis O (dona dos quadros), E
 -- (editora por share), V (leitora por share) e X (de fora). Cada regra
--- recusada e a aceita, a versão do conteúdo, o contexto sem usuário e a fila
--- com rótulos sem diferença de caixa.
+-- recusada e a aceita, a versão do conteúdo (inclusive duas vezes na mesma
+-- transação e depois do gatilho da fila), quem está de fora só com a recusa
+-- genérica, o contexto sem usuário (cq_block e cq_setup_flow dentro das
+-- formas) e a fila com rótulos sem diferença de caixa.
 --
 -- Bloco 2 (SÓ STAGING): o restore de verdade com cards (ele apaga as 38
 -- tabelas antes de inserir; tudo desfeito no fim), só com o opt-in na sessão:
@@ -29,7 +31,15 @@ declare
   k1 uuid := gen_random_uuid();
   k2 uuid := gen_random_uuid();
   k3 uuid := gen_random_uuid();
+  k4 uuid := gen_random_uuid();
+  k5 uuid := gen_random_uuid();
+  kq uuid := gen_random_uuid();
   kout uuid := gen_random_uuid();
+  b3 uuid := gen_random_uuid();
+  cb uuid := gen_random_uuid();
+  cl uuid := gen_random_uuid();
+  kb1 uuid := gen_random_uuid();
+  kb2 uuid := gen_random_uuid();
   page_e uuid := gen_random_uuid();
   page_x uuid := gen_random_uuid();
   tag text := substr(md5(random()::text), 1, 6);
@@ -88,17 +98,27 @@ begin
     (e, format('api013-e-%s@example.invalid', tag), 'E', 'standard', true, 0),
     (v, format('api013-v-%s@example.invalid', tag), 'V', 'standard', true, 0),
     (x, format('api013-x-%s@example.invalid', tag), 'X', 'standard', true, 0);
-  insert into public.project_boards (id, user_id, name) values (b1, o, 'api013 B1'), (b2, o, 'api013 B2');
-  insert into public.project_columns (id, board_id, name, sort_order) values (c1, b1, 'A Fazer', 0), (c2, b1, 'Fazendo', 1), (k1col, b2, 'Outra', 0);
+  insert into public.project_boards (id, user_id, name) values (b1, o, 'api013 B1'), (b2, o, 'api013 B2'), (b3, o, 'api013 B3');
+  insert into public.project_columns (id, board_id, name, sort_order) values
+    (c1, b1, 'A Fazer', 0), (c2, b1, 'Fazendo', 1), (k1col, b2, 'Outra', 0),
+    (cb, b3, 'Backend', 0), (cl, b3, repeat('t', 60), 1);
   insert into public.project_shares (board_id, owner_id, shared_with_user_id, role) values (b1, o, e, 'editor'), (b1, o, v, 'viewer');
   insert into public.pages (id, user_id, title) values (page_e, e, 'Página de E'), (page_x, x, 'Página de X');
-  -- updated_at antigo: dentro da transação now() é constante, e é assim que dá
-  -- para ver a versão avançar.
+  -- updated_at antigo, para a versão nova (clock_timestamp) ser sempre maior.
   insert into public.project_cards (id, board_id, column_id, title, sort_order, labels, depends_on, attachments, updated_at) values
     (k1, b1, c1, 'K1', 0, '["Segurança"]', '{}', '[]', '2020-01-01'),
     (k2, b1, c1, 'K2', 1, '[]', array[k1], '[]', '2020-01-01'),
     (k3, b1, c1, 'K3', 2, '[]', array[gen_random_uuid()], format('[{"id": "velho", "url": "https://exemplo.supabase.co/storage/v1/object/public/project-card-images/%s/%s/x.png", "name": "x.png"}]', o, b1)::jsonb, '2020-01-01'),
-    (kout, b2, k1col, 'Fora', 0, '[]', '{}', '[]', '2020-01-01');
+    (kout, b2, k1col, 'Fora', 0, '[]', '{}', '[]', '2020-01-01'),
+    -- Anexo legado sem id, e jsonb que não é lista (caminhos sem validação).
+    (k4, b1, c2, 'K4', 0, '[]', '{}', '[{"url": "legado.png", "name": "l"}]', '2020-01-01'),
+    (k5, b1, c2, 'K5', 1, '{}', '{}', '{}', '2020-01-01'),
+    (kb1, b3, cb, 'KB1', 0, '["Backend"]', '{}', '[]', '2020-01-01'),
+    (kb2, b3, cl, 'KB2', 0, '[]', '{}', '[]', '2020-01-01');
+  -- Card em "Aguardando você": último da fila bloqueado e um item "Você".
+  insert into public.project_cards (id, board_id, column_id, title, sort_order, checklist, updated_at) values
+    (kq, b1, c2, 'KQ', 2, '[{"id": "u1", "text": "Você faz", "completed": false, "owner": "user"}]', '2020-01-01');
+  insert into public.project_card_queue (board_id, card_id, position, status, note) values (b1, kq, 0, 'blocked', 'esperando');
   update public.project_cards set parent_card_id = k1 where id = k2;
   set local session_replication_role = origin;
 
@@ -110,8 +130,21 @@ begin
   out := out || pg_temp.expect('mover (coluna e ordem) mantém a versão', r, 'ok true');
   r := pg_temp.as_user(e, format($q$update public.project_cards set title = 'K1 editado' where id = %L returning (updated_at > %L::timestamptz)::text$q$, k1, ts1));
   out := out || pg_temp.expect('mudar o conteúdo avança a versão', r, 'ok true');
+  select updated_at into ts1 from public.project_cards where id = k1;
+  r := pg_temp.as_user(e, format($q$update public.project_cards set title = 'K1 de novo' where id = %L returning (updated_at > %L::timestamptz)::text$q$, k1, ts1));
+  out := out || pg_temp.expect('segunda mudança na mesma transação avança a versão de novo', r, 'ok true');
+  r := pg_temp.as_user(e, format($q$update public.project_cards set checklist = '[{"id": "u1", "text": "Você faz", "completed": true, "owner": "user"}]' where id = %L returning updated_at::text$q$, kq));
+  if r like 'ok %' then
+    select format('%s %s', (c.updated_at > substr(r, 4)::timestamptz)::text, (c.description like '%Pendências concluídas%')::text) into r
+      from public.project_cards c where c.id = kq;
+  end if;
+  out := out || pg_temp.expect('a fila muda o card depois do RETURNING: a versão final é outra e o carimbo está lá', r, 'true true');
 
-  -- 2. Quadro e coluna.
+  -- 2. Quem não edita o quadro, quadro e coluna.
+  r := pg_temp.as_user(x, format($q$insert into public.project_cards (board_id, column_id, title, assignee_user_id) values (%L, %L, 'x', %L)$q$, b1, c1, x));
+  out := out || pg_temp.expect('quem está de fora recebe só a recusa genérica', r, 'erro 42501: Sem permissão para editar este quadro');
+  r := pg_temp.as_user(v, format($q$insert into public.project_cards (board_id, column_id, title) values (%L, %L, 'x')$q$, b1, k1col));
+  out := out || pg_temp.expect('leitora também (nem a regra da coluna aparece)', r, 'erro 42501: Sem permissão para editar este quadro');
   r := pg_temp.as_user(e, format($q$insert into public.project_cards (board_id, column_id, title) values (%L, %L, 'x')$q$, b1, k1col));
   out := out || pg_temp.expect('coluna de outro quadro é recusada', r, 'erro 23514: A coluna é de outro quadro');
   r := pg_temp.as_user(o, format($q$update public.project_cards set board_id = %L, column_id = %L where id = %L$q$, b2, k1col, k3));
@@ -166,6 +199,13 @@ begin
   out := out || pg_temp.expect('anexo novo em <quem envia>/<quadro>/ é aceito, e o antigo com URL fica', r, 'ok 1');
   r := pg_temp.as_user(e, format($q$update public.project_cards set attachments = '[{"id": "a", "url": "x", "name": "a", "size": 1}]' where id = %L$q$, k3));
   out := out || pg_temp.expect('anexo com chave desconhecida é recusado', r, 'erro 23514: Anexos fora do formato%');
+  r := pg_temp.as_user(e, format($q$update public.project_cards set attachments = jsonb_build_array(jsonb_build_object('id', 'velho', 'url', %L, 'name', 'x.png')) where id = %L$q$, format('%s/%s/x.png', o, b2), k3));
+  out := out || pg_temp.expect('manter o id de um anexo antigo e trocar a URL é recusado', r, 'erro 42501: Anexo novo fora da pasta do quadro');
+  r := pg_temp.as_user(e, format($q$update public.project_cards set attachments = '[{"id": "n1", "url": "fora/x.png", "name": "x"}]' where id = %L$q$, k4));
+  out := out || pg_temp.expect('anexo antigo sem id não libera URL nova fora da pasta', r, 'erro 42501: Anexo novo fora da pasta do quadro');
+  r := pg_temp.as_user(e, format($q$with u as (update public.project_cards set attachments = %L where id = %L returning 1) select count(*)::text from u$q$,
+                                 jsonb_build_array(jsonb_build_object('id', 'n', 'url', format('%s/%s/k5/a.png', e, b1), 'name', 'a')), k5));
+  out := out || pg_temp.expect('anexos antigos que não são lista contam como vazios', r, 'ok 1');
 
   -- 7. Sem usuário (restore, cards-api, seed): só posição e versão.
   select coalesce(max(sort_order), -1) + 1 into n from public.project_cards where column_id = c2;
@@ -175,12 +215,23 @@ begin
   out := out || pg_temp.expect('service_role (cards-api) atualiza checklist', r, 'ok ok');
   r := pg_temp.try(jsonb_build_object('role', 'authenticated'), format($q$update public.project_cards set labels = '["A", "a"]' where id = %L returning 'ok'$q$, k1));
   out := out || pg_temp.expect('JWT de cliente sem sub continua validado', r, 'erro 23514:%');
+  r := pg_temp.try(jsonb_build_object('role', 'service_role'), format($q$select public.cq_block(%L, %L, 'motivo', array[repeat('x', 2001)], null, %L)::text$q$, b1, kq, o));
+  out := out || pg_temp.expect('cq_block recusa item "Você" acima de 2000 caracteres', r, 'erro 22023: Item do usuário com mais de 2000 caracteres');
+  r := pg_temp.try(jsonb_build_object('role', 'service_role'), format($q$select public.cq_block(%L, %L, 'motivo', array(select 'i' || g from generate_series(1, 500) g), null, %L)::text$q$, b1, kq, o));
+  out := out || pg_temp.expect('cq_block recusa checklist acima de 500 itens', r, 'erro 22023: O checklist passaria de 500 itens');
+  r := pg_temp.try(jsonb_build_object('role', 'service_role'), format($q$select public.cq_setup_flow(%L, %L)::text$q$, b3, o));
+  if r like 'ok %' then
+    select format('%s | %s', (select labels::text from public.project_cards where id = kb1), (select labels::text from public.project_cards where id = kb2)) into r;
+  end if;
+  out := out || pg_temp.expect('cq_setup_flow não repete rótulo sem caixa nem passa de 50 caracteres', r, '["Backend"] | []');
 
   -- 8. Fila: rótulo sem diferença de caixa.
   r := pg_temp.as_user(o, format($q$select jsonb_array_length(public.cq_enqueue(%L, p_labels => array['segurança']))::text$q$, b1));
   out := out || pg_temp.expect('cq_enqueue acha "Segurança" pedindo "segurança"', r, 'ok 1');
   r := pg_temp.try(jsonb_build_object('role', 'service_role'), format($q$select jsonb_array_length(public.cq_cards(%L, p_labels => array['SEGURANÇA'], p_completed => null, p_actor => %L))::text$q$, b1, o));
   out := out || pg_temp.expect('cq_cards acha "Segurança" pedindo "SEGURANÇA"', r, 'ok 1');
+  r := pg_temp.try(null, $q$select private.cq_labels_match('{}'::jsonb, array['a'])::text$q$);
+  out := out || pg_temp.expect('rótulos que não são lista não casam (sem erro)', r, 'ok false');
 
   -- 9. Estrutura.
   select format('%s %s', p.prosecdef, array_to_string(p.proconfig, ',')) into r
@@ -191,6 +242,14 @@ begin
   select coalesce(column_default, 'sem default') into r from information_schema.columns
    where table_schema = 'public' and table_name = 'project_cards' and column_name = 'sort_order';
   out := out || pg_temp.expect('sort_order sem DEFAULT', r, 'sem default');
+  select pg_get_triggerdef(t.oid) into r from pg_trigger t
+   where t.tgrelid = 'public.project_cards'::regclass and t.tgname = 'project_cards_graph_lock';
+  out := out || pg_temp.expect('mudança no grafo espera a vez, travada por instrução (antes das linhas)', coalesce(r, 'sem gatilho'),
+                               '%BEFORE INSERT OR UPDATE OF parent_card_id, depends_on ON public.project_cards FOR EACH STATEMENT%');
+  select count(*)::text into r from pg_locks
+   where locktype = 'advisory' and pid = pg_backend_pid() and granted
+     and objid = (hashtext('cards-graph')::bigint & 4294967295)::oid;
+  out := out || pg_temp.expect('a trava do grafo foi pega nesta transação (houve INSERT e mudança de dependência)', r, '1');
 
   raise exception using message = format(E'API-013 bloco 1: regras de cards (tudo desfeito)\n%s', array_to_string(out, E'\n'));
 end

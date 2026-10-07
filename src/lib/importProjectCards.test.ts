@@ -142,6 +142,15 @@ describe('importParsedCards', () => {
     expect(row).not.toHaveProperty('updated_at')
   })
 
+  it('over 30 labels: the generated topic and effort labels are kept, not cut', async () => {
+    const { supabase, insertCalls } = createMockSupabase({})
+    const many = Array.from({ length: 35 }, (_, i) => `l${i}`)
+    await importParsedCards(supabase, 'board-1', 'col-1', [makeParsedCard({ labels: [...many, 'segurança', 'esforço:m'] })])
+    const [row] = insertCalls[0] as { labels: string[] }[]
+    expect(row.labels).toHaveLength(30)
+    expect(row.labels.slice(0, 2)).toEqual(['segurança', 'esforço:m'])
+  })
+
   it('reports a card whose checklist is over the server limits instead of failing the batch', async () => {
     const { supabase, insertCalls } = createMockSupabase({})
     const many = Array.from({ length: 501 }, (_, i) => ({ id: String(i), text: 't', completed: false }))

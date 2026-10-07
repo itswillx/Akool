@@ -87,6 +87,23 @@ async function addCard(page: Page, column: string, title: string, labels: string
 const cardPatch = (page: Page) =>
   page.waitForResponse(r => r.url().includes('/rest/v1/project_cards') && r.request().method() === 'PATCH')
 
+/** O modal do card não fecha com Esc (UX-003) e o estado dele volta depois do
+ *  reload (sessionStorage): fecha pelo Cancelar e espera sumir. */
+async function closeCardModal(page: Page) {
+  await page.getByRole('dialog').getByRole('button', { name: T.projects_cancel, exact: true }).click()
+  await expect(page.getByRole('dialog')).toBeHidden()
+}
+
+/** Na limpeza: fecha o modal que tenha ficado aberto, porque o fundo dele
+ *  bloqueia o "Excluir" do quadro (e o modal tem um "Excluir" próprio). */
+async function closeOpenDialog(page: Page) {
+  // Limpeza: só tenta. Uma falha aqui não pode esconder o erro do teste.
+  try {
+    const cancel = page.getByRole('dialog').getByRole('button', { name: T.projects_cancel, exact: true }).first()
+    if (await cancel.isVisible()) await closeCardModal(page)
+  } catch { /* o deleteOpenBoard em seguida mostra o que sobrou */ }
+}
+
 // API-013: o rótulo não diferencia caixa no filtro (nem no servidor).
 test('filtro de rótulo sem diferença de caixa', async ({ app: page, unique }) => {
   await openProjects(page)
@@ -105,6 +122,7 @@ test('filtro de rótulo sem diferença de caixa', async ({ app: page, unique }) 
     await expect(page.getByText(`${unique} C`)).toBeHidden()
     await chips.click()
   } finally {
+    await closeOpenDialog(page)
     await deleteOpenBoard(page)
   }
 })
@@ -141,14 +159,16 @@ test('conflito de edição em duas abas', async ({ app: page, unique }) => {
     expect((await kept).ok()).toBe(true)
     await expect(banner).toBeHidden()
 
-    // A aba 1, recarregada, vê a escolha da aba 2.
-    await page.keyboard.press('Escape')
+    // A aba 1, recarregada, vê a escolha da aba 2. Fecha o modal antes: aberto,
+    // ele voltaria depois do reload e o fundo bloquearia os cliques.
+    await closeCardModal(page)
     await page.reload()
     await openProjects(page)
     await page.getByRole('button', { name: unique }).first().click()
     await expect(page.getByRole('group', { name: 'A Fazer' }).getByText(`${unique} aba 2`)).toBeVisible()
   } finally {
     await other.close()
+    await closeOpenDialog(page)
     await deleteOpenBoard(page)
   }
 })

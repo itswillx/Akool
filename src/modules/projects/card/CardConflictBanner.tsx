@@ -5,11 +5,17 @@ import { GhostBtn, PrimaryBtn } from '../ui'
 import { CARD_FIELD_LABELS } from './cardDraft'
 
 // API-013: a gravação parou porque outra pessoa mudou os mesmos campos do card
-// enquanto esta edição estava aberta. Nada é gravado até a pessoa escolher:
-// carregar a versão salva (descarta o que ela mudou nesses campos) ou manter a
-// dela (grava por cima, levando o que a outra pessoa mudou nos outros campos).
-export function CardConflictBanner({ fields, onLoadSaved, onKeepMine }: {
+// enquanto esta edição estava aberta. Nada é gravado até a pessoa escolher.
+// As duas escolhas partem da versão salva (com o que a outra pessoa mudou nos
+// outros campos):
+// - "Carregar a versão salva": nos campos em disputa fica o valor salvo; as
+//   outras mudanças desta pessoa continuam e são gravadas. Imagem enviada que
+//   só existia no lado descartado fica de fora (e é apagada ao fechar).
+// - "Manter a minha": tudo o que esta pessoa mudou vai por cima.
+export function CardConflictBanner({ fields, focusSignal = 0, onLoadSaved, onKeepMine }: {
   fields: CardField[]
+  /** Muda quando alguém tenta salvar ou validar com o aviso na tela: o foco volta para ele. */
+  focusSignal?: number
   onLoadSaved: () => void
   onKeepMine: () => void
 }) {
@@ -19,7 +25,7 @@ export function CardConflictBanner({ fields, onLoadSaved, onKeepMine }: {
 
   // O aviso aparece no meio da edição: o foco vai para ele, senão quem usa
   // teclado ou leitor de tela segue digitando sem saber que nada é gravado.
-  useEffect(() => { titleRef.current?.focus() }, [])
+  useEffect(() => { titleRef.current?.focus() }, [focusSignal])
 
   return (
     <section role="alert" aria-labelledby={titleId}
