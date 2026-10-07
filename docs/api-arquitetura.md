@@ -295,23 +295,27 @@ supabase/functions/
 **Campos de `ActionDef`:**
 
 - `id` no formato `secao.subsecao.acao`, e `title`;
+- `kind`: `read`, `create`, `update` ou `delete` (as invariantes de anotação dependem dele);
 - `description`, com até 300 caracteres e sem instruções ao modelo;
 - `requires`: `allOf`/`anyOf` de `{sub, level}`;
 - `input` e `output`: JSON Schema 2020-12, no subconjunto de `_api/schema.ts`;
 - `annotations`: `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint:false`;
 - `idempotent`, `tables`, `maxResultChars` e `deprecated`;
-- `run(ctx, input)`, com `ctx = {tx, principal, can(sub, level), storage, tz, now, request:{surface, client, ip_bucket}}`.
+- `examples: {input[], output[]}`, validados contra os schemas;
+- `run(ctx, input)`, com `ctx = {tx, principal, can(sub, level), storage, tz, now, request:{surface, client, ip_bucket}, hooks, actions}`. Os `hooks` de auditoria, limites e idempotência ficam vazios até o API-014; `actions` é o registro, que o `meta.acoes.listar` lista.
 
 **Invariantes testadas (API-008):**
 
 - ids únicos, só `[a-z_]`, em 3 segmentos;
 - nome MCP = id com `_`, com até 48 caracteres. O Claude Code prefixa `mcp__akool__` e recusa nomes acima de 64;
-- leituras com `readOnlyHint` e entrada plana;
-- exclusões com `destructiveHint` e nível `delete`;
+- leituras com `readOnlyHint`, sem `destructiveHint`, só exigindo Ler e com entrada plana (objeto só com propriedades escalares, para virar query de GET);
+- criações sem `destructiveHint`; atualizações e exclusões com `destructiveHint`; exclusões com nível `delete`; `openWorldHint` sempre `false`;
 - `requires` só referencia subseções reais, sem passar do nível máximo de cada uma;
 - namespaces compostos (`meta`, `painel`, `documentos.rede`, `financas.relatorios`) declarados no catálogo, sem nível próprio e com `requires.anyOf`;
-- ordem determinística;
-- toda ação tem um exemplo de entrada válido.
+- a ação comum exige a própria subseção (`secao.subsecao` do id);
+- descrição de até 300 caracteres, sem frase dirigida ao modelo (lista `MODEL_DIRECTED` em `registry.ts`: "você deve", "sempre chame", "ignore", "IMPORTANT"…);
+- ordem determinística (o registro é ordenado por id);
+- toda ação tem ao menos um exemplo de entrada e um de saída, válidos nos schemas.
 
 **Convenções:**
 
