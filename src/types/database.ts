@@ -1949,7 +1949,7 @@ export type Database = {
           links?: Json
           parent_card_id?: string | null
           priority?: string
-          sort_order?: number
+          sort_order: number
           start_date?: string | null
           title?: string
           updated_at?: string

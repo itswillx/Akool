@@ -130,6 +130,29 @@ describe('importParsedCards', () => {
     expect(rows[1].sort_order).toBe(9)
   })
 
+  // API-013: o gatilho recusa rótulo repetido sem caixa, longo ou além de 30
+  // (e derrubaria o lote inteiro); o updated_at é do servidor.
+  it('sends labels in the server format and no updated_at', async () => {
+    const { supabase, insertCalls } = createMockSupabase({})
+    await importParsedCards(supabase, 'board-1', 'col-1', [
+      makeParsedCard({ labels: ['segurança', 'Segurança', `${'x'.repeat(60)}`] }),
+    ])
+    const [row] = insertCalls[0] as Record<string, unknown>[]
+    expect(row.labels).toEqual(['segurança', 'x'.repeat(50)])
+    expect(row).not.toHaveProperty('updated_at')
+  })
+
+  it('reports a card whose checklist is over the server limits instead of failing the batch', async () => {
+    const { supabase, insertCalls } = createMockSupabase({})
+    const many = Array.from({ length: 501 }, (_, i) => ({ id: String(i), text: 't', completed: false }))
+    const result = await importParsedCards(supabase, 'board-1', 'col-1', [
+      makeParsedCard({ externalId: 'A-001', fullTitle: 'A-001 — Muitas', checklist: many }),
+      makeParsedCard({ externalId: 'A-002', fullTitle: 'A-002 — Longa', checklist: [{ id: '1', text: 'y'.repeat(2001), completed: false }] }),
+    ])
+    expect(result.errors).toEqual(['A-001: mais de 500 subtarefas', 'A-002: subtarefa com mais de 2000 caracteres'])
+    expect(insertCalls).toHaveLength(0)
+  })
+
   it('inserts cards in batches of 20', async () => {
     const cards = Array.from({ length: 25 }, (_, i) =>
       makeParsedCard({

@@ -1,9 +1,11 @@
 // ARCH-002: saiu do ProjectsPanel.tsx sem mudança de lógica.
 import { supabase } from '../../../lib/supabase'
 import { uploadContextBucket, validateUpload } from '../../../lib/uploadValidation'
-import type { ProjectCardAttachment, ProjectCardChecklistItem, ProjectCardLink, ProjectCardPriority } from '../../../types'
+import type { TranslationKey } from '../../../i18n/translations'
+import type { ProjectCard, ProjectCardAttachment, ProjectCardChecklistItem, ProjectCardLink, ProjectCardPriority } from '../../../types'
 import { CARD_MODAL_STATE_KEY } from '../projectsShared'
 import { sessionKey } from '../../../lib/localKeys'
+import type { CardField, CardFields, CardPatch } from '../../../lib/data/projects'
 
 // ─── Card modal ───────────────────────────────────────────────────────────────
 
@@ -22,6 +24,27 @@ export interface CardSaveExtras { pendingFiles: PendingFile[]; removedAttachment
 export interface AutoSaveResult {
   attachments: ProjectCardAttachment[]
   uploadedPendingIds: string[]
+  /**
+   * API-013: o que outra pessoa gravou em campos que esta edição não mexeu
+   * (a gravação foi refeita por cima da versão dela). O modal adota esses
+   * valores nos campos que a pessoa não mudou desde então.
+   */
+  merged?: Partial<CardForm>
+}
+
+/** API-013: a gravação parou porque outra pessoa mudou os mesmos campos. */
+export interface CardConflict {
+  cardId: string
+  theirs: ProjectCard
+  fields: CardField[]
+}
+
+export const CARD_FIELD_LABELS: Record<CardField, TranslationKey> = {
+  title: 'projects_card_title', description: 'projects_card_description', priority: 'projects_priority',
+  start_date: 'projects_start_date', due_date: 'projects_due_date', estimated_days: 'projects_estimated_days',
+  assignee_user_id: 'projects_assignee', labels: 'projects_labels', linked_page_id: 'projects_linked_page',
+  parent_card_id: 'projects_parent_task', depends_on: 'projects_dependencies', completed: 'projects_overview_completed',
+  checklist: 'projects_checklist', links: 'projects_links', attachments: 'projects_attachments',
 }
 
 interface UploadCardImagesResult {
@@ -41,6 +64,37 @@ interface CardModalStored {
   boardId: string
   cardId: string | null
   columnId?: string
+}
+
+/** O formulário de um card (ou o vazio, de card novo). */
+export function cardFormFrom(card: CardFields | null): CardForm {
+  return {
+    title: card?.title ?? '', description: card?.description ?? '', priority: card?.priority ?? 'medium',
+    start_date: card?.start_date ?? '', due_date: card?.due_date ?? '', estimated_days: card?.estimated_days ?? 1,
+    assignee_user_id: card?.assignee_user_id ?? null,
+    labels: card?.labels ?? [], linked_page_id: card?.linked_page_id ?? null,
+    parent_card_id: card?.parent_card_id ?? null, depends_on: card?.depends_on ?? [], completed: card?.completed ?? false,
+    checklist: card?.checklist ?? [], attachments: card?.attachments ?? [], links: card?.links ?? [],
+  }
+}
+
+/** Campos do banco no formato do formulário (data null vira vazia). */
+export function formPatchFrom(patch: CardPatch): Partial<CardForm> {
+  const out: Partial<CardForm> = { ...patch } as Partial<CardForm>
+  if ('start_date' in patch) out.start_date = patch.start_date ?? ''
+  if ('due_date' in patch) out.due_date = patch.due_date ?? ''
+  return out
+}
+
+/** Os campos como o banco guarda: título sem espaço nas pontas e data vazia como null. */
+export function formFields(form: CardForm, attachments: ProjectCardAttachment[] = form.attachments): CardFields {
+  return {
+    title: form.title.trim(), description: form.description, priority: form.priority,
+    start_date: form.start_date || null, due_date: form.due_date || null, estimated_days: form.estimated_days,
+    assignee_user_id: form.assignee_user_id, labels: form.labels,
+    linked_page_id: form.linked_page_id, parent_card_id: form.parent_card_id, depends_on: form.depends_on,
+    completed: form.completed, checklist: form.checklist, links: form.links, attachments,
+  }
 }
 
 export function getDraftKey(boardId: string, cardId: string | null, columnId?: string) {

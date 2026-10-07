@@ -19,7 +19,7 @@ vi.mock('../../../lib/supabase', () => ({
 }))
 
 const {
-  clearCardDraft, clearCardModalState, getDraftKey, loadCardDraft, loadCardModalState,
+  cardFormFrom, clearCardDraft, clearCardModalState, formFields, formPatchFrom, getDraftKey, loadCardDraft, loadCardModalState,
   persistCardAttachments, saveCardDraft, saveCardModalState,
 } = await import('./cardDraft')
 type CardForm = Parameters<typeof persistCardAttachments>[3]
@@ -97,5 +97,27 @@ describe('persistCardAttachments', () => {
     await expect(persistCardAttachments('u', 'b', 'c', form(), {
       pendingFiles: [{ id: 'p1', file: png('a.png'), preview: '' }], removedAttachmentIds: [],
     })).rejects.toThrow('upload_failed')
+  })
+})
+
+// API-013: o formulário e os campos do banco são os mesmos, com duas
+// diferenças (data vazia × null, título com espaço nas pontas). A versão
+// compara os campos do banco, então a ida e a volta não podem inventar mudança.
+describe('formulário ↔ campos do card', () => {
+  it('formFields guarda como o banco: título sem pontas e data vazia como null', () => {
+    const fields = formFields({ ...form(), title: '  Título  ', due_date: '2026-10-07' })
+    expect(fields).toMatchObject({ title: 'Título', start_date: null, due_date: '2026-10-07' })
+    expect(Object.keys(fields).sort()).toEqual(Object.keys(form()).sort())
+  })
+
+  it('ida e volta sem mudança', () => {
+    const fields = formFields({ ...form(), start_date: '2026-10-01' })
+    expect(formFields(cardFormFrom(fields))).toEqual(fields)
+    expect(cardFormFrom(null)).toMatchObject({ title: '', priority: 'medium', estimated_days: 1, labels: [] })
+  })
+
+  it('formPatchFrom só converte as datas que vieram', () => {
+    expect(formPatchFrom({ due_date: null, title: 'x' })).toEqual({ due_date: '', title: 'x' })
+    expect(formPatchFrom({ labels: ['a'] })).toEqual({ labels: ['a'] })
   })
 })

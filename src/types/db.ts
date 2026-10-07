@@ -33,9 +33,16 @@ type Overrides<O extends {
 /** Mapeamento homomórfico: preserva o `?` das colunas opcionais no Insert/Update. */
 type Patch<T, P> = { [K in keyof T]: K extends keyof P ? P[K] : T[K] }
 
-type PatchTable<T extends GeneratedTables[keyof GeneratedTables], P> = {
+/** As colunas `K` passam a opcionais (o resto fica como está). */
+type Loosen<T, K extends PropertyKey> = {
+  [C in keyof T as C extends K ? never : C]: T[C]
+} & {
+  [C in keyof T as C extends K ? C : never]?: T[C]
+}
+
+type PatchTable<T extends GeneratedTables[keyof GeneratedTables], P, Filled extends PropertyKey = never> = {
   Row: Patch<T['Row'], P>
-  Insert: Patch<T['Insert'], P>
+  Insert: Loosen<Patch<T['Insert'], P>, Filled>
   Update: Patch<T['Update'], P>
   Relationships: T['Relationships']
 }
@@ -101,9 +108,18 @@ type TableOverrides = Overrides<{
   todos: { priority: TodoPriority }
 }>
 
+/**
+ * Colunas NOT NULL sem DEFAULT que um gatilho BEFORE INSERT preenche: o
+ * gerador as diz obrigatórias no Insert, mas o app pode (e deve) omiti-las.
+ */
+type FilledByTrigger = {
+  // API-013: private.project_card_integrity põe o card no fim da coluna.
+  project_cards: 'sort_order'
+}
+
 type PatchedTables = {
   [T in keyof GeneratedTables]: T extends keyof TableOverrides
-    ? PatchTable<GeneratedTables[T], TableOverrides[T]>
+    ? PatchTable<GeneratedTables[T], TableOverrides[T], T extends keyof FilledByTrigger ? FilledByTrigger[T] : never>
     : GeneratedTables[T]
 }
 

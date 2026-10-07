@@ -23,16 +23,23 @@ import type { Member } from '../projectsShared'
 import { AUTOSAVE_DEBOUNCE_MS, inputStyle, labelStyle, PRIORITY_COLORS, queueBadgeLabel } from '../projectsShared'
 import QueueReviewBanner from '../QueueReviewBanner'
 import { GhostBtn, Modal, PrimaryBtn } from '../ui'
-import type { AutoSaveResult, CardDraftStored, CardForm, CardSaveExtras, PendingFile } from './cardDraft'
+import { addCardLabel, CARD_LABEL_MAX_LENGTH, CARD_LABELS_MAX } from '../../../lib/cardLabels'
+import type { AutoSaveResult, CardConflict, CardDraftStored, CardForm, CardSaveExtras, PendingFile } from './cardDraft'
+import { cardFormFrom } from './cardDraft'
+import { CardConflictBanner } from './CardConflictBanner'
+import { dependentIds, descendantIds } from './cardRelations'
 import { CardAttachmentsSection, CardChecklistSection, CardLinksSection, CollapsibleSection } from './CardSections'
 import { PagePicker } from './PagePicker'
 
 // QA-003: exportado para o teste de componente (CardModal.test.tsx).
-export function CardModal({ card, boardId: _boardId, columnId: _columnId, columnName, members, allCards, canEdit, isMobile, initialDraft, saveStatus, saveErrorKind, queueBadge, onClose, onSave, onDelete, onOpenPage, onAutoSave, onDraftChange, onEnqueue, onValidate }: {
+export function CardModal({ card, boardId: _boardId, columnId: _columnId, columnName, members, allCards, canEdit, isMobile, initialDraft, saveStatus, saveErrorKind, queueBadge, conflict, onClose, onSave, onDelete, onOpenPage, onAutoSave, onDraftChange, onEnqueue, onValidate, onResolveConflict }: {
   card: ProjectCard | null; boardId: string; columnId?: string; columnName?: string; members: Member[]; allCards: ProjectCard[]; canEdit: boolean; isMobile?: boolean;
   initialDraft?: CardDraftStored | null; saveStatus?: 'idle' | 'saving' | 'saved' | 'error'; saveErrorKind?: 'upload' | 'general';
   queueBadge?: QueueBadge; onEnqueue?: () => void;
   onValidate?: (approve: boolean, note?: string) => Promise<boolean>;
+  /** API-013: outra pessoa gravou os mesmos campos; nada é gravado até a escolha. */
+  conflict?: CardConflict | null;
+  onResolveConflict?: (choice: 'theirs' | 'mine', form: CardForm) => CardForm | null;
   onClose: () => void; onSave: (f: CardForm, extras: CardSaveExtras) => void; onDelete?: () => void; onOpenPage: (id: string) => void;
   onAutoSave?: (form: CardForm, extras: CardSaveExtras) => Promise<AutoSaveResult | null> | AutoSaveResult | null;
   onDraftChange?: (form: CardForm, removedAttachmentIds: string[]) => void;
@@ -46,14 +53,7 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
       const draftSaved = new Date(initialDraft.savedAt).getTime()
       if (!card || draftSaved >= cardUpdated) return initialDraft.form
     }
-    return {
-      title: card?.title ?? '', description: card?.description ?? '', priority: card?.priority ?? 'medium',
-      start_date: card?.start_date ?? '', due_date: card?.due_date ?? '', estimated_days: card?.estimated_days ?? 1,
-      assignee_user_id: card?.assignee_user_id ?? null,
-      labels: card?.labels ?? [], linked_page_id: card?.linked_page_id ?? null,
-      parent_card_id: card?.parent_card_id ?? null, depends_on: card?.depends_on ?? [], completed: card?.completed ?? false,
-      checklist: card?.checklist ?? [], attachments: card?.attachments ?? [], links: card?.links ?? [],
-    }
+    return cardFormFrom(card)
   }
 
   const [form, setForm] = useState<CardForm>(resolveInitialForm)
@@ -79,9 +79,13 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
     removedAttachmentIds: removedIdsRef.current,
   }), [])
 
-  const applyAutoSaveResult = useCallback((result: AutoSaveResult) => {
+  // `sent` é o formulário que foi gravado. Do que outra pessoa mudou (merged),
+  // só entra o campo que a pessoa não mexeu enquanto a gravação ia.
+  const applyAutoSaveResult = useCallback((result: AutoSaveResult, sent: CardForm) => {
     setForm(f => {
-      const next = { ...f, attachments: result.attachments }
+      const theirs = Object.fromEntries(Object.entries(result.merged ?? {})
+        .filter(([key]) => JSON.stringify(f[key as keyof CardForm]) === JSON.stringify(sent[key as keyof CardForm])))
+      const next = { ...f, ...theirs, attachments: result.attachments }
       formRef.current = next
       return next
     })
@@ -104,7 +108,7 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
     if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current)
     const execute = async () => {
       const result = await onAutoSave(nextForm, getExtras())
-      if (result) applyAutoSaveResult(result)
+      if (result) applyAutoSaveResult(result, nextForm)
     }
     if (immediate) await execute()
     else autoSaveDebounceRef.current = setTimeout(() => { void execute() }, AUTOSAVE_DEBOUNCE_MS)
@@ -200,10 +204,21 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
     patchForm(f => ({ ...f, checklist }), immediate)
   }
 
+  // API-013: "Segurança" e "segurança" são o mesmo rótulo (o servidor recusa os dois juntos).
   const addLabel = () => {
-    const v = labelInput.trim()
-    if (v && !form.labels.includes(v)) patchForm(f => ({ ...f, labels: [...f.labels, v] }), true)
+    const next = addCardLabel(form.labels, labelInput)
+    if (next !== form.labels) patchForm(f => ({ ...f, labels: next }), true)
     setLabelInput('')
+  }
+
+  const resolveConflict = (choice: 'theirs' | 'mine') => {
+    const next = onResolveConflict?.(choice, formRef.current)
+    if (!next) return
+    if (choice === 'theirs') {
+      removedIdsRef.current = []
+      setRemovedAttachmentIds([])
+    }
+    patchForm(() => next, true)
   }
 
   const saveStatusLabel = saveStatus === 'saving'
@@ -262,36 +277,16 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
     </div>
   )
 
-  // Cards selectable as parent / dependency: exclude self and (for parent) own descendants to avoid cycles.
-  const descendantIds = useMemo(() => {
-    if (!card) return new Set<string>()
-    const childrenOf = new Map<string, string[]>()
-    allCards.forEach(c => {
-      if (c.parent_card_id) {
-        const arr = childrenOf.get(c.parent_card_id) ?? []
-        arr.push(c.id)
-        childrenOf.set(c.parent_card_id, arr)
-      }
-    })
-    const out = new Set<string>()
-    const stack = [card.id]
-    while (stack.length) {
-      const id = stack.pop()!
-      for (const childId of childrenOf.get(id) ?? []) {
-        if (!out.has(childId)) { out.add(childId); stack.push(childId) }
-      }
-    }
-    return out
-  }, [card, allCards])
-
-  const parentOptions = useMemo(
-    () => allCards.filter(c => c.id !== card?.id && !descendantIds.has(c.id)),
-    [allCards, card, descendantIds],
-  )
-  const dependencyOptions = useMemo(
-    () => allCards.filter(c => c.id !== card?.id && !form.depends_on.includes(c.id)),
-    [allCards, card, form.depends_on],
-  )
+  // Pai e dependência possíveis: nem o próprio card, nem quem fecharia um ciclo
+  // (descendente, como pai; quem já depende dele, como dependência).
+  const parentOptions = useMemo(() => {
+    const blocked = card ? descendantIds(card.id, allCards) : new Set<string>()
+    return allCards.filter(c => c.id !== card?.id && !blocked.has(c.id))
+  }, [allCards, card])
+  const dependencyOptions = useMemo(() => {
+    const blocked = card ? dependentIds(card.id, allCards) : new Set<string>()
+    return allCards.filter(c => c.id !== card?.id && !form.depends_on.includes(c.id) && !blocked.has(c.id))
+  }, [allCards, card, form.depends_on])
   const cardTitleById = useCallback(
     (id: string) => allCards.find(c => c.id === id)?.title || t('projects_new_card'),
     [allCards, t],
@@ -339,7 +334,7 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
           </span>
         ))}
       </div>
-      {canEdit && <input value={labelInput} onChange={e => setLabelInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLabel() } }} placeholder={t('projects_labels_placeholder')} style={inputStyle} />}
+      {canEdit && <input value={labelInput} maxLength={CARD_LABEL_MAX_LENGTH} disabled={form.labels.length >= CARD_LABELS_MAX} onChange={e => setLabelInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLabel() } }} placeholder={t('projects_labels_placeholder')} style={inputStyle} />}
     </div>
   )
 
@@ -527,6 +522,9 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
   const reviewBanner = card && canEdit && onValidate && queueBadge?.kind === 'review'
     ? <QueueReviewBanner onApprove={() => onValidate(true)} onReject={reason => onValidate(false, reason)} />
     : null
+  const conflictBanner = conflict && canEdit
+    ? <CardConflictBanner fields={conflict.fields} onLoadSaved={() => resolveConflict('theirs')} onKeepMine={() => resolveConflict('mine')} />
+    : null
 
   return (
     <Modal
@@ -539,6 +537,7 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
     >
       {isMobile ? (
         <div onPaste={handlePaste} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {conflictBanner}
           {reviewBanner}
           {leftColumn}
           {planningSection}
@@ -548,6 +547,7 @@ export function CardModal({ card, boardId: _boardId, columnId: _columnId, column
         </div>
       ) : (
         <div onPaste={handlePaste} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {conflictBanner}
           {reviewBanner}
           {titleField}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.7fr) minmax(240px, 1fr)', gap: 20, alignItems: 'start' }}>

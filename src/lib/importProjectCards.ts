@@ -1,12 +1,24 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ParsedBacklogCard } from './backlogMarkdownParser'
 import type { ProjectColumn } from '../types'
+import { normalizeCardLabels } from './cardLabels'
 import { normalizeSearch } from './graph'
 
 const BATCH_SIZE = 20
 
 // Mesmas cores de BOARD_COLORS (ProjectsPanel), em ciclo pela ordem do tópico no arquivo.
 const TOPIC_COLUMN_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#22c55e', '#06b6d4', '#3b82f6']
+
+// Limites do checklist no gatilho project_cards_integrity (API-013).
+const CHECKLIST_MAX_ITEMS = 500
+const CHECKLIST_MAX_TEXT = 2000
+
+/** Um card fora do limite derrubaria o lote inteiro no servidor: ele vira erro antes. */
+function checklistLimitProblem(checklist: ParsedBacklogCard['checklist']): string | null {
+  if (checklist.length > CHECKLIST_MAX_ITEMS) return `mais de ${CHECKLIST_MAX_ITEMS} subtarefas`
+  if (checklist.some(item => [...item.text].length > CHECKLIST_MAX_TEXT)) return `subtarefa com mais de ${CHECKLIST_MAX_TEXT} caracteres`
+  return null
+}
 
 function titleMatchesExternalId(title: string, externalId: string): boolean {
   return title.startsWith(`${externalId} —`) || title.startsWith(`${externalId} -`)
@@ -133,6 +145,11 @@ export async function importParsedCards(
       errors.push(`${card.externalId}: sem coluna de destino`)
       continue
     }
+    const checklistProblem = checklistLimitProblem(card.checklist)
+    if (checklistProblem) {
+      errors.push(`${card.externalId}: ${checklistProblem}`)
+      continue
+    }
     toInsert.push({ card, columnId: target })
   }
 
@@ -149,13 +166,14 @@ export async function importParsedCards(
       priority: card.priority,
       due_date: null,
       assignee_user_id: null,
-      labels: card.labels,
+      // API-013: o servidor recusa rótulo repetido sem caixa, longo ou além
+      // de 30; aqui eles saem já no formato. O updated_at é do servidor.
+      labels: normalizeCardLabels(card.labels),
       linked_page_id: null,
       completed: false,
       checklist: card.checklist,
       attachments: [],
       sort_order: order,
-      updated_at: new Date().toISOString(),
     }
   })
 

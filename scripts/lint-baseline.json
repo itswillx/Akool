@@ -194,7 +194,6 @@
   "src/modules/projects/ui.tsx::akool/no-hex-color": 5,
   "src/modules/projects/ui.tsx::jsx-a11y/click-events-have-key-events": 2,
   "src/modules/projects/ui.tsx::jsx-a11y/no-static-element-interactions": 2,
-  "src/modules/projects/useBoardActions.ts::no-useless-assignment": 1,
   "src/modules/projects/useBoardData.ts::@typescript-eslint/no-floating-promises": 3,
   "src/modules/projects/useBoardData.ts::react-hooks/exhaustive-deps": 1,
   "src/modules/projects/useBoardData.ts::react-hooks/refs": 1,

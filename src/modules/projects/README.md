@@ -29,6 +29,23 @@ Era um painel irmão de Documentos (`activePanel: 'projects'` + modo
 - Espelho da ordenação para a prévia do modal: `src/lib/cardQueue.ts`
   (`previewQueueOrder`). Mudou a ordem no SQL, mude lá também.
 
+## Edição do card (API-013)
+
+- O servidor guarda as regras do card: o gatilho `project_cards_integrity` (veja
+  `docs/matriz-rls.md`) põe o card novo no fim da coluna e cuida do
+  `updated_at`, que é a versão do conteúdo (mover não muda). O app nunca manda
+  `sort_order` de card novo nem `updated_at`.
+- O modal grava pelo `saveCardVersioned` (`lib/data/projects.ts`): só os campos
+  que mudaram desde a versão em que a edição começou (`useBoardActions`, base
+  por abertura do modal, gravações em fila).
+- Se outra pessoa gravou no meio:
+  - **em outros campos:** a gravação é refeita por cima da versão dela, e o
+    modal adota o que ela mudou;
+  - **nos mesmos campos:** nada é gravado, e o `CardConflictBanner` pergunta
+    "Carregar a versão salva / Manter a minha".
+- Rótulo não diferencia caixa (`lib/cardLabels.ts`: filtro, modal e
+  importação), como no `cq_cards` e no `cq_enqueue`.
+
 ## Regras
 
 - **Entrada pública:** `index.ts`. Importe por `../modules/projects`.

@@ -58,11 +58,11 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
 
   // Estado, carga, realtime e fila do quadro: useBoardData.ts
   const boardData = useBoardData()
-  const { boards, activeBoardId, setActiveBoardId, columns, cards, members, view, setView, loading, boardLoading, activeDragId, cardSaveStatus, cardSaveErrorKind, persistError, cardFilters, setCardFilters, boardError, boardsError, boardModal, setBoardModal, boardSelectorOpen, setBoardSelectorOpen, cardModal, setCardModal, columnModal, setColumnModal, shareOpen, setShareOpen, importOpen, setImportOpen, queueOpen, setQueueOpen, queueRows, queueRefreshKey, deleteConfirm, setDeleteConfirm, activeBoard, canEdit, isOwner, sensors, pLabel, loadBoards, loadBoardData, queueBadgeMap, filteredCards, availableLabels, filtersActive, cardsByColumn } = boardData
+  const { boards, activeBoardId, setActiveBoardId, columns, cards, members, view, setView, loading, boardLoading, activeDragId, cardSaveStatus, cardSaveErrorKind, cardConflict, persistError, cardFilters, setCardFilters, boardError, boardsError, boardModal, setBoardModal, boardSelectorOpen, setBoardSelectorOpen, cardModal, setCardModal, columnModal, setColumnModal, shareOpen, setShareOpen, importOpen, setImportOpen, queueOpen, setQueueOpen, queueRows, queueRefreshKey, deleteConfirm, setDeleteConfirm, activeBoard, canEdit, isOwner, sensors, pLabel, loadBoards, loadBoardData, queueBadgeMap, filteredCards, availableLabels, filtersActive, cardsByColumn } = boardData
 
   // Gravações (quadros, colunas, cards, fila): useBoardActions.ts
   const boardActions = useBoardActions({ board: boardData, onOpenPage })
-  const { createBoard, updateBoard, deleteBoard, enqueueCard, saveColumn, deleteColumn, closeCardModal, validateCard, handleDraftChange, cardDraftKey, autoSaveCard, saveCard, deleteCard, openLinkedPage, handleRescheduleCard, handleGenerateSchedule } = boardActions
+  const { createBoard, updateBoard, deleteBoard, enqueueCard, saveColumn, deleteColumn, closeCardModal, validateCard, handleDraftChange, cardDraftKey, autoSaveCard, saveCard, resolveCardConflict, deleteCard, openLinkedPage, handleRescheduleCard, handleGenerateSchedule } = boardActions
 
   // PERF-011: handlers estáveis para o memo das colunas e dos cards segurar.
   const openNewCard = useCallback((columnId: string) => setCardModal({ open: true, card: null, columnId }), [setCardModal])
@@ -322,6 +322,8 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
           initialDraft={cardDraftKey ? loadCardDraft(cardDraftKey) : null}
           saveStatus={cardSaveStatus}
           saveErrorKind={cardSaveErrorKind}
+          conflict={cardConflict}
+          onResolveConflict={resolveCardConflict}
           onClose={closeCardModal}
           onSave={saveCard}
           onAutoSave={autoSaveCard}

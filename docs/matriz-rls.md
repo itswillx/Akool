@@ -130,11 +130,38 @@ já versionadas (`finance_store_module.sql`/`finance_projects_module.sql`/
 | `project_columns` | SELECT | `user_can_access_board(board_id,'viewer')` | |
 | `project_columns` | INSERT/UPDATE/DELETE | `user_can_access_board(board_id,'editor')` | |
 | `project_cards` | SELECT | viewer do board | |
-| `project_cards` | INSERT/UPDATE/DELETE | editor do board | |
+| `project_cards` | INSERT/UPDATE/DELETE | editor do board | **API-013:** gatilho BEFORE INSERT/UPDATE `project_cards_integrity` (abaixo) |
 | `project_shares` | SELECT | owner ou share (shared_with_user_id) | |
 | `project_shares` | INSERT | owner, e precisa ser dono do board também | |
 | `project_shares` | UPDATE | owner, **só a coluna `role`**, e precisa continuar dono do board | **SEC-002:** grant `update (role)` + trigger `project_shares_freeze_target` impedem re-apontar `board_id`. Destinatário não altera o próprio `role` |
 | `project_shares` | DELETE | owner | |
+
+**Regras de card no servidor (API-013, `20261007130000_api013_project_cards_integrity`).**
+O RLS diz quem edita o quadro; o gatilho `private.project_card_integrity`
+(SECURITY DEFINER, `search_path=''`) diz o que um card pode conter. Ele faz
+duas coisas mesmo sem usuário: põe o card sem `sort_order` no fim da coluna (a
+coluna não tem mais DEFAULT) e cuida do `updated_at`, que é a versão do
+conteúdo. Mudar o conteúdo grava `now()`. Mover (`column_id`/`sort_order`) mantém
+a versão, e o valor mandado pelo cliente é sempre ignorado. Sem usuário
+(restore, `cards-api`, seed: regra do §1.5 do `api-arquitetura.md`), o resto
+pula. Com usuário, valida só o que mudou:
+- **Quadro e coluna:** a coluna é do mesmo quadro, e `board_id` não muda.
+- **Pai:** do mesmo quadro, sem ciclo.
+- **Dependências:** só as acrescentadas são conferidas (existem, são do mesmo
+  quadro, não são o próprio card e não fecham ciclo), até 100. As antigas e as
+  órfãs ficam.
+- **Responsável:** tem acesso ao quadro (`private.cq_board_role`).
+- **Página vinculada:** legível (`page_is_readable`).
+- **Formas:**
+  - checklist: até 500 `{id, text, completed, owner?}`;
+  - rótulos: até 30, de 1 a 50 caracteres sem espaço nas pontas, sem repetir
+    ignorando a caixa;
+  - anexos: até 50 `{id, url, name}`. Um anexo novo só aceita caminho sob
+    `<quem envia>/<quadro>/`.
+
+As recusas saem com `hint='akool'`, e o app mostra o motivo. `cq_cards` e
+`cq_enqueue` comparam rótulo sem caixa (`private.cq_labels_match`). Prova:
+`supabase/checks/api013-project-cards.sql` (bloco 2, só no staging: o restore).
 
 Achado à parte (fora do escopo de RLS, registrado aqui por ter aparecido na
 mesma auditoria): `project_boards`/`project_columns`/`project_cards`/`project_shares`
@@ -161,10 +188,14 @@ para INSERT/UPDATE/DELETE (dono só mexe na própria pasta).
 
 `note-images`/`avatars`/`project-card-images` têm leitura aberta a qualquer
 autenticado (não só ao dono) porque são exibidas para quem recebe um
-compartilhamento de página/board — o path hoje só contém o uid do dono, então
-um refino "leitura só por quem tem a página/board compartilhado" exigiria
-reestruturar o path do objeto (registrado como follow-up em
-`20260708140000_sec_private_buckets.sql`, não neste card).
+compartilhamento de página/board. O primeiro segmento do path é o uid de quem
+enviou o arquivo, não o do dono da página ou do quadro: num quadro
+compartilhado, cada editor sobe na própria pasta
+(`<quem envia>/<quadro>/<card>/…` em `project-card-images`; o gatilho do
+API-013 só aceita anexo novo nesse formato). Um refino "leitura só por quem
+tem a página/board compartilhado" exigiria reestruturar o path do objeto
+(registrado como follow-up em `20260708140000_sec_private_buckets.sql`, não
+neste card).
 
 `transaction-photos`/`bank-statements`/`project-expense-files`/`store-files`
 são dado financeiro pessoal — leitura fica owner-only mesmo quando o registro
