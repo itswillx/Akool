@@ -1,0 +1,12 @@
+[
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "text": "Banco local com dados de exemplo (supabase/seed.sql).",
+        "styles": {}
+      }
+    ]
+  }
+]

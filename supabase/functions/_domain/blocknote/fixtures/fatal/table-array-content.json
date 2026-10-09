@@ -1,0 +1,17 @@
+{
+  "content": [
+    {
+      "type": "table",
+      "content": [
+        {
+          "type": "text",
+          "text": "x",
+          "styles": {}
+        }
+      ]
+    }
+  ],
+  "path": "/0/content",
+  "keyword": "type",
+  "breaks": "create"
+}

@@ -1,0 +1,37 @@
+[
+  {
+    "id": "28f2ef8c-da3f-46ed-870d-1671213349f4",
+    "type": "toggleListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "abrir",
+        "styles": {}
+      }
+    ],
+    "children": [
+      {
+        "id": "651cd2bd-c63c-4b99-9625-f226ff8a3b83",
+        "type": "paragraph",
+        "props": {
+          "backgroundColor": "default",
+          "textColor": "default",
+          "textAlignment": "left"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "dentro",
+            "styles": {}
+          }
+        ],
+        "children": []
+      }
+    ]
+  }
+]

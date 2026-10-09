@@ -1,0 +1,42 @@
+[
+  {
+    "id": "f31ec15d-f6f8-4e77-8329-6f9e00a56527",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "antes",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "dce74a2c-eb0a-4957-89c9-335c4a48c345",
+    "type": "divider",
+    "props": {},
+    "children": []
+  },
+  {
+    "id": "2dfc2f6e-6392-4c1c-b9bc-28454bfad3d4",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "depois",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

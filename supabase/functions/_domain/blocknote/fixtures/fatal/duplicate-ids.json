@@ -1,0 +1,15 @@
+{
+  "content": [
+    {
+      "id": "d",
+      "type": "diagram"
+    },
+    {
+      "id": "d",
+      "type": "diagram"
+    }
+  ],
+  "path": "/1/id",
+  "keyword": "duplicateId",
+  "breaks": "corrupt"
+}

@@ -1,0 +1,11 @@
+{
+  "content": [
+    {
+      "type": "callout",
+      "content": "x"
+    }
+  ],
+  "path": "/0/type",
+  "keyword": "enum",
+  "breaks": "create"
+}

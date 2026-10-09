@@ -1,0 +1,17 @@
+{
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "link",
+          "href": 5,
+          "content": "x"
+        }
+      ]
+    }
+  ],
+  "path": "/0/content/0/href",
+  "keyword": "type",
+  "breaks": "mount"
+}

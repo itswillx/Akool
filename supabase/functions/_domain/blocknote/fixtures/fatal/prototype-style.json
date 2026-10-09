@@ -1,0 +1,19 @@
+{
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "x",
+          "styles": {
+            "toString": true
+          }
+        }
+      ]
+    }
+  ],
+  "path": "/0/content/0/styles/toString",
+  "keyword": "enum",
+  "breaks": "create"
+}

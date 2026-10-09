@@ -1,24 +1,10 @@
 import { supabase } from './supabase'
-import type { ProjectBoard, ProjectCard, ProjectCardPriority, ProjectColumn } from '../types'
+import type { ProjectBoard, ProjectCard, ProjectColumn } from '../types'
+// API-020: o snapshot do bloco projectCard mora no módulo puro das notas, que
+// o valida (o API-044 monta o mesmo snapshot no servidor). Só tipo: nada no bundle.
+import type { ProjectCardSnapshot } from '../../supabase/functions/_domain/blocknote/projectCard'
 
-// Snapshot of a project card embedded inside a note's `projectCard` block. Kept
-// flat and JSON-serialisable so it can live in BlockNote's string-only prop
-// schema, and self-contained so the block renders even if the source card is
-// later changed or removed.
-export interface ProjectCardSnapshot {
-  title: string
-  description: string
-  priority: ProjectCardPriority
-  startDate: string | null
-  dueDate: string | null
-  labels: string[]
-  checklist: { text: string; completed: boolean }[]
-  completed: boolean
-  columnName: string | null
-  boardName: string
-  boardIcon: string
-  boardColor: string
-}
+export type { ProjectCardSnapshot }
 
 // Loads the boards the user can read: their own plus the ones shared with them.
 // Mirrors ProjectsPanel's `loadBoards` so both surfaces stay consistent.

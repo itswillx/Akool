@@ -1,0 +1,26 @@
+{
+  "content": [
+    {
+      "type": "table",
+      "content": {
+        "type": "tableContent",
+        "rows": [
+          {
+            "cells": [
+              {
+                "type": "tableCell",
+                "props": {
+                  "colspan": 0
+                },
+                "content": "ab"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "path": "/0/content/rows/0/cells/0/props/colspan",
+  "keyword": "type",
+  "breaks": "create"
+}

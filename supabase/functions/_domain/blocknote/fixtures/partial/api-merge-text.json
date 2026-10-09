@@ -1,0 +1,54 @@
+[
+  {
+    "type": "paragraph",
+    "content": [
+      {
+        "type": "text",
+        "text": "a",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "b",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "",
+        "styles": {
+          "bold": true
+        }
+      },
+      {
+        "type": "link",
+        "href": "https://x.dev",
+        "content": "l1"
+      },
+      {
+        "type": "link",
+        "href": "https://x.dev",
+        "content": [
+          {
+            "type": "text",
+            "text": "l2",
+            "styles": {
+              "bold": true
+            }
+          }
+        ]
+      },
+      {
+        "type": "link",
+        "href": "https://y.dev",
+        "content": ""
+      },
+      {
+        "type": "text",
+        "text": "\nfim",
+        "styles": {
+          "italic": true
+        }
+      }
+    ]
+  }
+]

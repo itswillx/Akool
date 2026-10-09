@@ -1,0 +1,16 @@
+{
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "link",
+          "href": "https://a.dev"
+        }
+      ]
+    }
+  ],
+  "path": "/0/content/0/content",
+  "keyword": "type",
+  "breaks": "create"
+}

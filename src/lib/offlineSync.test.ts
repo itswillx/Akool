@@ -55,6 +55,18 @@ describe('flushDrafts', () => {
     expect(store.deleted).toEqual(['u1:note_contents:p1'])
   })
 
+  it('API-020: rascunho de nota que o editor não abriria fica guardado, sem ir ao servidor', async () => {
+    // Tabela que o editor mostra mas não reabre (colada com células mescladas) e bloco desconhecido.
+    const cell = (props: Record<string, number>, text: string) => ({ type: 'tableCell', props, content: text ? [{ type: 'text', text, styles: {} }] : [] })
+    const merged = [{ type: 'table', content: { type: 'tableContent', rows: [{ cells: [cell({}, ''), cell({ rowspan: 2 }, 'A'), cell({}, 'B')] }, { cells: [cell({ colspan: 2 }, 'C')] }] } }]
+    store.drafts = [draft('note_contents', 'p1', merged), draft('note_contents', 'p2', [{ type: 'callout', content: 'x' }])]
+    const report = await flushDrafts('u1')
+    expect(report).toMatchObject({ sent: 0, kept: 2 })
+    expect(report.results.map(r => r.status)).toEqual(['kept', 'kept'])
+    expect(db.calls).toEqual([])
+    expect(store.deleted).toEqual([])
+  })
+
   it('conflito (alguém salvou depois) fica guardado para a página avisar', async () => {
     store.drafts = [draft('drawing_contents', 'p2', { elements: [], app_state: {}, files: {} })]
     db.queue = [{ data: [], error: null }, { data: { updated_at: 'v9' }, error: null }]

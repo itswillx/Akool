@@ -1,0 +1,256 @@
+[
+  {
+    "id": "da1c7aea-dfea-4944-84a6-f064e3b2dfc7",
+    "type": "heading",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "level": 2,
+      "isToggleable": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Receita",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "ededc5c8-d7f0-43ff-931b-41d7a757b486",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Texto ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "verde",
+        "styles": {
+          "textColor": "rgb(34, 139, 34)"
+        }
+      },
+      {
+        "type": "text",
+        "text": " e ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "forte",
+        "styles": {
+          "bold": true
+        }
+      },
+      {
+        "type": "text",
+        "text": ", com ",
+        "styles": {}
+      },
+      {
+        "type": "link",
+        "href": "mailto:contato@exemplo.com",
+        "content": [
+          {
+            "type": "text",
+            "text": "e-mail",
+            "styles": {}
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "text": " e ",
+        "styles": {}
+      },
+      {
+        "type": "link",
+        "href": "https://exemplo.com",
+        "content": [
+          {
+            "type": "text",
+            "text": "site",
+            "styles": {}
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "text": ".",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "849966bb-61c3-4664-be8a-0ae13a8585d1",
+    "type": "bulletListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "um",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "af89dab8-d826-4e3a-ac72-d29b7ceee5bc",
+    "type": "bulletListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "dois",
+        "styles": {}
+      }
+    ],
+    "children": [
+      {
+        "id": "09c0963e-c3be-49a2-8143-22f5d50a791f",
+        "type": "bulletListItem",
+        "props": {
+          "backgroundColor": "default",
+          "textColor": "default",
+          "textAlignment": "left"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "dois.um",
+            "styles": {}
+          }
+        ],
+        "children": []
+      }
+    ]
+  },
+  {
+    "id": "f1ca1374-229f-42cc-911a-d6954533cc44",
+    "type": "quote",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "dito",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "6c4a2c03-6f93-4829-9653-541cbb7e0f9f",
+    "type": "table",
+    "props": {
+      "textColor": "default"
+    },
+    "content": {
+      "type": "tableContent",
+      "columnWidths": [
+        null,
+        null
+      ],
+      "headerRows": 1,
+      "rows": [
+        {
+          "cells": [
+            {
+              "type": "tableCell",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "A",
+                  "styles": {}
+                }
+              ],
+              "props": {
+                "colspan": 1,
+                "rowspan": 1,
+                "backgroundColor": "default",
+                "textColor": "default",
+                "textAlignment": "left"
+              }
+            },
+            {
+              "type": "tableCell",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "B",
+                  "styles": {}
+                }
+              ],
+              "props": {
+                "colspan": 1,
+                "rowspan": 1,
+                "backgroundColor": "default",
+                "textColor": "default",
+                "textAlignment": "left"
+              }
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "tableCell",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "1",
+                  "styles": {}
+                }
+              ],
+              "props": {
+                "colspan": 1,
+                "rowspan": 1,
+                "backgroundColor": "default",
+                "textColor": "default",
+                "textAlignment": "left"
+              }
+            },
+            {
+              "type": "tableCell",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "2",
+                  "styles": {}
+                }
+              ],
+              "props": {
+                "colspan": 1,
+                "rowspan": 1,
+                "backgroundColor": "default",
+                "textColor": "default",
+                "textAlignment": "left"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "children": []
+  }
+]
