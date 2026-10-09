@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { asVersionedClient, isContentOpen, saveVersionedContent } from './contentPersistence'
 import { quickDraftPatch, saveQuickNote } from './data/quickNotes'
 import { deleteDraft, listDrafts, type Draft, type DraftTable } from './offlineStore'
+import { findFatalNoteIssue } from '../../supabase/functions/_domain/blocknote/schema'
 import type { QuickNote } from '../types'
 
 // REL-012: reenvia os rascunhos guardados sem conexão. Carrega sob demanda
@@ -10,10 +11,15 @@ import type { QuickNote } from '../types'
 // fica guardado para a página mostrar o aviso quando abrir.
 // API-003: quick notes também gravam sobre a versão em que a edição foi feita;
 // o conflito fica guardado para a tela de notas rápidas mostrar.
+// API-020: rascunho de nota com problema fatal (findFatalNoteIssue) nunca vai
+// ao servidor: gravado, a nota ficaria só leitura para todos, e a "versão
+// salva" que a tela da guarda oferece seria o próprio rascunho. Fica guardado
+// para a página mostrar a guarda com o botão de descartar.
 
 /**
  * - `sent`: gravou (rascunho apagado);
- * - `kept`: não deu agora (rede, página aberta, outro envio em andamento);
+ * - `kept`: não deu agora (rede, página aberta, outro envio em andamento) ou
+ *   não vai (nota que o editor não abriria);
  * - `conflict`: alguém salvou depois (rascunho guardado para o aviso);
  * - `dropped`: a nota não existe mais (rascunho apagado).
  */
@@ -64,6 +70,7 @@ export async function flushDrafts(userId: string, only?: DraftTable): Promise<Fl
 /** Nota: o rascunho é o `content`; desenho: a linha inteira (elements, app_state, files). */
 async function sendContent(draft: Draft): Promise<boolean> {
   if (draft.table === 'quick_notes') return false
+  if (draft.table === 'note_contents' && findFatalNoteIssue(draft.value)) return false
   const values = draft.table === 'note_contents'
     ? { content: draft.value }
     : (draft.value as Record<string, unknown>)

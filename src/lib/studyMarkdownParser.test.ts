@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { parseStudyMarkdown } from './studyMarkdownParser'
+import exampleMd from '../../docs/exemplos/estudo-api021.md?raw'
+import { parseStudyMarkdown, type ParsedStudyCard } from './studyMarkdownParser'
 import { buildStudyPrompt } from './studyPrompt'
+import {
+  isSafeStudyUrl,
+  STUDY_CHECKPOINT_TEXT_MAX,
+  STUDY_CHECKPOINTS_MAX,
+  STUDY_EXPLANATION_MAX,
+  STUDY_JSON_MAX_BYTES,
+  STUDY_OPTION_MAX,
+  STUDY_OPTIONS_MAX,
+  STUDY_OPTIONS_MIN,
+  STUDY_QUIZ_MAX,
+  STUDY_RESOURCE_TITLE_MAX,
+  STUDY_RESOURCES_MAX,
+  STUDY_STATEMENT_MAX,
+  studyJsonBytes,
+} from './studyLimits'
 
 const FULL_DOC = `# Estudo: TypeScript avançado
 
@@ -545,5 +561,168 @@ describe('parseStudyMarkdown', () => {
 
     const singular = buildStudyPrompt({ title: 'Rust', duration: { qty: 1, unit: 'months' } })
     expect(singular).toContain('1 mês')
+  })
+})
+
+// API-021: o que o parser entrega é o que o gatilho study_cards_rules aceita
+// (as regras de private.study_*_problem, no mesmo formato que o insertCards
+// grava). Um card fora delas derrubaria a importação inteira.
+function serverProblems(card: ParsedStudyCard): string[] {
+  const problems: string[] = []
+  const blank = (text: string) => !/\S/.test(text)
+  if (card.checkpoints.length > STUDY_CHECKPOINTS_MAX) problems.push('pontos: quantidade')
+  if (card.resources.length > STUDY_RESOURCES_MAX) problems.push('recursos: quantidade')
+  if (card.quiz.length > STUDY_QUIZ_MAX) problems.push('quiz: quantidade')
+  for (const [column, list] of [['pontos', card.checkpoints], ['recursos', card.resources], ['quiz', card.quiz]] as const) {
+    if (studyJsonBytes(list) > STUDY_JSON_MAX_BYTES) problems.push(`${column}: 256 KiB`)
+    if (new Set(list.map(item => item.id)).size !== list.length) problems.push(`${column}: ids repetidos`)
+  }
+  card.checkpoints.forEach((point, i) => {
+    if (blank(point.text) || point.text.length > STUDY_CHECKPOINT_TEXT_MAX) problems.push(`ponto ${i}: text`)
+    if (typeof point.completed !== 'boolean') problems.push(`ponto ${i}: completed`)
+  })
+  card.resources.forEach((resource, i) => {
+    if (!isSafeStudyUrl(resource.url)) problems.push(`recurso ${i}: url`)
+    if (resource.title.length > STUDY_RESOURCE_TITLE_MAX) problems.push(`recurso ${i}: title`)
+  })
+  card.quiz.forEach((question, i) => {
+    if (blank(question.statement) || question.statement.length > STUDY_STATEMENT_MAX) problems.push(`pergunta ${i}: statement`)
+    if ((question.explanation?.length ?? 0) > STUDY_EXPLANATION_MAX) problems.push(`pergunta ${i}: explanation`)
+    if (question.kind === 'choice') {
+      const n = question.options.length
+      if (n < STUDY_OPTIONS_MIN || n > STUDY_OPTIONS_MAX) problems.push(`pergunta ${i}: options`)
+      if (question.options.some(option => blank(option) || option.length > STUDY_OPTION_MAX)) problems.push(`pergunta ${i}: alternativa`)
+      if (!Number.isInteger(question.answer) || question.answer < 0 || question.answer >= n) problems.push(`pergunta ${i}: answer`)
+    } else if (question.answer !== 'certo' && question.answer !== 'errado') {
+      problems.push(`pergunta ${i}: answer`)
+    }
+  })
+  return problems
+}
+
+describe('parseStudyMarkdown: limites do servidor (API-021)', () => {
+  const card = (body: string[]) => ['# Estudo: Limites', '| **Área** | Testes |', '## Card: Grande', ...body].join('\n')
+
+  it('um .md grande sai inteiro dentro dos limites, com aviso do que ficou de fora', () => {
+    const doc = card([
+      '**Pontos de estudo:**',
+      ...Array.from({ length: 230 }, (_, i) => `- [ ] Ponto ${i} ${'é'.repeat(i % 2 === 0 ? 1900 : 10)}`),
+      `- [ ] ${'x'.repeat(STUDY_CHECKPOINT_TEXT_MAX + 1)}`,
+      '**Recursos:**',
+      ...Array.from({ length: 60 }, (_, i) => `- [Link ${i}](https://example.com/${i}/${'p'.repeat(2000)})`),
+      `- https://example.com/${'u'.repeat(STUDY_RESOURCE_TITLE_MAX)}`,
+      '- [Com controle](https://example.com/a\u0007b)',
+      '**Quiz:**',
+      ...Array.from({ length: 120 }, (_, i) => [`- [C] Afirmação ${i} ${'s'.repeat(1500)}`, `  Justificativa: ${'j'.repeat(1500)}`]).flat(),
+      `- [C] ${'s'.repeat(STUDY_STATEMENT_MAX + 1)}`,
+      '- [Q] Escolha com 11 alternativas?',
+      ...Array.from({ length: 11 }, (_, i) => `  - [${i === 0 ? 'x' : ' '}] Opção ${i}`),
+      '- [Q] Alternativa longa?',
+      `  - [x] ${'o'.repeat(STUDY_OPTION_MAX + 1)}`,
+      '  - [ ] curta',
+      '- [E] Justificativa longa demais.',
+      `  Justificativa: ${'j'.repeat(STUDY_EXPLANATION_MAX + 1)}`,
+    ])
+    const result = parseStudyMarkdown(doc)
+    const [parsed] = result.cards
+    expect(serverProblems(parsed)).toEqual([])
+    expect(parsed.checkpoints.length).toBeGreaterThan(0)
+    expect(parsed.checkpoints.length).toBeLessThanOrEqual(STUDY_CHECKPOINTS_MAX)
+    expect(parsed.resources.length).toBeGreaterThan(0)
+    expect(parsed.quiz.length).toBeGreaterThan(0)
+    // Os descartes vêm à parte dos avisos de formato (a prévia os mostra primeiro).
+    expect(result.warnings).toEqual([])
+    const dropped = result.dropped.join('\n')
+    expect(dropped).toContain('ponto de estudo 231 ignorado (mais de 2000 caracteres)')
+    expect(dropped).toContain('só os primeiros 200 pontos de estudo foram mantidos')
+    expect(dropped).toContain('pontos de estudo passam de 256 KiB')
+    expect(dropped).toContain('recurso 61 ignorado (URL com caractere inválido ou mais de 2048 caracteres)')
+    expect(dropped).toContain('recurso 62 ignorado (URL com caractere inválido ou mais de 2048 caracteres)')
+    expect(new Set(result.dropped).size).toBe(result.dropped.length)
+    expect(dropped).toContain('só os primeiros 50 recursos foram mantidos')
+    expect(dropped).toContain('pergunta 121 do quiz ignorada (enunciado com mais de 2000 caracteres)')
+    expect(dropped).toContain('pergunta 122 do quiz ignorada (mais de 10 alternativas)')
+    expect(dropped).toContain('pergunta 123 do quiz ignorada (alternativa com mais de 1000 caracteres)')
+    expect(dropped).toContain('justificativa da pergunta 124 ignorada (mais de 4000 caracteres)')
+    expect(dropped).toContain('só as primeiras 100 perguntas do quiz foram mantidas')
+    expect(dropped).toContain('quiz passa de 256 KiB')
+  })
+
+  it('a pergunta com justificativa longa fica, sem a justificativa', () => {
+    const result = parseStudyMarkdown(card([
+      '**Pontos de estudo:**', '- [ ] Algo', '**Recursos:**', '- [Docs](https://example.com)', '**Quiz:**',
+      '- [E] Justificativa longa demais.', `  Justificativa: ${'j'.repeat(STUDY_EXPLANATION_MAX + 1)}`,
+      '- [C] Curta.', '  Justificativa: Ok.',
+    ]))
+    const [long, short] = result.cards[0].quiz
+    expect(long.statement).toBe('Justificativa longa demais.')
+    expect(long).not.toHaveProperty('explanation')
+    expect(short.explanation).toBe('Ok.')
+  })
+
+  it('o que está dentro dos limites passa igual, sem aviso novo', () => {
+    const doc = card([
+      '**Pontos de estudo:**',
+      `- [ ] ${'x'.repeat(STUDY_CHECKPOINT_TEXT_MAX)}`,
+      '**Recursos:**',
+      `- https://a.b/${'u'.repeat(2048 - 'https://a.b/'.length)}`,
+      '**Quiz:**',
+      '- [Q] Dez alternativas?',
+      ...Array.from({ length: STUDY_OPTIONS_MAX }, (_, i) => `  - [${i === 9 ? 'x' : ' '}] Opção ${i}`),
+    ])
+    const result = parseStudyMarkdown(doc)
+    expect(result.warnings).toEqual([])
+    expect(result.dropped).toEqual([])
+    expect(result.cards[0].checkpoints[0].text).toHaveLength(STUDY_CHECKPOINT_TEXT_MAX)
+    expect(result.cards[0].resources[0].url).toHaveLength(2048)
+    expect(result.cards[0].quiz[0]).toEqual(expect.objectContaining({ kind: 'choice', answer: 9 }))
+    expect(serverProblems(result.cards[0])).toEqual([])
+  })
+})
+
+describe('docs/exemplos/estudo-api021.md (validação no staging)', () => {
+  it('importa sem aviso e sem perder nada: pontos, recursos, quiz misto e justificativas', () => {
+    const result = parseStudyMarkdown(exampleMd)
+    expect(result.warnings).toEqual([])
+    expect(result.dropped).toEqual([])
+    expect(result.topic).toEqual({
+      title: 'Redes de computadores',
+      area: 'Tecnologia',
+      level: 'Iniciante',
+      objective: 'Entender o caminho de uma requisição do navegador até o servidor',
+    })
+    expect(result.cards.map(c => [c.checkpoints.length, c.resources.length, c.quiz.length])).toEqual([[3, 3, 3], [4, 3, 3], [3, 2, 3]])
+    for (const parsed of result.cards) {
+      expect(parsed.rationale).not.toBe('')
+      expect(serverProblems(parsed)).toEqual([])
+    }
+
+    // Nada some: cada item do arquivo aparece no resultado.
+    const all = result.cards
+    const lines = exampleMd.split('\n')
+    const checkpointLines = lines.filter(line => /^- \[[ x]\] /.test(line))
+    expect(all.flatMap(c => c.checkpoints.map(p => p.text))).toEqual(checkpointLines.map(line => line.slice(6)))
+    const questionLines = lines.filter(line => /^- \[[CEQ]\] /.test(line))
+    expect(all.flatMap(c => c.quiz.map(q => q.statement))).toEqual(questionLines.map(line => line.slice(6)))
+    expect(all.flatMap(c => c.quiz).every(q => q.explanation)).toBe(true)
+    const optionLines = lines.filter(line => /^ {2}- \[[ x]\] /.test(line))
+    expect(all.flatMap(c => c.quiz.flatMap(q => (q.kind === 'choice' ? q.options : [])))).toEqual(optionLines.map(line => line.slice(8)))
+    const resourceLines = lines.filter(line => /^- (\[[^\]]+\]\(https?:|https?:)/.test(line))
+    expect(all.flatMap(c => c.resources)).toHaveLength(resourceLines.length)
+
+    const [first, second, third] = all
+    expect(first.quiz.map(q => q.kind ?? 'boolean')).toEqual(['boolean', 'boolean', 'choice'])
+    expect(first.resources[2]).toEqual(expect.objectContaining({
+      title: 'Cloudflare Learning',
+      url: 'https://www.cloudflare.com/pt-br/learning/network-layer/what-is-the-network-layer/',
+    }))
+    expect(second.resources.map(r => r.url)).toEqual([
+      'https://datatracker.ietf.org/doc/html/rfc1035#section-4.1',
+      'https://en.wikipedia.org/w/index.php?title=Domain_Name_System&action=info',
+      'https://howdns.works/',
+    ])
+    expect(second.resources[2].title).toBe('https://howdns.works/')
+    expect(third.quiz[0]).toEqual(expect.objectContaining({ kind: 'choice', answer: 1 }))
+    expect(third.quiz[0].kind === 'choice' && third.quiz[0].options).toHaveLength(5)
   })
 })

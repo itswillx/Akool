@@ -1,0 +1,17 @@
+{
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "x",
+          "styles": "bold"
+        }
+      ]
+    }
+  ],
+  "path": "/0/content/0/styles",
+  "keyword": "type",
+  "breaks": "create"
+}

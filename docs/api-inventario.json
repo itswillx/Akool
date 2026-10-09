@@ -6,7 +6,6 @@
   "total": 357,
   "por_destino": {
     "API-008": 1,
-    "API-016": 2,
     "API-019": 24,
     "API-034": 21,
     "API-036": 10,
@@ -32,7 +31,7 @@
     "API-057": 8,
     "API-059": 5,
     "API-060": 26,
-    "never": 66
+    "never": 68
   },
   "operacoes": [
     {
@@ -1379,14 +1378,15 @@
       "id": "finance.budgets.auto_from_recurring",
       "kind": "write",
       "description": "Auto-create a budget for the viewed month for each active fixed-amount expense recurring with a category, if none exists for (scope, category, month).",
-      "current_impl": "useAutoRecurringBudgets.ts:21-39 insert finance_budgets (candidates from financeCalc.ts:291-313); wired at FinancePanel.tsx:107",
-      "server_enforced": false,
-      "client_side_logic": "Runs for every month the user navigates to in the browser; only for own recurring; never edits existing budgets; with two recurrings in the same category only the first one's amount is used (seen set, financeCalc.ts:301-310). API-created recurring never produces budgets unless the browser is opened.",
+      "current_impl": "API-016: private.finance_materialize_core (supabase/migrations/20261008120000_api016_finance_recurring_server.sql), from the pg_cron job finance-recurring-materialize and public.finance_materialize_recurring on finance load (current and next month) and, with p_month, for the month viewed on screen (src/modules/finance/useViewedMonthBudgets.ts; at most 12 months from the current São Paulo month, never before the recurring's created_at month, never outside an installment plan's installments, never creating entries). Inside the current/next window the budget follows the bill months (the São Paulo created_at month only bounds months before the window); an installment plan with no entries yet counts its first installment in the window's first month. The app decides 'outside the window' by the month materialized in state (useFinanceData.materializedYM) and re-materializes without p_month when the month turns with Finance open. In a workspace the oldest recurring among all members wins, also in the per-user RPC. useAutoRecurringBudgets.ts was removed.",
+      "server_enforced": true,
+      "client_side_logic": "None. Before API-016: ran for every month the user navigated to in the browser; only for own recurring; never edited existing budgets; with two recurrings in the same category only the first one's amount was used.",
       "risk": "money",
       "sources": [
         "Finance core"
       ],
-      "target": "API-016"
+      "target": "never",
+      "never_reason": "cron e rotinas internas do servidor"
     },
     {
       "id": "finance.budgets.create",
@@ -2094,14 +2094,15 @@
       "id": "finance.recurring.entries.materialize",
       "kind": "write",
       "description": "Create pending entries for the current and next month for each active own recurring (respecting total_installments).",
-      "current_impl": "useFinanceData.ts:18-61 ensureRecurringEntries (upsert onConflict recurring_id,due_date ignoreDuplicates) called from load() :419",
-      "server_enforced": false,
-      "client_side_logic": "ONLY in the browser on finance load, browser-local timezone, offsets 0..1 month, no backfill of months the app was not opened (the backfill helper financeCalc.ts:251-276 missingRecurringDueDates is unused). No cron/trigger exists (schema-snapshot cron = site-backup-auto, cron-history-prune).",
+      "current_impl": "API-016: private.finance_materialize_core (supabase/migrations/20261008120000_api016_finance_recurring_server.sql), from the pg_cron job finance-recurring-materialize (00:05 America/Sao_Paulo) and public.finance_materialize_recurring on finance load and after saving a recurring. ensureRecurringEntries was removed.",
+      "server_enforced": true,
+      "client_side_logic": "None. Before API-016: only in the browser on finance load, browser-local timezone, offsets 0..1 month.",
       "risk": "money (bills silently missing)",
       "sources": [
         "Finance core"
       ],
-      "target": "API-016"
+      "target": "never",
+      "never_reason": "cron e rotinas internas do servidor"
     },
     {
       "id": "finance.recurring.entries.skip",

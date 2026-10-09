@@ -1,0 +1,10 @@
+{
+  "content": [
+    {
+      "type": "constructor"
+    }
+  ],
+  "path": "/0/type",
+  "keyword": "enum",
+  "breaks": "create"
+}

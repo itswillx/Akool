@@ -1,0 +1,15 @@
+[
+  {
+    "id": "c4e659c2-0a40-4f07-87a1-bc07906fa741",
+    "type": "video",
+    "props": {
+      "textAlignment": "left",
+      "backgroundColor": "default",
+      "name": "",
+      "url": "https://exemplo.com/video.mp4",
+      "caption": "",
+      "showPreview": false
+    },
+    "children": []
+  }
+]

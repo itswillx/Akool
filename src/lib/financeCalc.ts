@@ -3,7 +3,7 @@
 // amounts in one consistent unit (integer cents after the money migration).
 // Side-effect free and framework-agnostic.
 
-import type { FinanceTransaction, FinanceAccount, FinanceRecurring, FinanceRecurringEntry, FinanceTxType, FinanceBudget } from '../types'
+import type { FinanceTransaction, FinanceAccount, FinanceRecurring, FinanceRecurringEntry, FinanceTxType } from '../types'
 
 type AmountTx = Pick<FinanceTransaction, 'type' | 'amount'>
 
@@ -141,14 +141,6 @@ export function daysUntil(deadline: string, today: Date = new Date()): number {
   return Math.round((due.getTime() - ref.getTime()) / 86400000)
 }
 
-// Due date (YYYY-MM-DD) for a recurring item in a given year/month, clamping
-// day_of_month to the last day of that month (e.g. day 31 in February -> 28/29).
-export function recurringDueDate(year: number, month1to12: number, dayOfMonth: number): string {
-  const lastDay = new Date(year, month1to12, 0).getDate()
-  const day = Math.min(dayOfMonth, lastDay)
-  return `${year}-${String(month1to12).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-}
-
 // The 12 'YYYY-MM' keys of a calendar year, January through December.
 export function monthsOfYear(year: number): string[] {
   return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`)
@@ -239,75 +231,4 @@ export function pendingRecurringTotal(
     total += entry.amount ?? rec.amount ?? 0
   }
   return total
-}
-
-// Due dates a recurring item is missing, from its creation month through the
-// month after `now`. Iterating from the creation month backfills months in
-// which the app was never opened — the entry for a missed month must exist for
-// the bill to surface as overdue and for installment counts to stay correct.
-// Months are compared by YYYY-MM (not the exact day) so editing day_of_month
-// never duplicates a month, and `total_installments` caps existing + new
-// entries chronologically.
-export function missingRecurringDueDates(
-  item: Pick<FinanceRecurring, 'active' | 'day_of_month' | 'total_installments' | 'created_at'>,
-  existingDueDates: string[],
-  now: Date = new Date(),
-): string[] {
-  if (!item.active) return []
-  let budget = item.total_installments != null
-    ? item.total_installments - existingDueDates.length
-    : Infinity
-  if (budget <= 0) return []
-
-  const existingMonths = new Set(existingDueDates.map(d => d.slice(0, 7)))
-  const created = new Date(item.created_at)
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-  const out: string[] = []
-  for (let i = 0; budget > 0; i++) {
-    const cursor = new Date(created.getFullYear(), created.getMonth() + i, 1)
-    if (cursor > end) break
-    const due = recurringDueDate(cursor.getFullYear(), cursor.getMonth() + 1, item.day_of_month)
-    if (!existingMonths.has(due.slice(0, 7))) {
-      out.push(due)
-      budget--
-    }
-  }
-  return out
-}
-
-export interface AutoBudgetCandidate {
-  category_id: string
-  month: string
-  amount_limit: number
-  workspace_id: string | null
-}
-
-// Budgets to auto-create for the given month from active, fixed-amount expense
-// recurrings that don't have one yet — so an active recurring counts toward
-// expense tracking without the user manually setting up a budget for it.
-// Variable-amount recurrings and ones without a category are skipped outright.
-// A row already existing for (category_id, month, scope) — manual or a prior
-// auto-create — is left untouched: this only ever proposes what's missing.
-export function missingAutoBudgets(
-  recurring: Pick<FinanceRecurring, 'type' | 'active' | 'is_variable' | 'amount' | 'category_id' | 'workspace_id'>[],
-  existingBudgets: Pick<FinanceBudget, 'category_id' | 'month' | 'workspace_id'>[],
-  month: string,
-): AutoBudgetCandidate[] {
-  const existingKeys = new Set(
-    existingBudgets
-      .filter(b => b.month === month)
-      .map(b => `${b.workspace_id ?? ''}|${b.category_id}`)
-  )
-  const seen = new Set<string>()
-  const out: AutoBudgetCandidate[] = []
-  for (const r of recurring) {
-    if (r.type !== 'expense' || !r.active || r.is_variable) continue
-    if (!r.category_id || r.amount == null) continue
-    const workspaceId = r.workspace_id ?? null
-    const key = `${workspaceId ?? ''}|${r.category_id}`
-    if (existingKeys.has(key) || seen.has(key)) continue
-    seen.add(key)
-    out.push({ category_id: r.category_id, month, amount_limit: r.amount, workspace_id: workspaceId })
-  }
-  return out
 }

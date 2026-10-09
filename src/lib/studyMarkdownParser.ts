@@ -1,11 +1,29 @@
 import type { StudyCheckpoint, StudyQuizAnswer, StudyQuizQuestion, StudyResource } from '../types'
+import {
+  cutText,
+  isSafeStudyUrl,
+  STUDY_CHECKPOINT_TEXT_MAX,
+  STUDY_CHECKPOINTS_MAX,
+  STUDY_EXPLANATION_MAX,
+  STUDY_JSON_MAX_BYTES,
+  STUDY_OPTION_MAX,
+  STUDY_OPTIONS_MAX,
+  STUDY_QUIZ_MAX,
+  STUDY_RESOURCE_TITLE_MAX,
+  STUDY_RESOURCES_MAX,
+  STUDY_STATEMENT_MAX,
+  studyJsonBytes,
+} from './studyLimits'
 
 // Parses the "Estudo" markdown contract produced from the prompt in
 // studyPrompt.ts (STUDY_MD_CONTRACT). Deliberately tolerant to the ways
 // Claude output tends to drift: code fences around the document, CRLF,
 // ##/### card headings with optional numbering, metadata as table or list,
 // accented/uppercased field names, plain bullets instead of checkboxes.
-// Never throws — problems become warnings.
+// Never throws — problems become warnings. API-021: what the server would
+// refuse (src/lib/studyLimits.ts) is dropped and listed in `dropped`, apart
+// from the format warnings, so the preview shows every drop first and one
+// oversized card never takes the whole import down.
 
 export interface ParsedStudyCard {
   title: string
@@ -27,7 +45,12 @@ export interface ParsedStudyTopicMeta {
 export interface StudyParseResult {
   topic: ParsedStudyTopicMeta
   cards: ParsedStudyCard[]
+  // Formato: o que o modelo escreveu fora do contrato (card sem recurso,
+  // pergunta sem gabarito...).
   warnings: string[]
+  // API-021: o que passaria dos limites do servidor e não vai ser gravado.
+  // Fica à parte para a prévia nunca esconder um descarte atrás dos avisos.
+  dropped: string[]
 }
 
 const TOPIC_HEADING_RE = /^#\s+\*{0,2}Estudo\s*[:—–-]\s*(.+?)\*{0,2}\s*$/i
@@ -115,7 +138,7 @@ function parsePreamble(lines: string[], warnings: string[]): ParsedStudyTopicMet
   return meta
 }
 
-function parseCardBlock(title: string, lines: string[], warnings: string[]): ParsedStudyCard {
+function parseCardBlock(title: string, lines: string[], warnings: string[], dropped: string[]): ParsedStudyCard {
   const descriptionLines: string[] = []
   const checkpoints: StudyCheckpoint[] = []
   const resources: StudyResource[] = []
@@ -303,11 +326,88 @@ function parseCardBlock(title: string, lines: string[], warnings: string[]): Par
     warnings.push(`"${title}": seção Quiz sem perguntas válidas`)
   }
 
-  return { title, description, rationale, checkpoints, resources, quiz }
+  return fitToServerLimits({ title, description, rationale, checkpoints, resources, quiz }, dropped)
+}
+
+// Drops items from the end until the column fits the server's 256 KiB (sizes
+// summed per item: ", " between items, "[]" around them).
+function fitBytes<T>(items: T[]): T[] {
+  const sizes = items.map(item => studyJsonBytes(item))
+  let count = items.length
+  let total = 2 + sizes.reduce((sum, size) => sum + size, 0) + 2 * Math.max(0, count - 1)
+  while (count > 0 && total > STUDY_JSON_MAX_BYTES) {
+    count--
+    total -= sizes[count] + (count > 0 ? 2 : 0)
+  }
+  return count === items.length ? items : items.slice(0, count)
+}
+
+function quizProblem(question: StudyQuizQuestion): string | null {
+  if (question.statement.length > STUDY_STATEMENT_MAX) return `enunciado com mais de ${STUDY_STATEMENT_MAX} caracteres`
+  if (question.kind !== 'choice') return null
+  if (question.options.length > STUDY_OPTIONS_MAX) return `mais de ${STUDY_OPTIONS_MAX} alternativas`
+  if (question.options.some(option => option.length > STUDY_OPTION_MAX)) return `alternativa com mais de ${STUDY_OPTION_MAX} caracteres`
+  return null
+}
+
+function fitToServerLimits(card: ParsedStudyCard, dropped: string[]): ParsedStudyCard {
+  const { title } = card
+  const warn = (message: string) => dropped.push(`"${title}": ${message}`)
+
+  // Descartes com a posição do item (1, 2, ...): dizem qual foi e não se
+  // repetem.
+  let checkpoints = card.checkpoints.filter((point, i) => {
+    if (point.text.length <= STUDY_CHECKPOINT_TEXT_MAX) return true
+    warn(`ponto de estudo ${i + 1} ignorado (mais de ${STUDY_CHECKPOINT_TEXT_MAX} caracteres)`)
+    return false
+  })
+  if (checkpoints.length > STUDY_CHECKPOINTS_MAX) {
+    warn(`só os primeiros ${STUDY_CHECKPOINTS_MAX} pontos de estudo foram mantidos`)
+    checkpoints = checkpoints.slice(0, STUDY_CHECKPOINTS_MAX)
+  }
+
+  let resources = card.resources.flatMap((resource, i) => {
+    if (!isSafeStudyUrl(resource.url)) {
+      warn(`recurso ${i + 1} ignorado (URL com caractere inválido ou mais de 2048 caracteres)`)
+      return []
+    }
+    return [{ ...resource, title: cutText(resource.title, STUDY_RESOURCE_TITLE_MAX) }]
+  })
+  if (resources.length > STUDY_RESOURCES_MAX) {
+    warn(`só os primeiros ${STUDY_RESOURCES_MAX} recursos foram mantidos`)
+    resources = resources.slice(0, STUDY_RESOURCES_MAX)
+  }
+
+  let quiz = card.quiz.flatMap((question, i) => {
+    const problem = quizProblem(question)
+    if (problem) {
+      warn(`pergunta ${i + 1} do quiz ignorada (${problem})`)
+      return []
+    }
+    if ((question.explanation?.length ?? 0) > STUDY_EXPLANATION_MAX) {
+      warn(`justificativa da pergunta ${i + 1} ignorada (mais de ${STUDY_EXPLANATION_MAX} caracteres)`)
+      const trimmed = { ...question }
+      delete trimmed.explanation
+      return [trimmed]
+    }
+    return [question]
+  })
+  if (quiz.length > STUDY_QUIZ_MAX) {
+    warn(`só as primeiras ${STUDY_QUIZ_MAX} perguntas do quiz foram mantidas`)
+    quiz = quiz.slice(0, STUDY_QUIZ_MAX)
+  }
+
+  const fitted = { checkpoints: fitBytes(checkpoints), resources: fitBytes(resources), quiz: fitBytes(quiz) }
+  if (fitted.checkpoints.length < checkpoints.length) warn('pontos de estudo passam de 256 KiB; os últimos ficaram de fora')
+  if (fitted.resources.length < resources.length) warn('recursos passam de 256 KiB; os últimos ficaram de fora')
+  if (fitted.quiz.length < quiz.length) warn('quiz passa de 256 KiB; as últimas perguntas ficaram de fora')
+
+  return { ...card, ...fitted }
 }
 
 export function parseStudyMarkdown(source: string): StudyParseResult {
   const warnings: string[] = []
+  const dropped: string[] = []
   const text = stripFences(source.replace(/\r\n/g, '\n').replace(/\r/g, '\n'))
   const lines = text.split('\n')
 
@@ -324,12 +424,12 @@ export function parseStudyMarkdown(source: string): StudyParseResult {
   for (let i = 0; i < cardStarts.length; i++) {
     const start = cardStarts[i].index + 1
     const end = i + 1 < cardStarts.length ? cardStarts[i + 1].index : lines.length
-    cards.push(parseCardBlock(cardStarts[i].title, lines.slice(start, end), warnings))
+    cards.push(parseCardBlock(cardStarts[i].title, lines.slice(start, end), warnings, dropped))
   }
 
   if (cards.length === 0) {
     warnings.push('Nenhum card encontrado no arquivo')
   }
 
-  return { topic, cards, warnings }
+  return { topic, cards, warnings, dropped }
 }

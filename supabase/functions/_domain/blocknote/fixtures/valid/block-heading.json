@@ -1,0 +1,116 @@
+[
+  {
+    "id": "9f9ed7db-dfda-435c-80be-e8e7061bca2c",
+    "type": "heading",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "level": 1,
+      "isToggleable": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Título 1",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "bbc61cd7-80b5-470c-a71d-659e4a5d5000",
+    "type": "heading",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "level": 2,
+      "isToggleable": true
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Título 2",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "ae8d0df5-f41d-4a2b-beef-b647d85670b4",
+    "type": "heading",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "level": 3,
+      "isToggleable": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Título 3",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "833a5465-c236-477c-b3eb-ed8daf836fad",
+    "type": "heading",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "level": 4,
+      "isToggleable": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Título 4",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "b5d66f87-6017-46bc-b7dc-afba0b275443",
+    "type": "heading",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "level": 5,
+      "isToggleable": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Título 5",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "8e0c312e-9b1e-4a43-96a2-c7d07a887f46",
+    "type": "heading",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "level": 6,
+      "isToggleable": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Título 6",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

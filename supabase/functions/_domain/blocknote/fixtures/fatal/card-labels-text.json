@@ -1,0 +1,15 @@
+{
+  "content": [
+    {
+      "type": "projectCard",
+      "props": {
+        "cardId": "",
+        "boardId": "",
+        "snapshot": "{\"title\":\"Card\",\"description\":\"\",\"priority\":\"medium\",\"startDate\":null,\"dueDate\":null,\"labels\":\"abc\",\"checklist\":[],\"completed\":false,\"columnName\":null,\"boardName\":\"Quadro\",\"boardIcon\":\"📋\",\"boardColor\":\"#6366f1\"}"
+      }
+    }
+  ],
+  "path": "/0/props/snapshot",
+  "keyword": "snapshot",
+  "breaks": "card"
+}

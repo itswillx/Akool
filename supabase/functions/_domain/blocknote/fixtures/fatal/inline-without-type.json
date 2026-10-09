@@ -1,0 +1,16 @@
+{
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "text": "x",
+          "styles": {}
+        }
+      ]
+    }
+  ],
+  "path": "/0/content/0/type",
+  "keyword": "enum",
+  "breaks": "create"
+}

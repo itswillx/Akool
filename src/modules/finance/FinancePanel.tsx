@@ -37,11 +37,11 @@ import {
     segBtnStyle,
     segTrackStyle
 } from './ui'
-import { useAutoRecurringBudgets } from './useAutoRecurringBudgets'
 import { useFinanceActions } from './useFinanceActions'
 import { fetchFullHistoryTx, useFinanceData } from './useFinanceData'
 import { useFinanceModals } from './useFinanceModals'
 import { useFinanceNavigation } from './useFinanceNavigation'
+import { useViewedMonthBudgets } from './useViewedMonthBudgets'
 
 // Obras, Investimentos e Loja deixaram de ser abas irmãs: viraram sub-abas de
 // "Projetos", que é quem faz o lazy import de cada uma agora.
@@ -116,7 +116,9 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   // would flip `loading` and unmount the tab the user is standing on.
   useEffect(() => onAppEvent('finance_transactions_changed', () => { refetchTransactions() }), [refetchTransactions])
 
-  useAutoRecurringBudgets({ data: financeData, month })
+  // API-016: fora do mês atual e do seguinte, o servidor cria os orçamentos
+  // automáticos do mês visto quando a tela pede.
+  useViewedMonthBudgets({ data: financeData, month })
 
   // Tabs are always personal now; workspace rows appear where they belong:
   // the user's own shared rows inline (with a badge) and everyone's in the

@@ -37,33 +37,34 @@ export function RecurringTab({ recurring, recurringEntries, categories, month, o
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  const getEntryBadge = (entry: FinanceRecurringEntry | undefined, dueDate: string) => {
+  // API-016: o selo vem do vencimento do lançamento (o mesmo da Visão geral),
+  // não do dia do recorrente: um pendente de antes da troca do dia continua
+  // com a data dele.
+  const getEntryBadge = (entry: FinanceRecurringEntry | undefined) => {
     if (!entry) return null
     if (entry.status === 'paid') return { label: t('finance_entry_paid'), color: FIN_POS }
     if (entry.status === 'skipped') return { label: t('finance_entry_skipped'), color: '#9ca3af' }
-    const due = new Date(dueDate + 'T12:00:00')
+    const due = new Date(entry.due_date + 'T12:00:00')
     if (due < today) return { label: t('finance_entry_overdue'), color: '#ef4444' }
     return { label: t('finance_entry_pending'), color: '#f59e0b' }
   }
 
   const renderItem = (item: FinanceRecurring) => {
     const cat = item.category_id ? catMap.get(item.category_id) : null
-    const [year, mon] = month.split('-').map(Number)
-    const lastDay = new Date(year, mon, 0).getDate()
-    const day = Math.min(item.day_of_month, lastDay)
-    const dueDate = `${month}-${String(day).padStart(2, '0')}`
     const entry = entryByRecurring.get(item.id)
-    const badge = getEntryBadge(entry, dueDate)
+    const badge = getEntryBadge(entry)
 
     // Installment progress
     const itemEntries = item.total_installments != null
       ? recurringEntries.filter(e => e.recurring_id === item.id).sort((a, b) => a.due_date.localeCompare(b.due_date))
       : null
     const paidCount = itemEntries ? itemEntries.filter(e => e.status === 'paid').length : 0
+    const skippedCount = itemEntries ? itemEntries.filter(e => e.status === 'skipped').length : 0
     const currentInstallment = itemEntries && entry
       ? itemEntries.findIndex(e => e.id === entry.id) + 1
       : (itemEntries ? itemEntries.length : 0)
-    const isFullyPaid = item.total_installments != null && paidCount >= item.total_installments
+    // API-016 (decisão do usuário): pulada conta para encerrar, como no servidor.
+    const isFullyPaid = item.total_installments != null && paidCount + skippedCount >= item.total_installments
 
     return (
       <div key={item.id} style={{ borderRadius: 10, backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', overflow: 'hidden', opacity: item.active ? 1 : 0.6 }}>

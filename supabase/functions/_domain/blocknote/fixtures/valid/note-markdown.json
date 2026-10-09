@@ -1,0 +1,185 @@
+[
+  {
+    "id": "428a0610-bd35-48d3-a852-2eef77ed66e7",
+    "type": "heading",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "level": 1,
+      "isToggleable": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Plano",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "3e1b7164-2932-4fd8-a853-a7ef963e5b99",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Um parágrafo com ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "código",
+        "styles": {
+          "code": true
+        }
+      },
+      {
+        "type": "text",
+        "text": ", ",
+        "styles": {}
+      },
+      {
+        "type": "text",
+        "text": "negrito",
+        "styles": {
+          "bold": true
+        }
+      },
+      {
+        "type": "text",
+        "text": " e ",
+        "styles": {}
+      },
+      {
+        "type": "link",
+        "href": "https://exemplo.com",
+        "content": [
+          {
+            "type": "text",
+            "text": "link",
+            "styles": {}
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "text": ".",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "18aca024-c2db-4fa7-b135-d5b7e1057c78",
+    "type": "numberedListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "primeiro",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "67b1dfdb-d1ec-42db-b6b0-4de340e824cd",
+    "type": "numberedListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "segundo",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "ed6a490a-bdcd-4f02-accd-0b871c2c62bc",
+    "type": "checkListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "checked": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "tarefa",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "5ec9d74d-f7ff-413d-b868-9282b981c641",
+    "type": "checkListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "checked": true
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "feita",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "21b98f41-28ab-42f9-b687-57f50533c250",
+    "type": "codeBlock",
+    "props": {
+      "language": "js"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "console.log(1)\nconsole.log(2)",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "5cdd2ff3-896e-43f3-862d-ffbc4603661b",
+    "type": "quote",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "citação",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "8442c97e-dee2-4c38-a287-900f9166e520",
+    "type": "divider",
+    "props": {},
+    "children": []
+  }
+]

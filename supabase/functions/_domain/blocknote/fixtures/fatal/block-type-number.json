@@ -1,0 +1,11 @@
+{
+  "content": [
+    {
+      "type": 5,
+      "content": "x"
+    }
+  ],
+  "path": "/0/type",
+  "keyword": "type",
+  "breaks": "create"
+}

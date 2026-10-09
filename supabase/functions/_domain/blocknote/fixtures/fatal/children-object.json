@@ -1,0 +1,14 @@
+{
+  "content": [
+    {
+      "type": "paragraph",
+      "content": "x",
+      "children": {
+        "a": 1
+      }
+    }
+  ],
+  "path": "/0/children",
+  "keyword": "type",
+  "breaks": "create"
+}

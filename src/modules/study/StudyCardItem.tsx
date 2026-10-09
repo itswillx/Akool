@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { CalendarClock, Check, ChevronDown, ChevronUp, Link2, Pencil, Plus, RotateCcw, StickyNote, Trash2, X } from 'lucide-react'
 import type { StudyCard, StudyCheckpoint, StudyQuizAnswer } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
@@ -6,19 +6,25 @@ import { MarkdownText } from '@/shared/ui/MarkdownText'
 import { cardProgress } from '../../lib/studyProgress'
 import { isQuizAnswered, isQuizCorrect, isQuizPassed, quizScore } from '../../lib/studyQuiz'
 import { isCardOverdue } from '../../lib/studySchedule'
+import { STUDY_CHECKPOINT_NOTE_MAX, STUDY_CHECKPOINT_TEXT_MAX, STUDY_RESOURCE_TITLE_MAX, STUDY_URL_MAX } from '../../lib/studyLimits'
 import type { StudyCardPatch } from './useStudyTopics'
 import { ProgressBar, SectionLabel } from './StudyBits'
-import { formatDateISO } from './studyUi'
+import { createSaveGate, createSentField, formatDateISO, isUrlTooLong, normalizeUrl, resourceDraftAfterSave, resourceFromInput, type ResourceDraft } from './studyUi'
 
 // One study card: inline-editable title/description, tappable checkpoints,
 // resource link chips and per-card progress. All edits go through
 // onUpdate(patch) so the hook keeps optimistic state + persistence in one
-// place. With `embedded` the outer chrome (border/background/padding) is
-// dropped so the card can live inside a roadmap step body.
+// place; it resolves to false when the server refused, and the "add" fields
+// only clear after a save (API-021): what was saved leaves the start of the
+// field, and whatever was typed meanwhile stays. A field edited over the
+// saved text during the save (select all + paste "Capítulo 10" over
+// "Capítulo 1") stays as the person left it (createSentField). With
+// `embedded` the outer chrome (border/background/padding) is dropped so the
+// card fits a roadmap step body.
 
 interface StudyCardItemProps {
   card: StudyCard
-  onUpdate: (patch: StudyCardPatch) => void
+  onUpdate: (patch: StudyCardPatch) => unknown
   onToggleCheckpoint: (checkpointId: string) => void
   onRequestDelete: () => void
   // Checkpoint removal is confirmed by the caller (ConfirmDeleteModal in
@@ -26,14 +32,6 @@ interface StudyCardItemProps {
   onRequestRemoveCheckpoint: (checkpoint: StudyCheckpoint) => void
   isMobile?: boolean
   embedded?: boolean
-}
-
-function normalizeUrl(raw: string): string | null {
-  const url = raw.trim()
-  if (!url) return null
-  if (/^https?:\/\//i.test(url)) return url
-  if (/^[\w-]+(\.[\w-]+)+/.test(url)) return `https://${url}`
-  return null
 }
 
 export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRequestDelete, onRequestRemoveCheckpoint, isMobile = false, embedded = false }: StudyCardItemProps) {
@@ -44,11 +42,14 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [pointsExpanded, setPointsExpanded] = useState(true)
   const [newPoint, setNewPoint] = useState('')
-  const [addingResource, setAddingResource] = useState(false)
+  // Formulário de novo recurso: null quando fechado. Sem maxLength na URL: a
+  // colada maior que o teto ganha aviso (isUrlTooLong) em vez de ser cortada.
+  const [resourceDraft, setResourceDraft] = useState<ResourceDraft | null>(null)
   // Collapsed by default: 5-15 questions per card would dominate the layout.
   const [quizExpanded, setQuizExpanded] = useState(false)
-  const [resourceTitle, setResourceTitle] = useState('')
-  const [resourceUrl, setResourceUrl] = useState('')
+  const [saveThenClear] = useState(createSaveGate)
+  const [fields] = useState(() => ({ point: createSentField(), title: createSentField(), url: createSentField() }))
+  const urlErrorId = useId()
 
   const progress = cardProgress(card)
   const overdue = isCardOverdue(card)
@@ -56,8 +57,9 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
   const addCheckpoint = () => {
     const text = newPoint.trim()
     if (!text) return
-    setNewPoint('')
-    onUpdate({ checkpoints: [...card.checkpoints, { id: crypto.randomUUID(), text, completed: false }] })
+    const sent = fields.point.track(newPoint)
+    void saveThenClear(`point:${text}`, () => onUpdate({ checkpoints: [...card.checkpoints, { id: crypto.randomUUID(), text, completed: false }] }),
+      () => setNewPoint(sent.after)).finally(sent.end)
   }
 
   const updateCheckpointText = (id: string, text: string) => {
@@ -83,14 +85,15 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
   }
 
   const addResource = () => {
-    const url = normalizeUrl(resourceUrl)
-    if (!url) return
-    const title = resourceTitle.trim() || url.replace(/^https?:\/\//i, '')
-    onUpdate({ resources: [...card.resources, { id: crypto.randomUUID(), title, url }] })
-    setResourceTitle('')
-    setResourceUrl('')
-    setAddingResource(false)
+    const sent = resourceDraft
+    const resource = sent && resourceFromInput(sent.title, sent.url)
+    if (!sent || !resource) return
+    const marks = { title: fields.title.track(sent.title), url: fields.url.track(sent.url) }
+    void saveThenClear(`resource:${resource.url}`, () => onUpdate({ resources: [...card.resources, { id: crypto.randomUUID(), ...resource }] }),
+      () => setResourceDraft(prev => resourceDraftAfterSave(prev, marks))).finally(() => { marks.title.end(); marks.url.end() })
   }
+  const resourceUrlOk = resourceDraft ? normalizeUrl(resourceDraft.url) !== null : false
+  const resourceUrlTooLong = resourceDraft ? isUrlTooLong(resourceDraft.url) : false
 
   const removeResource = (id: string) => {
     onUpdate({ resources: card.resources.filter(r => r.id !== id) })
@@ -270,7 +273,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                 <textarea
                   autoFocus
                   rows={1}
-                  defaultValue={point.text}
+                  defaultValue={point.text} maxLength={STUDY_CHECKPOINT_TEXT_MAX}
                   ref={el => {
                     if (el) {
                       el.style.height = 'auto'
@@ -320,7 +323,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                 <textarea
                   autoFocus
                   rows={1}
-                  defaultValue={point.note ?? ''}
+                  defaultValue={point.note ?? ''} maxLength={STUDY_CHECKPOINT_NOTE_MAX}
                   placeholder={t('study_checkpoint_note_placeholder')}
                   ref={el => {
                     if (el) {
@@ -386,9 +389,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '5px 2px' }}>
           <Plus size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
           <input
-            value={newPoint}
-            onChange={e => setNewPoint(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCheckpoint() } }}
+            value={newPoint} maxLength={STUDY_CHECKPOINT_TEXT_MAX} {...fields.point.watch(newPoint, setNewPoint, addCheckpoint)}
             onBlur={() => { if (newPoint.trim()) addCheckpoint() }}
             placeholder={t('study_add_checkpoint_placeholder')}
             style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', padding: 0 }}
@@ -431,9 +432,9 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
               </button>
             </span>
           ))}
-          {!addingResource && (
+          {!resourceDraft && (
             <button
-              onClick={() => setAddingResource(true)}
+              onClick={() => setResourceDraft({ title: '', url: '' })}
               type="button"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: 12, fontWeight: 500, border: '1px dashed var(--color-border)', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
             >
@@ -442,36 +443,41 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
             </button>
           )}
         </div>
-        {addingResource && (
+        {resourceDraft && (
           <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
             <input
-              value={resourceTitle}
-              onChange={e => setResourceTitle(e.target.value)}
+              value={resourceDraft.title} maxLength={STUDY_RESOURCE_TITLE_MAX}
+              {...fields.title.watch(resourceDraft.title, title => setResourceDraft(prev => prev && { ...prev, title }))}
               placeholder={t('study_resource_title_placeholder')}
               style={{ flex: '1 1 130px', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, fontFamily: 'inherit' }}
             />
             <input
-              value={resourceUrl}
-              onChange={e => setResourceUrl(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addResource() } }}
+              value={resourceDraft.url} {...fields.url.watch(resourceDraft.url, url => setResourceDraft(prev => prev && { ...prev, url }), addResource)}
               placeholder={t('study_resource_url_placeholder')}
-              style={{ flex: '2 1 180px', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, fontFamily: 'inherit' }}
+              aria-invalid={resourceUrlTooLong || undefined}
+              aria-describedby={resourceUrlTooLong ? urlErrorId : undefined}
+              style={{ flex: '2 1 180px', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: `1px solid ${resourceUrlTooLong ? 'var(--color-error)' : 'var(--color-border)'}`, background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, fontFamily: 'inherit' }}
             />
             <button
               onClick={addResource}
               type="button"
-              disabled={!normalizeUrl(resourceUrl)}
-              style={{ padding: '7px 13px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: normalizeUrl(resourceUrl) ? 'pointer' : 'default', opacity: normalizeUrl(resourceUrl) ? 1 : 0.5 }}
+              disabled={!resourceUrlOk}
+              style={{ padding: '7px 13px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: resourceUrlOk ? 'pointer' : 'default', opacity: resourceUrlOk ? 1 : 0.5 }}
             >
               {t('study_add_resource')}
             </button>
             <button
-              onClick={() => { setAddingResource(false); setResourceTitle(''); setResourceUrl('') }}
+              onClick={() => setResourceDraft(null)}
               type="button"
               style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'none', color: 'var(--color-text-muted)', fontSize: 12.5, cursor: 'pointer' }}
             >
               {t('study_cancel')}
             </button>
+            {resourceUrlTooLong && (
+              <div id={urlErrorId} role="alert" style={{ flexBasis: '100%', fontSize: 11.5, color: 'var(--color-error-text)' }}>
+                {t('study_resource_url_too_long', { max: STUDY_URL_MAX })}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -18,7 +18,7 @@ import { supabase } from '../../lib/supabase'
 import type { ParsedStudyCard, StudyParseResult } from '../../lib/studyMarkdownParser'
 import { localDateISO } from '../../lib/studyProgress'
 import { distributeDueDates } from '../../lib/studySchedule'
-import type { StudyCard, StudyLog, StudyTopic } from '../../types'
+import type { StudyCard, StudyCheckpoint, StudyLog, StudyQuizQuestion, StudyResource, StudyTopic } from '../../types'
 import {
   applyReschedule,
   planReschedule,
@@ -44,20 +44,32 @@ export interface CreateTopicForm {
   target_date?: string | null
 }
 
+// API-021: o servidor confere a forma, mas uma linha antiga ou gravada por
+// outro caminho não pode derrubar a carga (a exceção no .then deixava a carga
+// girando) nem a Visão geral: coluna que não é lista vira [], item que não é
+// objeto e escolha sem lista de alternativas saem.
+function objectsOf<T>(value: unknown): T[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is T => typeof item === 'object' && item !== null && !Array.isArray(item))
+}
+
 function normalizeCard(row: StudyCard): StudyCard {
   return {
     ...row,
     rationale: row.rationale ?? '',
-    checkpoints: (row.checkpoints ?? []),
-    resources: (row.resources ?? []),
+    checkpoints: objectsOf<StudyCheckpoint>(row.checkpoints),
+    resources: objectsOf<StudyResource>(row.resources),
     // Branch per quiz kind so TS keeps each member's userAnswer type narrow.
-    quiz: ((row.quiz ?? [])).map(q =>
+    quiz: objectsOf<StudyQuizQuestion>(row.quiz).flatMap<StudyQuizQuestion>(q =>
       q.kind === 'choice'
-        ? { ...q, userAnswer: q.userAnswer ?? null }
-        : { ...q, userAnswer: q.userAnswer ?? null },
+        ? (Array.isArray(q.options) ? [{ ...q, userAnswer: q.userAnswer ?? null }] : [])
+        : [{ ...q, userAnswer: q.userAnswer ?? null }],
     ),
   }
 }
+
+// Datas e versão do tópico vêm do servidor (gatilho study_topics_rules).
+const SERVER_TOPIC_FIELDS = { updated_at: true, started_at: true, completed_at: true }
 
 export function useStudyTopics(userId: string | undefined) {
   const [topics, setTopicsState] = useState<StudyTopic[]>([])
@@ -230,9 +242,21 @@ export function useStudyTopics(userId: string | undefined) {
     await runOptimistic({
       label: 'updateTopic',
       apply: () => setTopics(prev => prev.map(topic => (topic.id === id ? { ...topic, ...full } : topic))),
-      // .select('id') porque um UPDATE barrado por RLS resolve com error: null e
-      // zero linhas — sucesso fantasma indistinguivel de gravacao real.
-      write: async () => requireRows(await supabase.from('study_topics').update(full).eq('id', id).select('id')),
+      // .select() porque um UPDATE barrado por RLS resolve com error: null e
+      // zero linhas — sucesso fantasma indistinguivel de gravacao real. API-021:
+      // o servidor recalcula as datas e a versao; elas voltam no mesmo
+      // round-trip e entram so as que vieram, se nenhuma edicao mais nova
+      // pousou no meio.
+      write: async () => {
+        const res = requireRows(await supabase.from('study_topics').update(full).eq('id', id).select('id, updated_at, started_at, completed_at'))
+        const row = res.error ? undefined : res.data?.[0]
+        if (row) {
+          setTopics(prev => revertFields<StudyTopic>(prev, id, pickFields(row, SERVER_TOPIC_FIELDS), {
+            onlyIf: topic => fieldsUnchanged(topic, full),
+          }))
+        }
+        return res
+      },
       // Guard: se os campos ja nao valem o que aplicamos, uma edicao mais nova
       // pousou no meio — reverter aqui apagaria o trabalho do usuario.
       revert: () => setTopics(prev => revertFields(prev, id, before, {
@@ -285,14 +309,15 @@ export function useStudyTopics(userId: string | undefined) {
     setCards(prev => ({ ...prev, [topicId]: [...(prev[topicId] ?? []), card] }))
   }, [userId, setCards, toastWriteError])
 
-  const updateCard = useCallback(async (cardId: string, patch: StudyCardPatch) => {
+  // `true` = gravou (o card só limpa os campos de adicionar depois disso).
+  const updateCard = useCallback(async (cardId: string, patch: StudyCardPatch): Promise<boolean> => {
     const found = findInGroups(cardsRef.current, cardId)
-    if (!found) return
+    if (!found) return false
     const { groupId: topicId, row: before } = found
     const updated_at = new Date().toISOString()
     const applied: Partial<StudyCard> = { ...patch, updated_at }
     const snapshot = pickFields(before, patch, ['updated_at'])
-    await runOptimistic({
+    return runOptimistic({
       label: 'updateCard',
       // So o array do topico dono e reconstruido (a versao anterior rebuildava
       // o mapa inteiro a cada tecla do autosave).

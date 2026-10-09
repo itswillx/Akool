@@ -69,8 +69,8 @@ linha a linha na migration `20260925191300`). O trigger
 | `finance_goals` | workspace, via `finance_goal_shares` emitido pelo dono da meta (API-012) | own | — | — | `trg_finance_goals_ws_guard` |
 | `finance_goal_shares` | invitee (`shared_with_user_id`) | own, e só de meta própria (`finance_goal_owned`, API-012); **sem UPDATE** (sem policy nem grant: outro alvo é outro share) | — | — | nenhum (goal sharing é pessoa-a-pessoa, sem workspace) |
 | `finance_goal_contributions` | quem vê a meta vê os aportes: dono da meta, invitee com share válido e membros do workspace (API-012) | own; invitee e membro do workspace também podem INSERT; UPDATE só em `amount`, `note` e `date` (grant por coluna: `goal_id` e `user_id` travados, API-012). Aporte pelo app: `finance_goal_contribute` | — | — | nenhum |
-| `finance_recurring` | workspace | own | — | — | `trg_finance_recurring_ws_guard` |
-| `finance_recurring_entries` | via `finance_recurring.workspace_id` (subquery) | own | — | — | nenhum próprio (herda da recorrência pai) |
+| `finance_recurring` | workspace | own | — | — | `trg_finance_recurring_ws_guard`; `finance_recurring_day_moved` (AFTER UPDATE OF `day_of_month`, API-016): move para o dia novo os pendentes sem transação do mês atual de São Paulo em diante, um por vez, e o que colidiria fica. Vale também sem usuário (é padrão da linha, não validação) |
+| `finance_recurring_entries` | via `finance_recurring.workspace_id` (subquery) | own. INSERT, ou troca de `recurring_id`/`user_id`, só em recorrente da própria pessoa: o gatilho fecha a pré-ocupação do mês por outro membro (API-016). UPDATE só em `status`, `amount` e `transaction_id` (grant por coluna: `recurring_id`, `user_id` e `due_date` travados). Passar para `paid` exige `transaction_id` da própria pessoa. Pelo app, pagar e pular vão por `finance_mark_entry_paid` e `finance_skip_entry` (INVOKER), e os lançamentos do mês e do seguinte nascem no servidor (`finance_materialize_recurring` e o cron `finance-recurring-materialize`) | — | — | `finance_recurring_entries_guard` (BEFORE INSERT/UPDATE, `private.finance_recurring_entry_guard`; pula sem usuário: restore e cron) |
 | `finance_transactions` | workspace, `shared_with_user_id` | own | workspace | workspace | `trg_finance_transactions_ws_guard` |
 
 `finance_guard_workspace()` (versionada em `20260708120000_sec_finance_workspace_integrity.sql`)
@@ -114,7 +114,7 @@ já versionadas (`finance_store_module.sql`/`finance_projects_module.sql`/
 | Tabela | Operação | Quem |
 |---|---|---|
 | `quick_notes` | SELECT/INSERT/UPDATE/DELETE | own; `updated_at` é do servidor (gatilho `quick_notes_updated_at`, API-003) e serve de versão: o app grava condicionado a ela |
-| `study_topics` / `study_cards` / `study_logs` | SELECT/INSERT/UPDATE/DELETE | own |
+| `study_topics` / `study_cards` / `study_logs` | SELECT/INSERT/UPDATE/DELETE | own. Card e diário só em tópico do mesmo dono: os gatilhos `study_cards_rules` e `study_logs_rules` (API-021) dão P0002 "Tópico não encontrado", igual para tópico alheio e inexistente. A forma dos JSON de `study_cards` é conferida pelo gatilho (só a coluna que mudou) e pelas CHECK `study_cards_resources_safe`/`study_cards_json_arrays`, que valem também sem usuário. `started_at`, `completed_at` e `updated_at` são do servidor (sem usuário, um UPDATE que mude só o `updated_at` guarda o valor: é o conserto à mão de versão no futuro). O `sort_order` é escolhido pelo cliente; sem valor no INSERT, o gatilho põe max+1 entre os cards do mesmo dono no tópico. A posição não é única: duas abas ou dois INSERTs simultâneos podem repetir o valor |
 | `site_backups` / `site_backup_settings` | SELECT | admin apenas |
 | `site_backups` / `site_backup_settings` | INSERT/UPDATE/DELETE | **nenhuma policy** | só `service_role` (edge function `site-backup`) escreve |
 | `profile_secrets` | qualquer operação | **RLS habilitado, zero policies** | intencional: só `service_role` acessa (chaves de API de IA); ver advisory `rls_enabled_no_policy` — não é um gap, é o desenho |
@@ -240,6 +240,7 @@ Todas revisadas pelo advisor do Supabase como "callable by authenticated/anon"
 | `create_workspace`/`invite_member`/`accept_workspace_invite`/`decline_workspace_invite`/`remove_workspace_member`/`leave_workspace` | operações multi-tabela com invariantes (ex.: 1 workspace por usuário) que não dá pra expressar só com RLS |
 | `bootstrap_finance_categories`/`bootstrap_workspace_categories` | seed de categorias padrão no primeiro uso; rodar de novo não duplica nem recria o que a pessoa apagou (API-012) |
 | `finance_goal_contribute` | aporte atômico: grava, soma no servidor e conclui a meta ao atingir o alvo, mesmo quando quem aporta não é o dono (API-012) |
+| `finance_materialize_recurring(p_today, p_month)` | API-016: gera, só para os recorrentes de quem chama, os lançamentos do mês e do seguinte e os orçamentos automáticos. O mês vem da data do aparelho, limitada a ±1 dia do hoje de São Paulo (`private.finance_clamp_today`). `p_month`, o mês visto na tela e opcional, soma só os orçamentos automáticos desse mês, a até 12 meses do mês de São Paulo (mais longe é ignorado), e nunca cria lançamento nele. Orçamento automático nasce na janela (o mês do aparelho e o seguinte) nos mesmos meses que a conta. Fora da janela, nunca nasce antes do mês de criação do recorrente (em São Paulo). Em nenhum caso nasce fora das parcelas de um parcelado; sem nenhum lançamento ainda, a 1ª parcela conta no 1º mês da janela, também quando outro membro do workspace chama. No workspace, sai do recorrente mais antigo entre os de todos os membros, em nome do dono dele, como no cron. Devolve todos os lançamentos da pessoa na janela e todos os orçamentos dos meses tratados que ela enxerga (os pessoais e os dos workspaces de que é membro), criados agora ou antes. É DEFINER porque o núcleo `private.finance_materialize_core` não tem EXECUTE para clientes. O cron chama `private.finance_materialize_all()`, que materializa para todos e, quando algo falha, avisa os admins por `_notify` (tipo `finance_recurring_failed`, no máximo 1 por dia) |
 | `_notify` | único caminho de escrita em `notifications` (que não tem policy de INSERT). Desde a `notif001`, um gatilho BEFORE INSERT (`private.notification_enrich`) completa a `data` com `actor_name` e `workspace_name`, e três gatilhos chamam `_notify`: compartilhar página (`page_shares`), compartilhar quadro (`project_shares`) e atribuir card (`project_cards.assignee_user_id`), só quando há um usuário autenticado agindo e ele não é o destinatário |
 | `handle_new_user`/`handle_invite_code_on_signup` | disparam em `auth.users` (trigger), fora do controle de RLS do app |
 
@@ -252,12 +253,12 @@ Migration `20260928145254_sec012_grants_hardening.sql`. Verificação:
 `supabase/checks/sec012-grants.sql` (transação desfeita). Depois dela, o
 advisor passou a listar 34 funções `SECURITY DEFINER` para `authenticated` (eram 54)
 e só a `validate_invite_code` para `anon`. Com o API-001 (05/10/2026) eram 37; com o
-API-012 (07/10/2026) são **39**, todas intencionais:
+API-012 (07/10/2026) eram 39; com o API-016 (08/10/2026) são **40**, todas intencionais:
 
 | Grupo | Funções | Por que continuam com EXECUTE para `authenticated` |
 |---|---|---|
 | Helpers de RLS (11) | `page_is_readable`, `page_is_writable`, `current_user_can_share_page`, `user_can_access_board`, `is_admin`, `is_workspace_member`, `profile_is_related`, `loan_is_owner`, `loan_is_visible`, `loan_file_is_readable`, `finance_goal_owned` (API-012: a policy de share não pode ler `finance_goals` direto, que lê os shares → recursão 42P17) | a política roda como quem consulta: sem o EXECUTE, o RLS quebra. Tirá-las da API exige movê-las para o schema `private` e refazer as políticas (card à parte) |
-| RPCs do frontend (28) | convites (`generate_invite_code`, `validate_invite_code`, `admin_add_invite_slots`, `admin_revoke_invite_code`), workspaces (`create_workspace`, `invite_member`, `accept_/decline_workspace_invite`, `remove_workspace_member`, `leave_workspace`, `bootstrap_*_categories`), `create_project_board`, `search_users_for_share`, perfil (`get_my_profile`, `admin_list_profiles`), tokens (`create_api_token`, `revoke_api_token`, `update_api_token_scopes`, `revoke_all_my_api_tokens`, `delete_api_token`), aporte de meta (`finance_goal_contribute`) e a fila no `QueueModal` (`cq_list`, `cq_enqueue`, `cq_move`, `cq_remove`, `cq_reprioritize`, `cq_validate`) | chamadas com o JWT do usuário; cada uma confere quem chama. As de token recusam claims de token da API (API-001) |
+| RPCs do frontend (29) | convites (`generate_invite_code`, `validate_invite_code`, `admin_add_invite_slots`, `admin_revoke_invite_code`), workspaces (`create_workspace`, `invite_member`, `accept_/decline_workspace_invite`, `remove_workspace_member`, `leave_workspace`, `bootstrap_*_categories`), `create_project_board`, `search_users_for_share`, perfil (`get_my_profile`, `admin_list_profiles`), tokens (`create_api_token`, `revoke_api_token`, `update_api_token_scopes`, `revoke_all_my_api_tokens`, `delete_api_token`), aporte de meta (`finance_goal_contribute`), recorrentes (`finance_materialize_recurring`, API-016) e a fila no `QueueModal` (`cq_list`, `cq_enqueue`, `cq_move`, `cq_remove`, `cq_reprioritize`, `cq_validate`) | chamadas com o JWT do usuário; cada uma confere quem chama. As de token recusam claims de token da API (API-001) |
 
 **Só `service_role`** (sem EXECUTE para `anon`/`authenticated`):
 - `cq_block`, `cq_boards`, `cq_card`, `cq_cards`, `cq_check`, `cq_complete`, `cq_next`, `cq_note`, `cq_release`, `cq_setup_flow`, `cq_start`: só a `cards-api` usa;
@@ -273,6 +274,21 @@ API-012 (07/10/2026) são **39**, todas intencionais:
 - tabelas novas criadas por `postgres` já nascem assim (privilégio padrão). Funções novas de `postgres` nascem sem EXECUTE para `anon`/`authenticated`. O padrão de `supabase_admin` continua aberto, e só ele muda.
 
 **RPCs `SECURITY INVOKER` do kanban (PERF-004, 28/09/2026):** `reorder_project_cards`, `reorder_project_columns` e `schedule_project_cards` gravam a ordem e as datas numa requisição, com um UPDATE só (tudo ou nada). Rodam como quem chama, então o RLS de edição do quadro (`user_can_access_board` editor) vale linha a linha. Recusam coluna de outro quadro e erram se alguma linha não foi gravada. EXECUTE só para `authenticated`. Não entram na conta do advisor, que só lista `SECURITY DEFINER`.
+
+**RPCs `SECURITY INVOKER` de recorrentes (API-016, 08/10/2026):** `finance_mark_entry_paid(p_entry, p_amount_cents, p_date, p_account)` e `finance_skip_entry(p_entry)` valem só para o dono do lançamento e travam o recorrente antes do lançamento. Pagar faz tudo numa transação:
+- cria a transação, herdando o `workspace_id` só se o dono ainda for membro;
+- marca o lançamento como pago;
+- encerra o parcelado quando pagas + puladas ≥ parcelas.
+
+EXECUTE só para `authenticated`. As funções novas em `private` (`finance_materialize_core`, `finance_materialize_all`, `finance_recurring_due_date` e `finance_clamp_today`) não têm EXECUTE para `anon`/`authenticated`. Os gatilhos `finance_recurring_entry_guard` e `finance_recurring_day_moved` também não têm, mas são SECURITY DEFINER e disparam nas gravações de `authenticated`: entram no inventário do API-007 (§2.4 de `docs/api-arquitetura.md`).
+
+**Estudos (API-021, 08/10/2026):**
+- `private.study_card_rules` é SECURITY DEFINER: chama as funções de forma e lê o tópico de qualquer dono, para a mensagem não revelar se ele existe;
+- `private.study_log_rules` também é SECURITY DEFINER, para que um token só com `estudos.diario` grave diário no próprio tópico sem ler `study_topics`. Prova no bloco 2 de `supabase/checks/api021-study.sql`, só no staging: uma RESTRICTIVE de SELECT em `study_topics` (criada e desfeita na transação) deixa o tópico invisível. O dono grava diário no próprio tópico, e o tópico alheio e o inexistente continuam com o mesmo P0002;
+- `private.study_topic_rules` é INVOKER;
+- as funções de forma (`private.study_checkpoints_problem`, `study_resources_problem`, `study_quiz_problem`, `study_blocks_problem`, `study_json_index` e `study_without_progress`) são imutáveis e sem EXECUTE para clientes.
+
+Nada disso muda a conta do advisor.
 
 **Função nova exposta pela API:** dê `grant execute … to authenticated` na própria migration, só se o frontend chamar com o JWT do usuário, e confira quem chama dentro dela com `coalesce(..., false)` ou `public.is_admin()`, nunca com `!= 'admin'` solto (vira NULL sem linha em `profiles`; era o caso da `generate_invite_code`, corrigida no SEC-012).
 

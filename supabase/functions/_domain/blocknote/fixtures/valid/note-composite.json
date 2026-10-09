@@ -1,0 +1,205 @@
+[
+  {
+    "id": "62a58740-900f-4587-8eb9-3b59cec5428e",
+    "type": "heading",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "level": 1,
+      "isToggleable": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Título 1",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "e56140b2-0b49-438f-aeb0-57e7fb362802",
+    "type": "heading",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "level": 2,
+      "isToggleable": true
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Título 2",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "c384d2dd-eae4-4462-93f7-f9a30ca94e19",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "blue",
+      "textAlignment": "center"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Olá, ",
+        "styles": {
+          "bold": true
+        }
+      },
+      {
+        "type": "text",
+        "text": "mundo",
+        "styles": {
+          "italic": true,
+          "textColor": "red"
+        }
+      },
+      {
+        "type": "link",
+        "href": "https://exemplo.com/caminho?q=1",
+        "content": [
+          {
+            "type": "text",
+            "text": "um link",
+            "styles": {}
+          }
+        ]
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "160b99cb-c740-40e0-8bb3-becf0f827559",
+    "type": "diagram",
+    "props": {
+      "elements": "[{\"id\":\"ret-1\",\"type\":\"rectangle\",\"x\":10,\"y\":10,\"width\":120,\"height\":60,\"angle\":0,\"strokeColor\":\"#1e1e1e\",\"backgroundColor\":\"transparent\",\"fillStyle\":\"solid\",\"strokeWidth\":2,\"strokeStyle\":\"solid\",\"roughness\":1,\"opacity\":100,\"groupIds\":[],\"frameId\":null,\"index\":\"a0\",\"roundness\":{\"type\":3},\"seed\":1,\"version\":3,\"versionNonce\":7,\"isDeleted\":false,\"boundElements\":null,\"updated\":1,\"link\":null,\"locked\":false},{\"id\":\"seta-1\",\"type\":\"arrow\",\"x\":140,\"y\":40,\"width\":80,\"height\":0,\"angle\":0,\"strokeColor\":\"#1e1e1e\",\"backgroundColor\":\"transparent\",\"fillStyle\":\"solid\",\"strokeWidth\":2,\"strokeStyle\":\"solid\",\"roughness\":1,\"opacity\":100,\"groupIds\":[],\"frameId\":null,\"index\":\"a0\",\"roundness\":null,\"seed\":1,\"version\":3,\"versionNonce\":7,\"isDeleted\":false,\"boundElements\":null,\"updated\":1,\"link\":null,\"locked\":false,\"points\":[[0,0],[80,0]],\"lastCommittedPoint\":null,\"startBinding\":null,\"endBinding\":null,\"startArrowhead\":null,\"endArrowhead\":\"arrow\",\"elbowed\":false},{\"id\":\"txt-1\",\"type\":\"text\",\"x\":240,\"y\":25,\"width\":120,\"height\":60,\"angle\":0,\"strokeColor\":\"#1e1e1e\",\"backgroundColor\":\"transparent\",\"fillStyle\":\"solid\",\"strokeWidth\":2,\"strokeStyle\":\"solid\",\"roughness\":1,\"opacity\":100,\"groupIds\":[],\"frameId\":null,\"index\":\"a0\",\"roundness\":null,\"seed\":1,\"version\":3,\"versionNonce\":7,\"isDeleted\":false,\"boundElements\":null,\"updated\":1,\"link\":null,\"locked\":false,\"text\":\"Fim\",\"fontSize\":20,\"fontFamily\":5,\"textAlign\":\"left\",\"verticalAlign\":\"top\",\"containerId\":null,\"originalText\":\"Fim\",\"autoResize\":true,\"lineHeight\":1.25}]",
+      "appState": "{\"viewBackgroundColor\":\"#ffffff\",\"zoom\":{\"value\":1},\"scrollX\":0,\"scrollY\":0}",
+      "collapsed": "false"
+    },
+    "children": []
+  },
+  {
+    "id": "0270da6f-1228-48e6-9a41-ca6f9cb3bbf2",
+    "type": "projectCard",
+    "props": {
+      "cardId": "00000000-0000-4000-c000-000000000001",
+      "boardId": "00000000-0000-4000-d000-000000000001",
+      "snapshot": "{\"title\":\"Revisar o roteiro 😀\",\"description\":\"Ler o **resumo** e marcar dúvidas.\",\"priority\":\"high\",\"startDate\":\"2026-10-01\",\"dueDate\":\"2026-10-20\",\"labels\":[\"estudo\",\"revisão\",\"ação\"],\"checklist\":[{\"text\":\"Capítulo 1\",\"completed\":true},{\"text\":\"Capítulo 2\",\"completed\":false}],\"completed\":false,\"columnName\":\"A fazer\",\"boardName\":\"Quadro de exemplo\",\"boardIcon\":\"📚\",\"boardColor\":\"#6366f1\"}"
+    },
+    "children": []
+  },
+  {
+    "id": "c1e28216-f204-414e-8c05-9fabee6b0e74",
+    "type": "table",
+    "props": {
+      "textColor": "default"
+    },
+    "content": {
+      "type": "tableContent",
+      "columnWidths": [
+        160,
+        null
+      ],
+      "headerRows": 1,
+      "rows": [
+        {
+          "cells": [
+            {
+              "type": "tableCell",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Coluna",
+                  "styles": {}
+                }
+              ],
+              "props": {
+                "colspan": 1,
+                "rowspan": 1,
+                "backgroundColor": "default",
+                "textColor": "default",
+                "textAlignment": "left"
+              }
+            },
+            {
+              "type": "tableCell",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Valor",
+                  "styles": {}
+                }
+              ],
+              "props": {
+                "colspan": 1,
+                "rowspan": 1,
+                "backgroundColor": "default",
+                "textColor": "default",
+                "textAlignment": "left"
+              }
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "tableCell",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "a",
+                  "styles": {}
+                }
+              ],
+              "props": {
+                "colspan": 1,
+                "rowspan": 1,
+                "backgroundColor": "default",
+                "textColor": "default",
+                "textAlignment": "left"
+              }
+            },
+            {
+              "type": "tableCell",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "b",
+                  "styles": {
+                    "code": true
+                  }
+                }
+              ],
+              "props": {
+                "colspan": 1,
+                "rowspan": 1,
+                "backgroundColor": "default",
+                "textColor": "default",
+                "textAlignment": "left"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "children": []
+  },
+  {
+    "id": "03c4bd34-4c55-4daa-8d0f-e4879b09de7a",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [],
+    "children": []
+  }
+]

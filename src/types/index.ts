@@ -320,6 +320,7 @@ export type NotificationType =
   | 'member_joined'
   | 'member_left'
   | 'backup_stale'
+  | 'finance_recurring_failed'
   | 'page_shared'
   | 'board_shared'
   | 'card_assigned'
@@ -534,6 +535,10 @@ export interface StudyResource {
   id: string
   title: string
   url: string
+  // Legacy keys from the old resource lookup (removed in SEC-015); the server
+  // still accepts them (API-021) and the app never writes them.
+  license?: string | null
+  licenseUrl?: string | null
 }
 
 // Stored in Portuguese as data (same rationale as STUDY_LEVELS — the value is
@@ -558,7 +563,8 @@ export interface StudyQuizChoiceQuestion {
   kind: 'choice'
   id: string
   statement: string
-  // 2-5 alternatives in generated order (typically 4, rendered A-D).
+  // 2-10 alternatives (server limit, API-021) in generated order; the prompt
+  // asks for 4, rendered A-D.
   options: string[]
   // Index of the correct alternative in `options`.
   answer: number

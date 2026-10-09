@@ -1,0 +1,37 @@
+[
+  {
+    "id": "0ffb4b2d-b4c3-46dc-b1b6-58fa799840cd",
+    "type": "numberedListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "start": 3
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "três",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "9c7db9bc-1050-4701-aabc-9b0c7474c218",
+    "type": "numberedListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "quatro",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]
