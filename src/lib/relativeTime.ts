@@ -55,3 +55,8 @@ export function dayGroup(date: Date, now: Date): DayGroup {
 export function exactDateTime(date: Date, lang: Lang): string {
   return new Intl.DateTimeFormat(localeOf(lang), { dateStyle: 'long', timeStyle: 'short' }).format(date)
 }
+
+/** Um dia do calendário ('AAAA-MM-DD'), sem hora nem fuso: '2026-10-08' é 8 de outubro em qualquer lugar. */
+export function exactDay(isoDate: string, lang: Lang): string {
+  return new Intl.DateTimeFormat(localeOf(lang), { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${isoDate}T00:00:00Z`))
+}

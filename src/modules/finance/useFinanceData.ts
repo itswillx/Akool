@@ -7,58 +7,12 @@ import { fetchAllRows, type AllRowsResult, type ReadError } from '../../lib/fetc
 import {
 FINANCE_TX_AGG_COLUMNS, type FinanceTxAgg
 } from '../../lib/financeCalc'
+import { deviceToday, materializeRecurring, type MaterializedRecurring } from '../../lib/data/financeRecurring'
 import { firstError } from '../../lib/optimistic'
 import { supabase } from '../../lib/supabase'
 import type { FinanceAccount, FinanceBudget, FinanceCategory, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceTransaction, FinanceWorkspace, FinanceWorkspaceInvite, FinanceWorkspaceMember } from '../../types'
 import { currentYM, nextMonth, prevMonth } from './financeFormat'
-import { mergePendingInvites, mergeRecurringEntries, needsCategoryBootstrap, withCategory } from './financeLoad'
-
-// ─── Recurring entry generation ───────────────────────────────────────────────
-
-async function ensureRecurringEntries(
-  items: FinanceRecurring[],
-  existing: FinanceRecurringEntry[],
-  userId: string,
-): Promise<FinanceRecurringEntry[]> {
-  const existingKeys = new Set(existing.map(e => `${e.recurring_id}|${e.due_date}`))
-  const now = new Date()
-  const toInsert: Omit<FinanceRecurringEntry, 'id' | 'created_at'>[] = []
-
-  for (const item of items) {
-    if (!item.active) continue
-    const existingCount = existing.filter(e => e.recurring_id === item.id).length
-    for (let offset = 0; offset <= 1; offset++) {
-      const insertedForItem = toInsert.filter(e => e.recurring_id === item.id).length
-      if (item.total_installments != null && existingCount + insertedForItem >= item.total_installments) break
-      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1)
-      const year = d.getFullYear()
-      const month = d.getMonth() + 1
-      const lastDay = new Date(year, month, 0).getDate()
-      const day = Math.min(item.day_of_month, lastDay)
-      const dueDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-      const key = `${item.id}|${dueDate}`
-      if (!existingKeys.has(key)) {
-        toInsert.push({ user_id: userId, recurring_id: item.id, due_date: dueDate, status: 'pending', amount: null, transaction_id: null })
-      }
-    }
-  }
-
-  if (toInsert.length === 0) return []
-  // PERF-003: duas abas (ou dois aparelhos) abrindo juntas criariam a mesma
-  // parcela; a constraint única (recurring_id, due_date) recusava uma delas e
-  // o erro derrubava o lote todo. Com ignoreDuplicates, a repetida é pulada e
-  // o retorno traz só as criadas, sem reler a tabela.
-  // REL-004: na falha, nada foi criado; registra e a próxima carga tenta de novo.
-  const { data, error } = await supabase
-    .from('finance_recurring_entries')
-    .upsert(toInsert, { onConflict: 'recurring_id,due_date', ignoreDuplicates: true })
-    .select('*')
-  if (error) {
-    console.error('[finance] recurring entries insert failed', error)
-    return []
-  }
-  return (data) ?? []
-}
+import { mergeById, mergePendingInvites, mergeRecurringEntries, needsCategoryBootstrap, splitMaterializedBudgets, withCategory } from './financeLoad'
 
 // ─── On-demand full-history fetch ──────────────────────────────────────────────
 // `useFinanceData` only keeps a month window + a lean aggregate in state now.
@@ -140,6 +94,12 @@ export function useFinanceData() {
   const [txAggWorkspace, setTxAggWorkspace] = useState<FinanceTxAgg[]>([])
   const [loadedRange, setLoadedRangeState] = useState<{ min: string; max: string } | null>(null)
   const [loading, setLoading] = useState(true)
+  // API-016: o mês da data do aparelho da última carga ou da última
+  // materialização aplicada, ou seja, a janela do servidor (esse mês e o
+  // seguinte) que está no estado. O mês visto decide por ele se pede os
+  // orçamentos, e a virada do mês com a tela aberta se mede contra ele
+  // (useViewedMonthBudgets), não contra o relógio.
+  const [materializedYM, setMaterializedYM] = useState<string | null>(null)
 
   // REL-003: falha ao ler transações não vira "zero transações" em silêncio:
   // avisa e mantém na tela o que já estava carregado. Ref para `load` não
@@ -266,8 +226,7 @@ export function useFinanceData() {
   // Targeted transactions-only refresh (own/shared/workspace window + the
   // all-time aggregates), reusing the same two fetchers `load()` uses. Used
   // by the `finance_transactions_changed` listener (an external write from
-  // the store submodule whose content isn't known here) and as a fallback
-  // reconciliation path when `doMarkPaid` fails partway through.
+  // the store submodule whose content isn't known here).
   const refetchTransactions = useCallback(async () => {
     if (!userId) return
     const wsId = workspace?.id ?? null
@@ -284,18 +243,20 @@ export function useFinanceData() {
     setTxAggWorkspace(agg.workspace)
   }, [userId, workspace, fetchTxWindow, fetchTxAggregates, warnTxLoadFailed])
 
-  // Targeted recurring + recurring-entries refresh — fallback reconciliation
-  // path when `doMarkPaid`'s multi-write sequence fails partway through and
-  // it's unclear which of the writes actually landed server-side.
-  const refetchRecurringAndEntries = useCallback(async () => {
-    if (!userId) return
-    const [recs, rEnts] = await Promise.all([
-      supabase.from('finance_recurring').select('*').eq('user_id', userId).order('created_at'),
-      supabase.from('finance_recurring_entries').select('*').eq('user_id', userId).order('due_date'),
-    ])
-    setRecurring(recs.data ?? [])
-    setRecurringEntries(rEnts.data ?? [])
-  }, [userId])
+  // API-016: o que a materialização do servidor devolveu (os lançamentos da
+  // janela e todos os orçamentos dos meses tratados), mesclado por id. Os da
+  // pessoa vão para `budgets`; os do workspace aberto, de qualquer membro,
+  // para os da família. Usado depois de salvar um recorrente e ao ver um mês
+  // fora da janela e na virada do mês (useViewedMonthBudgets). `today` é o
+  // p_today da chamada: toda chamada materializa a janela dele, que passa a
+  // ser a do estado.
+  const applyMaterialized = useCallback((result: MaterializedRecurring, today?: string) => {
+    const { own, family } = splitMaterializedBudgets(result.budgets, userId, workspace?.id)
+    setRecurringEntries(prev => mergeRecurringEntries(prev, result.entries))
+    setBudgets(prev => mergeById(prev, own))
+    setFamilyBudgets(prev => mergeById(prev, family))
+    if (today) setMaterializedYM(today.slice(0, 7))
+  }, [userId, workspace])
 
   // `silent` refreshes the data without flipping `loading` — flipping it would
   // unmount every tab below (see the userId comment above). Used when another
@@ -322,6 +283,8 @@ export function useFinanceData() {
     const seq = ++loadSeqRef.current
     const stale = () => seq !== loadSeqRef.current
     if (!silent) { setLoading(true); setLoadError(false) }
+    // A data do aparelho da carga: a mesma para os orçamentos lidos e a RPC.
+    const today = deviceToday()
 
     // Reuse the already-loaded window on a reload (never shrink it back to
     // the default ±1 month); only a fresh mount has no window yet.
@@ -409,23 +372,33 @@ export function useFinanceData() {
     wsInvites.forEach(inv => { if (inv.invited_by !== userId) partnerIdSet.add(inv.invited_by) })
     partnerIdSet.delete(userId)
 
-    // Lote 3: perfis dos parceiros e as parcelas de recorrência do mês.
+    // Lote 3: perfis dos parceiros e, com algum recorrente ativo, a
+    // materialização no servidor (API-016): os lançamentos do mês e do seguinte
+    // e os orçamentos automáticos, na data do aparelho. Ela devolve a janela
+    // inteira (todos os lançamentos da pessoa e todos os orçamentos dos dois
+    // meses que ela enxerga, criados agora ou antes), então o que o cron ou
+    // outra aba criou depois do lote 1 também entra.
     const recItems = recs.data ?? []
     const existingEntries = rEnts.data ?? []
-    const [profs, createdEntries] = await Promise.all([
+    const [profs, materialized] = await Promise.all([
       partnerIdSet.size > 0
         ? supabase.from('profiles').select('id, email, display_name, avatar_emoji, avatar_color, avatar_url').in('id', [...partnerIdSet])
         : Promise.resolve({ data: [] as PartnerProfile[], error: null }),
-      recItems.length > 0 ? ensureRecurringEntries(recItems, existingEntries, userId) : Promise.resolve([] as FinanceRecurringEntry[]),
+      recItems.some(r => r.active) ? materializeRecurring(today) : Promise.resolve(null),
     ])
     if (stale()) return
     if (profs.error) { failLoad(profs.error, silent); return }
+    // REL-004: falha na materialização só vai para o log; a carga segue com o
+    // que já existe e o cron cobre à noite.
+    if (materialized?.error) console.error('[finance] recurring materialize failed', materialized.error)
+    const fromServer: MaterializedRecurring = materialized?.data ?? { entries: [], budgets: [] }
+    const serverBudgets = splitMaterializedBudgets(fromServer.budgets, userId, wsId)
     const profilesMap = new Map<string, PartnerProfile>()
     ;(profs.data ?? []).forEach(p => profilesMap.set(p.id, p))
 
     setAccounts(accs.data ?? [])
     setCategories(personalCats)
-    setBudgets(withCategory(buds.data))
+    setBudgets(mergeById(withCategory(buds.data), serverBudgets.own))
     setGoals(gls.data ?? [])
     setContributions(
       (ctbs.data ?? []).map(c =>
@@ -453,12 +426,15 @@ export function useFinanceData() {
     setWorkspaceMembers(wsMembers.map(m => ({ ...m, profile: m.user_id === userId ? { email: userEmail ?? '', display_name: null } : (profilesMap.get(m.user_id) ?? undefined) })))
     setWorkspaceInvites(wsInvites.map(inv => ({ ...inv, inviter_profile: profilesMap.get(inv.invited_by) ?? undefined })))
     setPendingInvitesForMe(mergePendingInvites(byUserRes.data, byEmailRes.data))
-    setFamilyBudgets(wsBuds)
+    setFamilyBudgets(mergeById(wsBuds, serverBudgets.family))
     setFamilyAccounts(wsAccs)
     setFamilyCategories(wsCats)
 
     setRecurring(recItems)
-    setRecurringEntries(mergeRecurringEntries(existingEntries, createdEntries))
+    setRecurringEntries(mergeRecurringEntries(existingEntries, fromServer.entries))
+    // Mesmo se a materialização falhou: o estado tem os orçamentos lidos nesta
+    // data, e a virada do mês se mede contra ela (e tenta de novo).
+    setMaterializedYM(today.slice(0, 7))
     setLoadError(false)
     setLoading(false)
   }, [userId, userEmail, fetchTxWindow, fetchTxAggregates, setLoadedRange, failLoad])
@@ -497,6 +473,6 @@ export function useFinanceData() {
     // write's own response directly via these setters instead of calling
     // `reload` (which re-derives all ~20 arrays above from ~15+ queries).
     setAccounts, setCategories, setTransactions, setBudgets, setGoals, setContributions, setGoalShares, setSharedTransactions, setSharedBudgets, setPartnerProfiles, setRecurring, setRecurringEntries, setFamilyBudgets, setFamilyAccounts, setFamilyCategories, setTxAggOwn, setTxAggShared, setTxAggWorkspace,
-    applyTxUpsert, applyTxRemove, resolvePartnerProfile, refetchTransactions, refetchRecurringAndEntries,
+    applyTxUpsert, applyTxRemove, resolvePartnerProfile, refetchTransactions, applyMaterialized, materializedYM,
   }
 }

@@ -10,11 +10,11 @@
 -- migration 20260928145254_sec012_grants_hardening.sql:
 --   - anon: só SELECT nas tabelas; authenticated sem TRUNCATE, TRIGGER,
 --     REFERENCES e MAINTAIN, e sem escrever no audit_log;
---   - 39 funções SECURITY DEFINER para authenticated (11 helpers de RLS + 28
+--   - 40 funções SECURITY DEFINER para authenticated (11 helpers de RLS + 29
 --     RPCs do frontend; eram 34 até o API-001, que somou update_api_token_scopes,
---     revoke_all_my_api_tokens e delete_api_token, e o API-012 somou
---     finance_goal_owned e finance_goal_contribute) e só a validate_invite_code
---     para anon;
+--     revoke_all_my_api_tokens e delete_api_token, o API-012 somou
+--     finance_goal_owned e finance_goal_contribute, e o API-016 somou
+--     finance_materialize_recurring) e só a validate_invite_code para anon;
 --   - os ataques "bloqueado" e os fluxos legítimos "ok".
 do $check$
 declare
@@ -48,7 +48,7 @@ begin
   -- Funções SECURITY DEFINER expostas pela API.
   select count(*) into n from pg_proc
   where pronamespace = 'public'::regnamespace and prosecdef and has_function_privilege('authenticated', oid, 'execute');
-  out := out || format('funcoes SECURITY DEFINER para authenticated: %s (esperado 39)', n);
+  out := out || format('funcoes SECURITY DEFINER para authenticated: %s (esperado 40)', n);
   select string_agg(proname, ',') into msg from pg_proc
   where pronamespace = 'public'::regnamespace and prosecdef and has_function_privilege('anon', oid, 'execute');
   out := out || format('funcoes SECURITY DEFINER para anon: %s', msg);

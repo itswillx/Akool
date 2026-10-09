@@ -1,6 +1,6 @@
 import type { Lang, TranslationKey } from '../i18n/translations'
 import type { AppNotification } from '../types'
-import { exactDateTime } from './relativeTime'
+import { exactDateTime, exactDay } from './relativeTime'
 
 // NOTIF-001: o que o app sabe de cada tipo de notificação: categoria (filtro e
 // preferência de aviso), ícone e tom, o texto no idioma de quem lê (a partir de
@@ -11,6 +11,7 @@ import { exactDateTime } from './relativeTime'
 // necessários mostra o texto gravado. A `data` de cada tipo:
 //   workspace_*/invite_*/member_* → workspace_id, workspace_name, actor_id, actor_name, invite_id?
 //   backup_stale                  → last_completed_at (null = nenhum backup)
+//   finance_recurring_failed      → date (AAAA-MM-DD), failed, budgets_failed (cron de recorrentes, API-016)
 //   page_shared                   → page_id, page_title, role, changed, actor_*
 //   board_shared                  → board_id, board_name, role, changed, actor_*
 //   card_assigned                 → card_id, card_title, board_id, board_name, actor_*
@@ -157,6 +158,18 @@ const KINDS: Record<string, KindSpec> = {
     details: (n, t, lang) => {
       const last = dataText(n, 'last_completed_at')
       return [{ label: t('notif_detail_last_backup'), value: last ? exactDateTime(new Date(last), lang) : t('notif_detail_none') }]
+    },
+  },
+  finance_recurring_failed: {
+    category: 'system', icon: 'database', tone: 'warning',
+    render: (n, t, lang) => {
+      const date = dataText(n, 'date')
+      const { failed, budgets_failed: budgets } = n.data
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || typeof failed !== 'number' || typeof budgets !== 'number') return null
+      return {
+        title: t('notif_t_recurring_failed'),
+        body: t('notif_b_recurring_failed', { date: exactDay(date, lang), failed, budgets }),
+      }
     },
   },
   page_shared: {
