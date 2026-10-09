@@ -19,7 +19,8 @@ interface StudyRoadmapStepProps {
   index: number
   isLast: boolean
   state: StudyStepState
-  onUpdate: (patch: StudyCardPatch) => void
+  // Repassado ao StudyCardItem: false (ou uma promessa de false) = o servidor recusou.
+  onUpdate: (patch: StudyCardPatch) => unknown
   onToggleCheckpoint: (checkpointId: string) => void
   onRequestDelete: () => void
   onRequestRemoveCheckpoint: (checkpoint: StudyCheckpoint) => void

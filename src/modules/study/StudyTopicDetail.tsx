@@ -249,7 +249,7 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
               onRequestRemoveCheckpoint={point => requestDelete(
                 t('study_delete_checkpoint_title'),
                 t('study_delete_checkpoint_message', { text: point.text.length > 80 ? `${point.text.slice(0, 80)}…` : point.text }),
-                () => store.updateCard(card.id, { checkpoints: card.checkpoints.filter(p => p.id !== point.id) }),
+                async () => { await store.updateCard(card.id, { checkpoints: card.checkpoints.filter(p => p.id !== point.id) }) },
               )}
             />
           ))}

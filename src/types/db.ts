@@ -115,6 +115,8 @@ type TableOverrides = Overrides<{
 type FilledByTrigger = {
   // API-013: private.project_card_integrity põe o card no fim da coluna.
   project_cards: 'sort_order'
+  // API-021: private.study_card_rules põe o card no fim do tópico.
+  study_cards: 'sort_order'
 }
 
 type PatchedTables = {
