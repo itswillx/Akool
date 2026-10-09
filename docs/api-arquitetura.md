@@ -142,6 +142,17 @@ Evidência (harness `supabase/checks/api002-roles-probe.sql`, rodado no staging 
 - Regra (API-006, `supabase/migrations/README.md`): gatilho que depende do usuário pula só em contexto sem usuário (service_role, postgres, cron), nunca para os papéis `authenticated` e `akool_api`, e valida só as colunas que mudaram (`new.x is distinct from old.x`).
 - O API-006 (`20261005150000_api006_guards_without_user`, 05/10/2026) corrigiu `finance_guard_workspace`, que recusava com 42501 todo INSERT de linha de workspace sem usuário: nenhum backup com linha de workspace restaurava. A condição exata, que vale para gatilho novo: `auth.uid() is null and coalesce(auth.role(), '') not in ('authenticated', 'anon')` → `return new`. Prova: `supabase/checks/api006-restore.sql` (bloco 2 falha antes da migration e conclui depois, no staging).
 - O API-013 (`project_cards_integrity`) segue a regra e mostra a exceção: o que é padrão da linha, e não validação, vale também sem usuário. O card sem `sort_order` vai para o fim da coluna, e o `updated_at` é a versão do conteúdo (mover não muda). Só as validações pulam. Prova: `supabase/checks/api013-project-cards.sql` (bloco 2, restore no staging).
+- O API-016 (`api016_finance_recurring_server`) segue a regra:
+  - o gatilho `finance_recurring_entries_guard` pula sem usuário, então o restore e o cron `finance-recurring-materialize` (00:05 de São Paulo, `private.finance_materialize_all()`) passam;
+  - o `finance_recurring_day_moved` é padrão da linha e vale também sem usuário;
+  - prova: `supabase/checks/api016-recurring.sql`. O bloco 2, só no staging, restaura uma fixture com lançamento pré-ocupado, dois lançamentos no mesmo mês e um pago sem transação, e roda a materialização global de verdade.
+- O API-021 (`api021_study_rules`) segue a mesma regra em Estudos:
+  - sem usuário, o gatilho `study_cards_rules` só trata a posição (max + 1 entre os cards do mesmo dono no tópico) e a versão, guarda os valores que vieram e completa os nulos (`'[]'` nas colunas jsonb, `''` no `rationale`);
+  - isso conserta o restore de backup anterior a `quiz` (20260721120000) ou a `blocks` (20260830150627), que falhava com 23502, porque o `jsonb_populate_recordset` põe NULL na chave ausente;
+  - `study_topics_rules` guarda as datas do backup;
+  - sem usuário, um UPDATE que mude só o `updated_at` (cards e tópicos) guarda o valor que veio. É o conserto à mão de versão no futuro: `update public.study_cards set updated_at = least(updated_at, now()) where updated_at > now();`, e o mesmo em `study_topics`. Com usuário, ou com qualquer outra coluna mudando (inclusive `sort_order`), a versão continua do servidor. Prova: `supabase/checks/api021-study.sql`, bloco 1;
+  - as CHECK `study_cards_resources_safe` (url http(s), `private.card_links_are_safe`) e `study_cards_json_arrays` valem também sem usuário;
+  - prova: `supabase/checks/api021-study.sql` (bloco 2, restore no staging com backup sem a chave `blocks`).
 
 ## 2. Guardas no banco
 
@@ -206,6 +217,15 @@ Casos especiais:
   - `create_project_board` → `projetos.quadros`;
   - bootstraps → `financas.categorias`;
   - cada `cq_*` → a subseção da ação.
+- Do lote 04 (API-016 e API-021), entram no inventário:
+  - `public.finance_materialize_recurring(p_today, p_month)`, que só materializa os recorrentes de quem chama (`p_month`, o mês visto na tela, cria só os orçamentos automáticos desse mês, a até 12 meses do atual, e nunca lançamento);
+  - o gatilho `private.study_card_rules`, que é DEFINER porque chama as funções de forma em `private` e lê o tópico de qualquer dono, para a mensagem não revelar se ele existe.
+
+  - os gatilhos `private.finance_recurring_entry_guard`, BEFORE INSERT/UPDATE em `finance_recurring_entries`, classificado como predicado puro (lê recorrente e transação de qualquer dono para a recusa genérica e só levanta erro);
+  - `private.finance_recurring_day_moved`, AFTER UPDATE OF `day_of_month` em `finance_recurring`, classificado como cascata de padrão da linha (grava `due_date`, que está fora do grant de coluna, só nos lançamentos do recorrente que quem chama pôde alterar);
+  - `private.study_log_rules`, predicado puro (dono do tópico, lido por cima do RLS para que um token só com `estudos.diario` grave no próprio tópico).
+
+  Ficam de fora, por serem INVOKER: `finance_mark_entry_paid`, `finance_skip_entry` e `private.study_topic_rules`. Gatilho DEFINER entra no inventário mesmo sem EXECUTE para clientes, porque dispara nas gravações de `authenticated`. As funções de forma e o núcleo dos recorrentes (`private.finance_materialize_core`, `finance_materialize_all` e `finance_clamp_today`) não têm EXECUTE para clientes e não disparam sozinhos.
 - `supabase/checks/api007-grants.sql` confere que nenhuma função de `private` é executável por PUBLIC, `authenticated` ou `akool_api` fora de uma allowlist.
 
 ### 2.5 Portão de validação humana (API-007)
@@ -265,6 +285,73 @@ supabase/functions/
     projectStats.ts financeCalc.ts money.ts financeCsv.ts statementImport.ts financeGraph.ts financePhase.ts
     unifiedCards.ts financeStoreCalc.ts saleTransitions.ts loanCalc.ts docsGraph.ts excalidraw.ts
 ```
+
+**`_domain/blocknote/` (API-020):** validador e normalizador das notas (BlockNote 0.50), puros, sem `@blocknote/core`.
+
+- **`spec.ts`:**
+  - `BLOCKNOTE_VERSION`;
+  - os 16 tipos de bloco com o `propSchema` de cada um;
+  - os 7 estilos, `text`/`link` e os padrões de `tableCell`;
+  - `LIMITS`: 2 MiB sobre o JSON compacto da forma canônica (a que é gravada), 5000 blocos, profundidade 10 com a raiz contando 1. O validador mede a entrada, e o `normalize` mede de novo a saída, que ganha id, props e children em cada bloco e props em cada célula;
+  - `HARD_MAX_DEPTH` (64) e `TABLE_LIMITS`:
+    - fatais: span de 1 a 50, 100 colunas e 10 mil células;
+    - de contrato: 2.500 células por tabela e, para a nota inteira, Σ células² até 2 × 2.500² (`noteCellCost`). A montagem da tabela no BlockNote é quadrática: 100x100 leva cerca de 11 s, e sem o teto da nota caberiam 260 tabelas 25x100 em 2 MiB;
+  - `MAX_INLINE_NODES` (30 mil):
+    - o BlockNote empilha os nós de um item em linha num só `push(...nós)`, e cada \n fora do bloco de código vira um hardBreak;
+    - com uns 110 mil nós o V8 estoura a pilha no `create`, e 30 mil deixa folga para o Safari;
+    - acima disso por item é fatal (o link soma as partes);
+    - a soma da lista inteira acima disso é contrato, porque o editor junta os trechos vizinhos ao ler de volta;
+  - `isAllowedHref`, porte do `isAllowedUri`.
+- **`schema.ts`:**
+  - `validateNoteContent(value, { form: 'partial' | 'full', stored, fatalOnly, reservedIds, bytes })` devolve `BlockIssue { path, keyword, message, fatal }` em JSON Pointer, no máximo 20 e com os fatais primeiro;
+  - as partes planas (props de cada tipo e de `tableCell`) usam o `compileSchema` do `_api/schema.ts`;
+  - `findFatalNoteIssue` é a guarda do NoteEditor;
+  - `toSchemaIssues` é o que vai para o `validationFailed`.
+- **`table.ts`:** emula a grade de ocupação das tabelas, como o BlockNote faz.
+- **`projectCard.ts`:**
+  - `ProjectCardSnapshot`, que o `src/lib/projectImport.ts` importa daqui;
+  - `snapshotIssues`;
+  - `newProjectCardIds(before, after)`.
+- **`diagram.ts`:**
+  - lista branca dos elementos que o app cria;
+  - `appState` com 4 chaves e `zoom.value` em (0, 30];
+  - delega ao `_domain/excalidraw.ts` quando o API-054 existir.
+- **`normalize.ts`:** `normalizeNoteContent(value, { newId, renameDuplicateIds, reservedIds })` leva à forma canônica do editor, que é ponto fixo do BlockNote, e é idempotente. Também recusa quando só a saída estoura os limites:
+  - `maxBytes` (não fatal) quando a forma canônica passa de 2 MiB. Uma estimativa corrente para antes de montar dezenas de MB, e a medida exata fica para o fim;
+  - `maxCells` quando os tetos de células estouram com a largura completa.
+
+  Garantia: normalize ok ⇒ a saída passa em `form: 'full'`, e normalizá-la de novo não muda nada. Card de projeto sem snapshot é contrato (`required` em `/n/props/snapshot`); senão o normalize gravaria o padrão `{}`, que o contrato do snapshot recusa.
+- **`blocknote.test.ts`** (vitest, `node:fs`) e **`fixtures/`:** só fixtures sintéticas, geradas uma vez pelo próprio BlockNote, nas pastas `valid/`, `partial/` e `fatal/`.
+- **O teste com o editor de verdade** fica em `src/components/noteSchema.test.ts`, com `import.meta.glob` e sem `node:fs`. Ele cobre:
+  - paridade do spec com o schema;
+  - `create`, `mount`, render do card e PDF de cada fixture;
+  - mutação com semente fixa.
+- **Fatal × contrato:**
+  - **Fatal** é o que:
+    - faz o `create` lançar;
+    - quebra o render no navegador (inclusive os blocos React);
+    - quebra o PDF;
+    - ou corrompe outro bloco.
+  - Exemplos de fatal:
+    - tipo, estilo ou item em linha desconhecido;
+    - content incompatível;
+    - id que não é texto, vazio ou repetido;
+    - `href` que não é texto;
+    - `heading.level` fora de 1..6;
+    - valor de prop ou de estilo que não é simples, e `props.id`;
+    - tipos dos campos do snapshot que o bloco desenha;
+    - tabela fora da grade ou dos tetos;
+    - mais de 64 níveis;
+    - item em linha que vira mais de 30 mil nós no editor (quebras de linha; o link soma as partes; vale também para célula em texto e para o content em texto da `tableCell`);
+    - tabela cuja grade não fecha na forma completa: uma célula com props e sem content passa a contar o colspan no `editor.document`.
+  - O resto é **contrato**: a API recusa, mas o conteúdo gravado continua abrindo no app.
+- **Dependência `_domain → _api`:** `_domain` só pode importar `_api/schema.ts`, que é folha. O `_api/importBoundary.test.ts` confere três coisas:
+  - todo import direto de um arquivo de `_domain` (fora dos testes) que cai em `_api` é exatamente `_api/schema.ts`;
+  - o fecho do que `_domain` importa não alcança nenhum outro arquivo de `_api`. O fecho é seguido por `_shared`, pelas pastas das functions e por `import type`/`export … from`, e para no `schema.ts`; `domainClosureProblems` mostra a cadeia, por exemplo `_domain/… → _shared/ponte.ts → _api/registry.ts`;
+  - o `schema.ts` não importa nada.
+
+  O `blocknote.test.ts` repete a conferência da folha.
+- **Subir o BlockNote:** o `package.json` aceita 0.50.x. Mudar a versão instalada, ou um bloco do `src/components/noteSchema.ts`, exige no mesmo PR atualizar o `spec.ts` (os dois testes falham até isso) e republicar a function `api`.
 
 **Por que `_api` e `_domain`:**
 
@@ -437,6 +524,8 @@ supabase/functions/
 | Status de estudo `studying` ou `completed` | `estudos.progresso:write` |
 | Gastos por membro, perfis de parceiros ou e-mail de terceiro | `compartilhamento.pessoas:read` |
 
+Estudos (API-022/034): o progresso, que é o `completed` dos pontos e o `userAnswer` do quiz, vive nos mesmos arrays do conteúdo. `private.study_without_progress(jsonb)` (API-021) devolve a lista sem essas duas chaves. Um gatilho de sessão da API compara a projeção do OLD com a do NEW para saber se a gravação mudou conteúdo (`estudos.conteudo`) ou só progresso (`estudos.progresso`).
+
 ## 8. Notificações
 
 | Tipo | Exige leitura de |
@@ -444,6 +533,7 @@ supabase/functions/
 | `loan_*` | `financas.emprestimos` |
 | `workspace_invite`, `invite_accepted`, `invite_declined`, `member_joined`, `member_left` | `compartilhamento.pessoas` |
 | `backup_stale` | `admin.backups` |
+| `finance_recurring_failed` (API-016: o cron de recorrentes teve falha) | `admin.backups` (aviso de operação para admins, como o `backup_stale`) |
 | `api_token_created`, `api_token_scopes_widened` | `perfil.notificacoes` |
 | Tipo desconhecido | fica oculto |
 
@@ -498,6 +588,11 @@ A chave vem no cabeçalho `Idempotency-Key` (REST) ou no campo `idempotency_key`
 - Objetos do Storage apagados pela API vão para `private.api_storage_pending` e só saem depois de 7 dias.
 - `api_undo_call(p_call_id)`, chamado do app, reinsere as linhas como o usuário, em ordem de dependência. Aparece como Desfazer em Atividade.
 - Retenção de 7 dias pelo `api-housekeeping`. Até aqui, o único jeito de desfazer era o restore global do site.
+- **Interação com o API-021.** O `api_undo_call` reinsere como o usuário, e os gatilhos de Estudos tratam isso como gravação nova:
+  - `study_topics_rules` recalcula `started_at`, `completed_at` e `updated_at`, e as datas originais se perdem;
+  - `study_cards_rules` valida a forma inteira no INSERT (card antigo fora da forma não volta) e põe a versão em agora.
+
+  O undo precisa entrar como restore, por exemplo com um GUC ligado só por ele e conferido pelos gatilhos junto da condição sem usuário. Isso está registrado no cabeçalho da migration 20261008130000.
 
 ## 10. Erros
 
@@ -518,6 +613,8 @@ Implementação: `supabase/functions/_api/errors.ts` (API-005). Códigos estáve
 
 - O texto do Postgres só passa adiante quando vem de um RAISE do app: código P0001, ou outro código com `hint = 'akool'` (convenção para as funções novas). Nos demais casos, a resposta leva uma mensagem genérica em pt-BR e o `code`.
 - Um 500 chama `captureException` (`_shared/sentry.ts`, com scrub). `scrub.ts` ganha uma regra para `postgres://`.
+
+**Erros de validação de nota (API-020).** Os issues passam por `toSchemaIssues(issues)` antes do `validationFailed`: o campo `fatal` não vaza no corpo, e os fatais vêm primeiro. Nas props com JSON em texto (`snapshot`, `elements`, `appState`), o ponteiro aponta para a prop (`/3/props/snapshot`) e a palavra-chave é o nome dela. O caminho interno vai na mensagem: `/labels/2: Deve ter no máximo 50 caractere(s)`.
 
 ## 11. Versionamento
 
@@ -587,7 +684,7 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 | Finanças | API-036 | `finance.accounts.*`, `finance.categories.*` |
 | Finanças | API-040 | `finance.transactions.*` |
 | Finanças | API-046 | `finance.budgets.*`, `finance.goals.*` (menos shares), `contributions.*` |
-| Finanças | API-016 | só servidor: `finance.budgets.auto_from_recurring`, `finance.recurring.entries.materialize` |
+| Finanças | API-016 | entregue: `finance.budgets.auto_from_recurring` e `finance.recurring.entries.materialize` viraram `never: cron e rotinas internas do servidor` (só servidor; `_api/coverage.ts` e `docs/api-inventario.json`) |
 | Finanças | API-047 | `finance.recurring.*` |
 | Finanças | API-049 | `finance.reports.*`, `finance.projects.summary` |
 | Finanças | API-056 | `finance.workspace.*` (menos delete), `notifications.respond_workspace_invite`, `notifications.invite.respond`, `finance.goals.shares.*`, `finance.sharing.partner_profiles` |
@@ -624,6 +721,7 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 - Produção: workflow Deploy function a partir do ref do PR, antes do merge, com confirmação.
 - Até o API-031, `api` fica em `repoOnlyFunctions` do `supabase/drift-allowlist.json` (chave nova, criada no API-010).
 - Ao remover a `cards-api`, ela fica em `remoteOnlyFunctions` até o usuário apagá-la no painel.
+- Subir o `@blocknote/*` (core, react e mantine) exige, no mesmo PR, atualizar `supabase/functions/_domain/blocknote/spec.ts`, rodar `src/components/noteSchema.test.ts` e republicar a function `api` (API-020).
 
 **Frontend**
 
@@ -718,10 +816,10 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 | Chave | Seção › Subseção | Nível máximo | Cobre | Observações |
 | --- | --- | --- | --- | --- |
 | `perfil.dados` | Perfil › Dados e preferências | Escrever | profiles, só a própria linha (display_name, language, theme, avatar_emoji, avatar_color, avatar_url, finance_dashboard_view, onboarding); get_my_profile em subconjunto seguro; bucket avatars (próprio). Ações perfil.dados.* | Nunca lê nem escreve role, is_active, last_login_date, invite_slots_remaining e ai_has_key; e-mail é só leitura. Remover a foto conta como Escrever. A RESTRICTIVE trava UPDATE e DELETE em id = auth.uid(), mesmo para admin. |
-| `perfil.notificacoes` | Perfil › Notificações | Excluir | notifications: select; update só de read=true; delete. Ações perfil.notificacoes.listar, contar_nao_lidas, marcar_lida, marcar_todas_lidas e excluir | Linhas filtradas por tipo: loan_* exige financas.emprestimos:ler; workspace_invite, invite_accepted, invite_declined, member_joined e member_left exigem compartilhamento.pessoas:ler; backup_stale exige admin.backups:ler; api_token_* ficam aqui; tipo desconhecido fica oculto. Responder convite de workspace não é desta subseção. |
+| `perfil.notificacoes` | Perfil › Notificações | Excluir | notifications: select; update só de read=true; delete. Ações perfil.notificacoes.listar, contar_nao_lidas, marcar_lida, marcar_todas_lidas e excluir | Linhas filtradas por tipo: loan_* exige financas.emprestimos:ler; workspace_invite, invite_accepted, invite_declined, member_joined e member_left exigem compartilhamento.pessoas:ler; backup_stale e finance_recurring_failed exigem admin.backups:ler; api_token_* ficam aqui; tipo desconhecido fica oculto. O mapa completo por tipo é o do §8, que vale sobre esta lista. Responder convite de workspace não é desta subseção. |
 | `perfil.convites` | Perfil › Convites | Escrever | invite_codes com created_by = eu (mesmo para admin), saldo de convites e generate_invite_code (Escrever) | Escrever deixa um terceiro criar conta. Limite de 5 códigos por dia por token, inclusive para admin. |
 | `documentos.paginas` | Documentos › Páginas | Excluir | pages: árvore pelo RLS (page_is_readable/page_is_writable), metadados, criar com as linhas de note_contents/drawing_contents, mover e reordenar. Excluir = exclusão com subárvore, via lixeira de 7 dias, e limpeza adiada de note-images | O SELECT em pages também é liberado para quem lê notas, desenhos ou tarefas. Páginas compartilhadas comigo só aparecem com incluir_compartilhados (exige compartilhamento.pessoas:ler); escrever nelas exige compartilhamento.pessoas:escrever. A exclusão pede confirm_subtree e aceita dry_run. |
-| `documentos.notas` | Documentos › Conteúdo de notas | Escrever | note_contents (BlockNote validado; Markdown nos dois sentidos; versão), bucket note-images (envio e URL assinada de 1 h), blocos diagram e projectCard | Inserir bloco de card de projeto exige também projetos.cards:ler. Toda escrita leva expected_updated_at ou force explícito. Nota de outra pessoa volta marcada como conteúdo não confiável. |
+| `documentos.notas` | Documentos › Conteúdo de notas | Escrever | note_contents (BlockNote validado; Markdown nos dois sentidos; versão), bucket note-images (envio e URL assinada de 1 h), blocos diagram e projectCard | Inserir bloco de card de projeto exige também projetos.cards:ler, e o snapshot é montado no servidor a partir do card lido (API-044): `newProjectCardIds(antes, depois)` (`_domain/blocknote/projectCard.ts`) aponta os blocos projectCard novos ou alterados. Anexar valida o documento já juntado: ids únicos, 5000 blocos e 2 MiB valem sobre a nota final na forma canônica (a saída do `normalizeNoteContent`, que é a gravada). O snapshot do card é montado, ou o bloco recusado, antes da validação, porque card sem snapshot é contrato. Toda escrita leva expected_updated_at ou force explícito. Nota de outra pessoa volta marcada como conteúdo não confiável. |
 | `documentos.desenhos` | Documentos › Desenhos | Escrever | drawing_contents: elementos Excalidraw, app_state e files sob demanda | Escrita validada, com limites de tamanho e incremento de version/versionNonce para o canvas aberto perceber a mudança. |
 | `documentos.tarefas` | Documentos › Tarefas (listas) | Excluir | todos de páginas do tipo todo: listar por página e as minhas, criar, atualizar, concluir e excluir | Criar a página de tarefas é de documentos.paginas. A API nunca muda user_id nem page_id. |
 | `documentos.notas_rapidas` | Documentos › Notas rápidas | Excluir | quick_notes: conteúdo, cor e linked_items por operação de item | Vincular página ou card exige leitura do alvo (documentos.paginas ou projetos.cards). Depende do API-003, que acaba com a sobrescrita offline. |
@@ -736,7 +834,7 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 | `financas.contas` | Finanças › Contas | Excluir | finance_accounts, com saldos calculados no servidor sem o teto de 1000 linhas | Excluir conta tira a conta das transações (dry_run mostra quantas). Contas do workspace exigem compartilhamento.pessoas. |
 | `financas.categorias` | Finanças › Categorias | Excluir | finance_categories, com bootstrap das categorias padrão | Excluir categoria apaga os orçamentos de todos os membros do workspace, e a resposta avisa. |
 | `financas.orcamentos_metas` | Finanças › Orçamentos e metas | Excluir | finance_budgets (com status do mês), finance_goals e finance_goal_contributions (aporte atômico com conclusão automática) | Compartilhar meta é de compartilhamento.pessoas. Orçamento de workspace exige compartilhamento.pessoas:escrever. |
-| `financas.recorrentes` | Finanças › Recorrentes | Excluir | finance_recurring e finance_recurring_entries (a materialização é do servidor, por pg_cron), marcar paga e pular | marcar_paga cria transação e exige também financas.transacoes:escrever. |
+| `financas.recorrentes` | Finanças › Recorrentes | Excluir | finance_recurring e finance_recurring_entries (a materialização é do servidor, por pg_cron), marcar paga e pular | marcar_paga cria transação e exige também financas.transacoes:escrever. Em recorrente de workspace, a transação leva o `workspace_id` e exige também compartilhamento.pessoas:escrever. Criar recorrente pela API materializa na mesma transação (`finance_materialize_recurring` ou o núcleo `private.finance_materialize_core`); senão o primeiro lançamento só nasce às 00:05 de São Paulo (API-016). |
 | `financas.loja` | Finanças › Loja | Excluir | finance_store_products, finance_store_purchases, finance_store_sales, finance_store_sale_items, finance_store_customers, finance_suppliers, bucket store-files e RPCs store_* (vendas, compras, produtos) | Clientes e fornecedores são dados pessoais de terceiros. Criar, alterar ou apagar receita ou despesa vinculada exige financas.transacoes:escrever; workspace exige compartilhamento.pessoas. |
 | `financas.emprestimos` | Finanças › Empréstimos | Excluir | finance_loan_borrowers, finance_loans, finance_loan_payments, finance_loan_collaterals, bucket loan-files, RPCs de escrituração do credor e saldo calculado | Ações entre as partes (solicitar, aprovar, rejeitar, informar, confirmar ou rejeitar pagamento) e vincular tomador exigem compartilhamento.pessoas:escrever. O documento do tomador sai mascarado. Hoje não há tela no repo (cards P3). |
 | `compartilhamento.pessoas` | Compartilhamento › Pessoas e conteúdo compartilhado | Excluir | search_users_for_share, page_shares, project_shares, finance_goal_shares, shared_with_user_id/workspace_id em linhas financeiras, finance_workspaces, members e invites (obter, criar, renomear, convidar, aceitar, recusar, sair, remover membro), perfis de outras pessoas (com e-mail), vincular e desvincular tomador; ler (incluir_compartilhados) e escrever em conteúdo de outras pessoas | Transversal e sempre somada à subseção do item. Concede acesso de outra pessoa aos seus dados, devolve e-mails e abre conteúdo não confiável: mantenha Nenhum, salvo necessidade. A regra de propriedade vale no banco. co_owner de página só pela UI. Excluir = remover compartilhamento, sair do workspace e remover membro. |

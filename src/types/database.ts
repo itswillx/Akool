@@ -2226,7 +2226,7 @@ export type Database = {
           quiz?: Json
           rationale?: string
           resources?: Json
-          sort_order?: number
+          sort_order: number
           title: string
           topic_id: string
           updated_at?: string
@@ -2664,6 +2664,20 @@ export type Database = {
         Returns: Json
       }
       finance_goal_owned: { Args: { p_goal: string }; Returns: boolean }
+      finance_mark_entry_paid: {
+        Args: {
+          p_account?: string
+          p_amount_cents?: number
+          p_date?: string
+          p_entry: string
+        }
+        Returns: Json
+      }
+      finance_materialize_recurring: {
+        Args: { p_month?: string; p_today?: string }
+        Returns: Json
+      }
+      finance_skip_entry: { Args: { p_entry: string }; Returns: Json }
       generate_invite_code: { Args: never; Returns: Json }
       get_my_profile: {
         Args: never
