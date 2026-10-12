@@ -189,6 +189,13 @@ Casos especiais:
 - `invite_codes`: os próprios exigem `perfil.convites`; todos exigem `admin.convites`.
 - `audit_log`, `site_backups` e `site_backup_settings`: só leitura, só para admin.
 - `pages`: o SELECT também é liberado para quem lê notas, desenhos ou tarefas.
+- Estudos (API-024): remover ponto (`study_checkpoint_remove`) ou recurso (`study_resource_remove`) é UPDATE em `study_cards`, não DELETE. Por isso nem a regra "DELETE exige Excluir" nem a lixeira do API-025 (AFTER DELETE) alcançam a remoção de item, e desfazer pela API é regravar o item.
+
+  O API-022/034 precisa de regra própria de Excluir. A RPC INVOKER não pode chamar `private.api_require`, porque a API nunca tem USAGE de `private` (§2.1). Há duas opções:
+  - exigir `estudos.conteudo:delete` no handler da ação que remove item;
+  - criar um gatilho DEFINER, ativo só em sessão da API, que detecte a lista encolhendo.
+
+  Remover item ausente dá P0002, o 404 da §4. O app (API-029) trata como já removido em outra aba.
 
 ### 2.3 Conteúdo de outras pessoas (regra de propriedade)
 
@@ -226,6 +233,15 @@ Casos especiais:
   - `private.study_log_rules`, predicado puro (dono do tópico, lido por cima do RLS para que um token só com `estudos.diario` grave no próprio tópico).
 
   Ficam de fora, por serem INVOKER: `finance_mark_entry_paid`, `finance_skip_entry` e `private.study_topic_rules`. Gatilho DEFINER entra no inventário mesmo sem EXECUTE para clientes, porque dispara nas gravações de `authenticated`. As funções de forma e o núcleo dos recorrentes (`private.finance_materialize_core`, `finance_materialize_all` e `finance_clamp_today`) não têm EXECUTE para clientes e não disparam sozinhos.
+- Do lote 05 (API-024), ficam fora do inventário, por serem INVOKER e não chamarem nada de `private`, as 11 RPCs de Estudos:
+  - `study_checkpoint_add`, `study_checkpoint_edit`, `study_checkpoint_toggle` e `study_checkpoint_remove`;
+  - `study_resource_add` e `study_resource_remove`;
+  - `study_quiz_answer` e `study_quiz_reset`;
+  - `study_cards_append`, `study_import_topic` e `study_reschedule`.
+
+  O card não cria gatilho nem função em `private`: a trava do quiz ficou só na RPC, por decisão do usuário. A forma dos JSON continua no gatilho DEFINER `private.study_card_rules`, que já está no inventário. Como são INVOKER, as RESTRICTIVE do API-022 valem dentro delas. Anexar, importar e reagendar exigem ler e atualizar `study_topics`. Toggle, resposta e reset só tocam `study_cards` (prova no bloco 2 de `supabase/checks/api024-study-rpcs.sql`).
+
+  Datas do API-024: o `p_today` de `study_reschedule` e de `study_import_topic` é conferido por comparação (`not between` o hoje de São Paulo ± 1), então `'infinity'` e `'-infinity'` dão 22023 com hint akool, nunca o 22008 sem hint da subtração de datas infinitas. A data-alvo infinita, gravada pelo UPDATE direto de `study_topics`, também dá 22023 no reagendar. Na importação, a `target_date` do payload só aceita AAAA-MM-DD.
 - `supabase/checks/api007-grants.sql` confere que nenhuma função de `private` é executável por PUBLIC, `authenticated` ou `akool_api` fora de uma allowlist.
 
 ### 2.5 Portão de validação humana (API-007)
@@ -281,9 +297,9 @@ supabase/functions/
     actions/<secao>/<subsecao>.ts
     runtime/db.ts runtime/storage.ts      únicos com npm:/jsr:
   _domain/              lógica de negócio pura compartilhada com o app (src/lib reexporta)
-    blocknote/ study/ i18n.pt-BR.ts pageTree.ts autoSchedule.ts backlogMarkdownParser.ts importPlan.ts cardMarkdown.ts
-    projectStats.ts financeCalc.ts money.ts financeCsv.ts statementImport.ts financeGraph.ts financePhase.ts
-    unifiedCards.ts financeStoreCalc.ts saleTransitions.ts loanCalc.ts docsGraph.ts excalidraw.ts
+    blocknote/ study/ fixtures/ i18n.pt-BR.ts pageTree.ts projectTypes.ts isoDate.ts cardLimits.ts cardLabels.ts cardLinks.ts text.ts
+    autoSchedule.ts backlogMarkdownParser.ts importPlan.ts cardMarkdown.ts projectStats.ts financeCalc.ts money.ts financeCsv.ts
+    statementImport.ts financeGraph.ts financePhase.ts unifiedCards.ts financeStoreCalc.ts saleTransitions.ts loanCalc.ts docsGraph.ts excalidraw.ts
 ```
 
 **`_domain/blocknote/` (API-020):** validador e normalizador das notas (BlockNote 0.50), puros, sem `@blocknote/core`.
@@ -353,6 +369,186 @@ supabase/functions/
   O `blocknote.test.ts` repete a conferência da folha.
 - **Subir o BlockNote:** o `package.json` aceita 0.50.x. Mudar a versão instalada, ou um bloco do `src/components/noteSchema.ts`, exige no mesmo PR atualizar o `spec.ts` (os dois testes falham até isso) e republicar a function `api`.
 
+**`_domain/blocknote/`, Markdown (API-023):** Markdown ↔ blocos sem DOM, para o API-044. O conversor oficial do BlockNote precisa de DOM e perde informação, e o marked e o micromark são quadráticos com entrada adversária. Por isso o parser é próprio e linear.
+
+- **`markdown.ts`:**
+  - `markdownToNote(md, { existing, images: { userId, pageId }, mode: 'replace' | 'append', reservedIds, newId, limits })` devolve `{ ok: true, blocks, warnings, newImagePaths, losses }` ou `{ ok: false, issues, warnings }`. Nunca lança.
+    - `existing` é o `content` atual, que pode ser `null`.
+    - Em `append`, `blocks` traz só os blocos a anexar, com ids fora da nota e de `reservedIds`.
+  - Cada issue leva `line` (0 quando o problema é da nota inteira) e o ponteiro na nota final, quando há.
+  - `toMarkdownSchemaIssues(issues, '/markdown')` monta o `details` do `validation_failed` (§10).
+  - O parser de blocos é um porte do commonmark.js: pilha de contêineres e uma passada por linha. O parser em linha fica em `markdownInline.ts`.
+  - Os cortes de espaço e tab são por laço de índice, em `spaceTab.ts`: `trimEndSpaceTab`, `trimSpaceTab` e `stripClosingHashes`, este para o fecho do título ATX. Não há regex ancorada só no fim: `/[ \t]+$/` é quadrática numa corrida de espaços no meio do texto. Também não há `trim()` do JS, que tira NBSP. O autolink literal memoriza o fim da corrida sem espaço, o domínio com os dois últimos segmentos e o começo da pontuação final. Assim, o gatilho recusado custa O(1) amortizado, e os parênteses finais são contados uma vez.
+- **Subconjunto (CommonMark 0.31 + GFM):**
+  - títulos ATX e setext;
+  - parágrafo: a quebra suave vira espaço, com um aviso por chamada; a quebra dura (dois espaços, `\` ou `<br>`) vira `\n`;
+  - listas `-`/`+`/`*`/`N.`/`N)` aninhadas até a profundidade do contrato. O `start` sai quando o 1º número não é 1 ou quando a lista vem logo depois de outra numerada, inclusive com `start: 1`;
+  - checklist, inclusive numerada e vazia;
+  - citação preguiçosa, achatada em linhas, com aviso quando tinha lista, código, título ou tabela;
+  - código cercado ou indentado, com a 1ª palavra da info como linguagem;
+  - tabela GFM, com alinhamento nas células, `\|` (inclusive dentro do código) e `<br>`;
+  - divisor;
+  - imagem;
+  - definições de referência;
+  - em linha: negrito, itálico, tachado (`~~` e `~`), código, links inline e de referência, autolinks `<…>` e literais do GFM (URL, `www.`, e-mail), escapes e entidades numéricas e nomeadas comuns, inclusive as letras acentuadas.
+  - O escape bloqueia o autolink literal: `https\://` fica texto.
+  - HTML em linha some e o texto fica, com aviso. Comentário some. Nota de rodapé fica como texto, com aviso.
+  - Linha em branco é só espaço e tab, como no CommonMark e no micromark. NBSP, U+3000, U+2003, `\f` e `\v` são conteúdo: o item só com eles interrompe o parágrafo do pai, é linha de tabela e fica no fim do código indentado.
+- **Limites da leitura:**
+  - 512 KiB de Markdown em bytes UTF-8 (`MARKDOWN_LIMITS.maxBytes`, decisão 3). Acima disso, `maxBytes` com a linha em que o limite estoura.
+  - A leitura para cedo, com a linha, quando há:
+    - lista além da profundidade do contrato;
+    - citação além de 32 níveis;
+    - mais de 5000 blocos;
+    - tabela com mais de 100 colunas ou de 10 mil células.
+  - Os demais limites (2 MiB, nós em linha e células) vêm do normalize, com a linha do bloco.
+  - Markdown denso de 512 KiB pode passar dos 2 MiB da forma canônica: tabelas e listas crescem até 4× no JSON gravado.
+- **Imagem:**
+  - Só é aceito o caminho `${userId}/${pageId}/arquivo.(jpe?g|png|webp|gif|heic|heif)` de quem grava.
+  - Também vale a url exata que já está na nota. A 1ª ocorrência herda o id; todas herdam largura, prévia, alinhamento e cor; nome e legenda vêm do Markdown.
+  - Externa, `data:` ou outra pasta é recusada com a linha. Sem `images`, só passa imagem conhecida.
+  - `newImagePaths` lista os caminhos novos, para o handler conferir que o objeto existe (`authorizeObject`, §2.6).
+  - Imagem no meio do texto divide o parágrafo. No item de lista vira filha do item, no título e na citação vem logo depois, e na célula fica o texto alternativo (com aviso).
+- **Marcador (blocos sem Markdown, decisão 2):**
+  - diagram, projectCard, file, video e audio saem como `<!-- akool:bloco id="<encodeURIComponent(id)>" tipo="<tipo>" -->`, numa linha só.
+    - Arquivo, vídeo e áudio levam também `nome="…"`. O card leva `titulo="…"` só com `cards: 'label'`, que exige `projetos.cards:read`.
+  - A leitura restaura o bloco da nota atual com `children: []`. Os filhos vêm do Markdown, sem duplicar.
+  - É erro com a linha:
+    - id desconhecido ou repetido;
+    - id de bloco que tem Markdown;
+    - tipo errado;
+    - marcador malformado;
+    - marcador dentro de citação ou no meio do texto;
+    - qualquer marcador no modo `append`.
+  - Texto do usuário não forja marcador: o render escapa `<`, e o código cercado é literal.
+  - Nota com ids repetidos: `withUniqueIds` dá ao repetido um id determinístico (`<id>-<n>`), o mesmo na leitura e na escrita.
+- **Reconciliação (`reconcile.ts`, decisão 1, só em `replace`):**
+  - Cada bloco raiz da nota atual tem a sua projeção: os blocos que o render dele vira ao ser lido de volta.
+  - Um diff "patience" (prefixo e sufixo comuns, âncoras únicas e extensão) compara essas projeções com os blocos do Markdown novo. É linear, fora o log. A chave é o bloco lido, então formas equivalentes (`*a*` e `_a_`) batem.
+  - Projeção igual e seguida: o bloco volta intacto, com id, cores, alinhamento, recolhível, filhos e larguras.
+  - Só a cabeça igual: o bloco volta com `children: []`.
+  - Bloco sem projeção só volta se passa sozinho no fatal (`keepIfHidden`, como o parágrafo vazio), e só entre dois vizinhos intactos e seguidos. O ilegível que a IA não vê no Markdown (null, tipo desconhecido, tabela sem linhas) sai, com a perda `unreadable`, e não trava a regravação.
+  - O resto entra como bloco novo.
+  - `losses` lista as perdas do render dos blocos antigos que não voltaram intactos (editados ou removidos), menos as props que voltaram pelo marcador ou pela imagem conhecida.
+  - Tetos da reconciliação (`RECONCILE_LIMITS`, `markdown.ts`): o `plan` relê o render inteiro da nota atual. Essa leitura custa de 1 a 1,5 µs por linha e por célula de tabela, e cerca de 60 ns por linha × nível de lista. A regravação segue sem reconciliar quando o render passa de 4 × 512 KiB, de 2^18 linhas mais `|`, ou de 2^22 linhas × níveis (a profundidade vem do mapa do render). Nesse caso todo bloco entra como novo e as perdas do render vão inteiras. O resultado é o mesmo; só os ids e as props dos blocos que não mudaram deixam de voltar. No pior caso abaixo dos tetos, a releitura leva de 0,3 a 0,4 s (Apple M2). Uma nota válida (até 10 níveis) só passa do teto de linhas × níveis depois de passar do teto de linhas. Sem os tetos, uma nota gravada pequena levava de 2 a 34 s para regravar.
+- **Validação em duas fases:**
+  1. `normalizeNoteContent` só nos blocos novos, com os ids herdados reservados e `skipNoteCellCost: true`. Essa opção tira o teto de células da nota inteira (Σ células²) do validador e da forma completa e deixa só o de cada tabela. A tabela editada conta como nova, e o teto da nota é conferido na fase 2 contra o custo da nota atual. Assim, numa nota antiga acima do teto, editar uma célula em cada uma de três tabelas 50×50, ou encolher as três, passa. Por padrão a opção fica desligada, e o caminho JSON e o editor seguem iguais. Herdado aninhado em bloco novo entra no lugar de um bloco provisório.
+  2. Os herdados entram como estão, e a nota final (ou a juntada, em `append`) passa por `validateNoteContent({ stored: true, fatalOnly: true })` e por `noteLimitIssues`. O `noteLimitIssues` (`schema.ts`) confere ids únicos, blocos, profundidade e bytes. Confere também o teto de células da nota inteira, Σ (linhas × largura)², contra a base `baseline`, que é a nota atual. O `maxCells` só sai quando a nota juntada passa do teto e custa mais que a base, então a nota antiga já acima do teto pode ser regravada sem somar tabela. `noteTableCost(nota)` dá a base já calculada para o anexar do API-044.
+
+  O mesmo par serve ao anexar do API-044. Nota antiga com desvio de contrato não trava a regravação.
+- **`render.ts`:**
+  - `blocksToMarkdown(blocks, { markers, cards })` devolve `{ markdown, losses, blocks: [{ id, path, startLine, endLine }] }`.
+  - `blocksToText(blocks, { cards })`: um bloco por linha, com prefixos, filhos recuados, tabela em `a | b` e os rótulos `note_text_*` do `_domain/i18n.pt-BR.ts`.
+  - Os dois aceitam `content` nulo e nunca lançam, como o `extractBlocks` do PDF.
+  - `markers: false` troca o marcador pelo rótulo do texto puro (só leitura).
+  - **Estilo:**
+    - `**negrito**`, `_itálico_` e `~~tachado~~`, um caractere por estilo, para um abridor nunca fechar o estilo de fora;
+    - código em linha com crases a mais, partido em cada quebra;
+    - quebra dura com `\` no fim da linha, e `<br>` no fim do bloco, em título e em célula;
+    - `<!-- -->` antes de lista numerada que recomeça;
+    - cerca do código maior que as crases de dentro.
+  - **Escapes:**
+    - `\` antes da pontuação que vira sintaxe;
+    - no começo de cada linha, também depois de cada quebra dura: `#`, `-`, `+`, `=`, `:` e `N.`/`N)`;
+    - espaço e tab nas bordas da linha como `&#32;`/`&#9;`;
+    - `\r` sempre como `&#13;`, e o BOM no começo da linha como `&#65279;`: a saída nunca tem `\r`, e as linhas do mapa são as que o parser lê;
+    - `:` de `https://`, `.` de `www.` e `@` de e-mail;
+    - `&` antes do que pareceria entidade.
+  - Espaço na borda de um trecho com estilo fica fora dos delimitadores. Quando o flanqueamento falharia, o caractere vizinho sai como entidade (`**a.**&#98;`).
+  - Tabela acima dos tetos fatais (`TABLE_LIMITS`: 100 colunas ou 10 mil células, com a largura sem corte) sai ilegível, sem montar a grade. A linha que não é objeto com `cells` e a célula que não cabe na grade ficam de fora, com a perda.
+  - Teto de saída `RENDER_BUDGET`: 16 × 512 KiB, em unidades UTF-16 (com as quebras de linha). Ele protege a memória da leitura e vale dentro do bloco. A linha que passaria do teto tira inteiro o bloco que está sendo escrito (as linhas, o mapa e as perdas dele), e esse bloco e os seguintes saem com a perda `truncated`. A saída nunca passa do teto. O recuo das listas conta: cada linha de um item fundo leva até ~100 colunas no contrato (10 níveis de `999999999. `), ou ~700 na profundidade gravada (64 níveis). Uma quebra de 2 bytes no JSON vira uma linha inteira. Por isso o teto pode cortar nota válida com listas fundas e muitas linhas curtas: 296 KiB de JSON com 6 itens de 25 mil quebras no 10º nível perdem os itens 3 a 6 e o parágrafo do fim. A nota válida rasa de 2 MiB fica bem abaixo.
+  - `withUniqueIds` é linear: guarda o próximo `n` de cada base, e os ids são os mesmos de antes.
+- **Perdas (`MARKDOWN_LOSSES`, com o ponteiro):**
+  - cor do texto ou de fundo;
+  - sublinhado;
+  - alinhamento;
+  - larguras das colunas;
+  - células mescladas;
+  - `headerRows` ≠ 1 e `headerCols`;
+  - recolhível;
+  - filho de bloco que não é lista (vira bloco seguinte);
+  - parágrafo vazio do meio (o do fim é do TrailingNode e não conta);
+  - estilo ou link no bloco de código;
+  - linguagem vazia ou com espaço;
+  - linha só de espaços no código dentro de item;
+  - `\r` no bloco de código (`codeLineEnding`), que vira `\n`;
+  - link inseguro ou sem destino;
+  - `start` que o Markdown não representa;
+  - largura, prévia ou quebra de linha no nome, na legenda ou no endereço da imagem;
+  - código em linha sem forma (com `\r`, com `\` antes de `|` na célula, ou com `]:` no 1º link do parágrafo), que sai como texto;
+  - bloco ilegível, linha de tabela que não é objeto com `cells`, célula que não cabe na grade e tabela acima dos tetos (`unreadable`);
+  - bloco cortado pelo teto de saída do render, e os que vêm depois dele (`truncated`). A nota pode estar dentro do contrato;
+  - bloco sem Markdown com `markers: false`.
+- **Divergências da colagem do app (`tryParseMarkdownToBlocks`), de propósito:**
+  - `<br>` vira quebra;
+  - o alinhamento da tabela fica;
+  - checklist numerada e checklist vazio;
+  - a imagem no meio do texto fica;
+  - o título da imagem vira legenda;
+  - `start: 1` em lista logo depois de outra;
+  - título dentro de item vira filho;
+  - o escape bloqueia o autolink;
+  - o destino do link não é codificado;
+  - não há bloco HTML nem nota de rodapé;
+  - as entidades nomeadas raras ficam literais.
+
+  A lista completa, com o motivo de cada caso, está em `DIVERGENCIAS` (src/components/noteMarkdown.test.ts).
+- **Testes:**
+  - `markdown.test.ts`:
+    - subconjunto bloco a bloco;
+    - imagens, marcadores e limites com a linha;
+    - reconciliação;
+    - render;
+    - propriedades com semente fixa:
+      - (a) subconjunto sem perdas com alfabeto hostil, em ida e volta exata. O alfabeto inclui NBSP, U+3000, U+2003, `\f`, `\v`, `\r`, `\r\n` e o BOM no começo do documento;
+      - (b) idempotência;
+      - (c) leitura que nunca lança;
+    - bateria patológica a 512 KiB (Apêndice B);
+    - revisão do lote 05 (`render-023`): `\r` e BOM, linha em branco, tetos da tabela, ids e reconciliação. Tem teto de tempo para 20 mil blocos sem id ou com o mesmo id e para 80 mil grupos sem projeção.
+    - revisão 2 (`render-023`):
+      - o teto de saída dentro do bloco: o código de 20 mil linhas no 64º nível sai com a perda nele, e o erro que não é o teto sobe como antes;
+      - a regravação sobre notas fundas abaixo do teto de tempo;
+      - a memória do `findNextNonspace`: a razão entre o render fundo e o raso do mesmo tamanho fica abaixo de 10 (a menor de até 5 pares);
+      - os três tetos da reconciliação nas bordas;
+      - a nota válida funda cortada com `truncated`, e a rasa de ~2 MiB inteira;
+      - no R11, editar ou encolher as três tabelas da nota acima do teto passa, e `skipNoteCellCost` tira só o teto da nota inteira.
+  - `src/components/noteMarkdown.test.ts`, com o editor real:
+    - exemplo → create, mount, card, diagrama e PDF;
+    - paridade do corpus (`fixtures/markdown/corpus`);
+    - a colagem lê o nosso Markdown;
+    - fuzz.
+  - Fixtures em `fixtures/markdown/`:
+    - `note-markdown.md`, render byte a byte de `valid/note-markdown.json`;
+    - `exemplo.json`/`exemplo.md`;
+    - `corpus/`;
+    - `generator.ts`, o gerador com semente.
+
+**Projetos em `_domain` (API-027):** a agenda, as estatísticas, o parser e o plano da importação de backlog, o Markdown do card e as regras do API-013 ficam puros em `_domain`. Os arquivos de mesmo nome em `src/lib` reexportam esses módulos, ou os embrulham quando há um "hoje" padrão, e o app continua importando de `src/lib`.
+
+- **`projectTypes.ts`:** `ProjectCardPriority`, `PROJECT_PRIORITIES` (da mais urgente para a menos), `isProjectPriority` e os itens de checklist, link e anexo. O `src/lib/projectDomain.test.ts` confere pelo `tsc` duas coisas: que esses tipos são iguais aos de `src/types`, e que o `ProjectCard` do app satisfaz `ScheduleCard`, `StatsCard` e `CardMarkdownSource`.
+- **`isoDate.ts`:** `toUTC`, `isoFromUTC`, `addDays`, `diffDays`, `mondayOf` e `isOverdue(card, today)`, em UTC e sem relógio.
+- **`cardLimits.ts` e `cardLabels.ts`:** os números e as regras de rótulo do gatilho `project_cards_integrity`. O `cardLimits.test.ts` lê a migration do API-013 com `node:fs` e confere 500, 2000, 30, 50, 50 e 100. O `blocknote/projectCard.ts` monta o `SNAPSHOT_LIMITS` a partir deles.
+- **`cardLinks.ts`** (`normalizeLinkUrl`, `linkDisplay`) e **`text.ts`** (`normalizeSearch`).
+- **`autoSchedule.ts`:** `buildAutoSchedule(cards, columns, today, targetDeadline?)`.
+- **`projectStats.ts`:**
+  - `overviewSummary(cards, today)`, `dueBuckets(cards, today)` e `countBy*`;
+  - `createdPerWeek(cards, weeks, today, dayOf)`: `dayOf` dá o dia de calendário do `created_at` no fuso de quem vê. O app passa `createdDayLocal`, que é o `localDateKey` do instante; o handler passa `(created_at at time zone $tz)::date`, do SQL;
+  - a semana sai de `diffDays/7`, sem a hora a menos do horário de verão;
+  - `weeks` tem de ser ≥ 1, porque com 0 a função lança; o schema da ação limita.
+- **`backlogMarkdownParser.ts`:** `parseBacklogMarkdown(source, { newId })`. Sem `newId`, os ids saem de `crypto.randomUUID`. `warnings` continua o texto da CLI.
+- **`importPlan.ts`:**
+  - `planTopicColumns`;
+  - `planCardRows`: as linhas na ordem do arquivo, com o `sort_order` max+1 por coluna, os cards pulados por "ID —" e as `issues`, que impedem gravar;
+  - `importIssueText` e `importLabels`;
+  - `backlogIssueText(issue, t)`, com o texto da tela de importação. O dry_run do API-055 usa esse.
+
+  `ImportCardRow` ainda não é contrato: o API-033 vai acrescentar o id das linhas.
+- **`cardMarkdown.ts`:** `formatCardAsMarkdown(card, ctx, t)`.
+- **`i18n.pt-BR.ts`:** além dos rótulos do API-023, as 20 chaves do Markdown do card e as 8 `projects_import_issue_*`, com o mesmo texto do app (o `projectDomain.test.ts` confere). `DomainTFor<K>` é o `t` de quem só usa as chaves `K`: o `tPtBR` serve, e o `t` do app também.
+- **Sem relógio em `_domain`:** `today` é obrigatório em todas as funções. Os padrões ficam nos wrappers de `src/lib` (`autoSchedule`, `projectStats` e `projectCardFilters`), com o dia do aparelho. No Deno o fuso é UTC, então o handler pega o dia no fuso da pessoa pelo SQL: `select (now() at time zone $1)::date` no `ctx.tx`. Um fuso inválido dá 22023, que vira `validationFailed` do `X-Akool-Timezone` (sondado no staging em 11/10). O `todayInTimeZone` com `Intl` foi adiado.
+- **Testes que dependem do fuso:** o CI roda em UTC e o dev em São Paulo, e nenhum dos dois tem horário de verão. Por isso os testes fixam o fuso no próprio teste, com `vi.stubEnv('TZ', …)` e `vi.unstubAllEnvs()` (o Node relê o TZ, e o pool do vitest é forks), e cada um tem uma pré-condição que falha se o fuso não pegar. O `createdPerWeek` de `_domain` e o `distributeDueDates` (`src/lib/studySchedule.test.ts`) fixam America/New_York no `beforeAll`, onde 09/03/2025 tem 23 h. Os wrappers do app (`createdDayLocal` e o "hoje" do Gerar cronograma) rodam cada caso em America/Sao_Paulo, America/Manaus e Asia/Tokyo (`it.each`, com o `stubEnv` dentro do caso e o `unstubAllEnvs` no `afterEach`). Os instantes são montados em hora local dos dois lados da meia-noite (23:30 e 00:30), e a pré-condição confere o `getTimezoneOffset()` de cada fuso. O dia UTC ou um offset fixo (o UTC−3 de Brasília) só acertam os dois lados num fuso a menos de meia hora do seu, então algum dos três os pega. A trava REL-007 do `repo-hygiene` também barra `isoFromUTC(Date.now())` como "hoje".
+- **Linha do banco → domínio:** na linha de `project_cards`, `priority` vem em texto e `labels`, `checklist` e `links` em JSON. Antes de chamar `autoSchedule`, `projectStats` e `cardMarkdown`, o handler estreita esses campos e recusa prioridade fora das quatro (`isProjectPriority`). Uma prioridade desconhecida ordenaria primeiro na agenda, sem aviso, e criaria uma chave nova no `countByPriority`.
+
 **Por que `_api` e `_domain`:**
 
 - `scripts/coverage-ratchet.mjs` agrupa a cobertura por pasta de `supabase/functions`.
@@ -364,7 +560,9 @@ supabase/functions/
 
 - `tsconfig.functions.json` (API-005): strict, ES2023 sem DOM, `types: ["node"]` (os testes leem migrations com `node:fs`), `allowImportingTsExtensions`, `noEmit`, `tsBuildInfoFile` em `node_modules/.tmp`. `include: ["supabase/functions/_api", "supabase/functions/_domain"]` (um padrão terminado em `/**` é ignorado pelo TypeScript) e `exclude: ["supabase/functions/**/runtime", "supabase/functions/**/index.ts"]` (relativos ao arquivo). Fica referenciado no `tsconfig.json`, então `npx tsc -b` checa os módulos puros. Opcional: rodar `deno check supabase/functions/api/index.ts` no CI.
 - `_api/importBoundary.test.ts` (API-005): fora de `runtime/`, `_api` e `_domain` só importam caminhos relativos com `.ts` dentro de `supabase/functions` (inclusive `import type`, `export … from` e `import()`), e o que importarem de fora (ex.: `_shared`) segue a mesma regra. Ficam proibidos `src/`, `@/`, pacote nu, `npm:`, `jsr:`, import de efeito colateral e importar `runtime/` ou um `index.ts`. Testes podem importar `vitest` e `node:*`. O `exclude` do tsconfig não basta: um arquivo importado é checado do mesmo jeito.
-- Globais do Node (`process`, `Buffer`, `require`, `__dirname`…) ficam proibidos em `_api` e `_domain` fora dos testes, pela regra `no-restricted-globals` do `eslint.config.js`. O `types: ["node"]` do `tsconfig.functions.json` existe só por causa dos testes, então o `tsc` sozinho deixaria passar.
+- Em `_api` e `_domain`, fora dos testes, a regra `no-restricted-globals` do `eslint.config.js` proíbe os globais do Node (`process`, `Buffer`, `require`, `__dirname`…) e os do navegador (`localStorage`, `sessionStorage`, `navigator`, `window` e `document`). O `types: ["node"]` do `tsconfig.functions.json` existe só por causa dos testes, e o `@types/node` também declara `localStorage` e `sessionStorage`: o `tsc` sozinho deixaria passar.
+- A regra `no-restricted-syntax` do mesmo bloco barra relógio e hora local (API-027). Do relógio, ela barra `new Date()` sem argumento, `Date()` sem `new` e `Date.now()`. Da hora local, barra `new Date` com mais de um argumento (data por partes), `Date.parse`, os getters e setters locais (`getHours`, `getYear`, `setDate`…), `toDateString`, `toTimeString` e `toLocale*String`, e `new Date` com texto literal, template ou concatenação com cauda literal (`dia + 'T00:00:00'`) que não tem `Z` nem offset logo depois da hora. O `Z` ou o offset vêm depois dos minutos ou dos segundos (`'…T01:30Z'`, `'…00.123456+00:00'`, `'…00-0300'`): o `-2025` de `'03-10-2025'` não é offset, e o V8 lê esse texto em hora local. O `z` minúsculo também é barrado, porque no Safari dá Invalid Date. Na cauda de template ou de concatenação basta o `Z` ou um offset com dois-pontos (`` `${dia}T${hora}Z` ``), porque a hora pode estar na parte variável. A data sem hora (`'2025-03-10'`) é meia-noite UTC pela especificação, não hora local, mas também é barrada, com mensagem própria: por convenção, o dia passa por `toUTC`. Barra também o navegador e o relógio por `globalThis` ou `self` (`globalThis.localStorage`, `(globalThis as X).Date`…), que o `no-restricted-globals` não vê, e parâmetro com padrão `today…()`. Ela não vê `new Date(variavel)`, a concatenação com cauda variável (`dia + hora`), `String(data)` nem um apelido de `Date`, e deixa `toString()` de fora: sem os tipos, barraria o `n.toString(16)` dos números. Por isso o dia `'YYYY-MM-DD'` passa sempre por `toUTC`. O `scripts/eslint-domain-clock.test.ts` prova cada padrão com o `lintText` e confere que o código atual de `_domain` e `_api` passa.
+- As travas REL-007, UX-011 e QA-006 do `scripts/repo-hygiene.test.ts` também varrem `_domain` e `_api`, inclusive os arquivos que ainda não estão no índice do git.
 
 **Porte de módulos de `src/lib`.** Cada card de porte:
 
@@ -376,6 +574,8 @@ supabase/functions/
 - usa tipos locais;
 - separa o IO: `importProjectCards` vira `importPlan` puro mais a gravação;
 - troca `t(TranslationKey)` por um dicionário pt-BR em `_domain/i18n.pt-BR.ts`;
+- tira o relógio: `today` (e o "agora") vêm de quem chama, e o padrão fica no wrapper de `src/lib`;
+- trava o resultado com testes que ficam no repo (golden, paridade de tipos pelo `tsc` e de textos com `src/i18n`), não com uma comparação contra o original, que some depois do porte;
 - roda `node scripts/coverage-ratchet.mjs --allow-moves`.
 
 ## 4. Registro de ações (`_api/types.ts`, `_api/registry.ts`)
@@ -526,6 +726,12 @@ supabase/functions/
 
 Estudos (API-022/034): o progresso, que é o `completed` dos pontos e o `userAnswer` do quiz, vive nos mesmos arrays do conteúdo. `private.study_without_progress(jsonb)` (API-021) devolve a lista sem essas duas chaves. Um gatilho de sessão da API compara a projeção do OLD com a do NEW para saber se a gravação mudou conteúdo (`estudos.conteudo`) ou só progresso (`estudos.progresso`).
 
+As RPCs do API-024 já separam as duas subseções pelo nome:
+- `estudos.progresso:write`: `study_checkpoint_toggle`, `study_quiz_answer` e `study_quiz_reset`;
+- `estudos.conteudo:write`: `study_checkpoint_add`, `study_checkpoint_edit`, `study_checkpoint_remove`, `study_resource_add`, `study_resource_remove`, `study_cards_append`, `study_import_topic` e `study_reschedule`.
+
+Anexar e importar gravam o `completed` que vier (o "- [x]" do parser) e sempre `userAnswer: null`. O API-022/034 decide se criar card com ponto já marcado exige também `estudos.progresso:write`, por exemplo uma linha nesta tabela: "Anexar ou importar card com ponto marcado → `estudos.progresso:write`".
+
 ## 8. Notificações
 
 | Tipo | Exige leitura de |
@@ -580,7 +786,7 @@ A chave vem no cabeçalho `Idempotency-Key` (REST) ou no campo `idempotency_key`
 
 - Acima do limite: 429 com `Retry-After`.
 - Se o limitador falhar: segue (fail-open) com log em leitura e escrita; bloqueia (fail-closed) em Excluir.
-- Tetos por chamada: lote de transações 100; extrato 500 linhas; backlog 200 cards; estudo 100 cards.
+- Tetos por chamada: lote de transações 100; extrato 500 linhas; backlog 200 cards; estudo 100 cards. O de estudo vale em `study_cards_append` e `study_import_topic` (API-024: de 1 a 100 cards e até 4 MiB; `STUDY_IMPORT_CARDS_MAX` e `STUDY_IMPORT_MAX_BYTES` em `src/lib/studyLimits.ts`, conferidos contra a migration). A importação é tudo ou nada: o parser corta antes (API-029).
 
 ### 9.4 Lixeira (API-025)
 
@@ -615,6 +821,15 @@ Implementação: `supabase/functions/_api/errors.ts` (API-005). Códigos estáve
 - Um 500 chama `captureException` (`_shared/sentry.ts`, com scrub). `scrub.ts` ganha uma regra para `postgres://`.
 
 **Erros de validação de nota (API-020).** Os issues passam por `toSchemaIssues(issues)` antes do `validationFailed`: o campo `fatal` não vaza no corpo, e os fatais vêm primeiro. Nas props com JSON em texto (`snapshot`, `elements`, `appState`), o ponteiro aponta para a prop (`/3/props/snapshot`) e a palavra-chave é o nome dela. O caminho interno vai na mensagem: `/labels/2: Deve ter no máximo 50 caractere(s)`.
+
+**Erros de Markdown (API-023).** O `markdownToNote` devolve cada problema com a linha do Markdown (`line`). A linha vale 0 quando o problema é da nota inteira, como os 2 MiB da forma canônica. `toMarkdownSchemaIssues(issues)` monta o `details` do `validation_failed`:
+- o `path` é o campo da ação (`/markdown`);
+- a linha vai na mensagem, por exemplo `linha 12: Caminho de imagem fora da pasta da nota (…)`;
+- os fatais vêm primeiro, no máximo 20.
+
+O formato do `SchemaIssue` não muda: `line` não vai no corpo como campo próprio. Os avisos (`warnings`: HTML descartado, citação achatada, imagem dividida, quebra suave, link inseguro, nota de rodapé) não são erro; o API-044 os devolve na resposta de sucesso.
+
+As RPCs de lote de Estudos (API-024) prefixam a mensagem com `cards/N: ` (N a partir de 0) e mantêm o SQLSTATE de origem: 22023 da validação, 23514 da forma pelo gatilho do API-021. O handler do API-034 pode transformar o prefixo em `details` com o pointer `/cards/N`.
 
 ## 11. Versionamento
 
@@ -797,7 +1012,7 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 
 ## 18. Formato dos cards e importação
 
-- BacklogCard v1 (`src/lib/backlogMarkdownParser.ts`):
+- BacklogCard v1 (`supabase/functions/_domain/backlogMarkdownParser.ts`, reexportado por `src/lib/backlogMarkdownParser.ts`, API-027):
   - `## Tópico: X`;
   - `### CARD API-0NN — Título`;
   - tabela Campo|Valor com ID, Prioridade, Esforço, Labels (separadas por vírgula) e Arquivos (em crases).
@@ -809,6 +1024,8 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 - As dependências ficam no Contexto e na primeira subtarefa. O importador atual não grava `depends_on`; o API-033 corrige isso para backlogs futuros.
 - Antes de importar, rodar `npm run import:cards -- docs/imports/backlog-api-v1.md --dry-run` e conferir, card a card, o número de subtarefas, a presença do Contexto e a ausência de avisos.
 - O cabeçalho do arquivo explica os lotes e o enfileiramento por `lote-NN`.
+- O golden `supabase/functions/_domain/fixtures/backlogs.golden.json` guarda o resultado do parser em cada backlog de `docs/imports`. Por card, ele tem ID, prioridade, esforço, tópico, rótulos, número de arquivos, subtarefas feitas/total e o sha256 do card, que pega título, descrição e o texto das subtarefas. Quem muda um backlog de `docs/imports` (ou o parser, de propósito) regrava com `npx vitest run -u supabase/functions/_domain/backlogMarkdownParser.test.ts` e confere o diff do golden no PR.
+- Os avisos do parser saem de dois jeitos: `warnings`, com o texto da CLI, e `issues`, com o código. A tela e a API traduzem as `issues` com `backlogIssueText` (`_domain/importPlan.ts`), e a API usa o `tPtBR`.
 ## Apêndice A. Catálogo de permissões
 
 27 subseções. O padrão de todas é Nenhum. A fonte canônica passa a ser `supabase/functions/_api/catalog.ts` (API-001), replicada em `private.api_scope_catalog`.
@@ -819,12 +1036,12 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 | `perfil.notificacoes` | Perfil › Notificações | Excluir | notifications: select; update só de read=true; delete. Ações perfil.notificacoes.listar, contar_nao_lidas, marcar_lida, marcar_todas_lidas e excluir | Linhas filtradas por tipo: loan_* exige financas.emprestimos:ler; workspace_invite, invite_accepted, invite_declined, member_joined e member_left exigem compartilhamento.pessoas:ler; backup_stale e finance_recurring_failed exigem admin.backups:ler; api_token_* ficam aqui; tipo desconhecido fica oculto. O mapa completo por tipo é o do §8, que vale sobre esta lista. Responder convite de workspace não é desta subseção. |
 | `perfil.convites` | Perfil › Convites | Escrever | invite_codes com created_by = eu (mesmo para admin), saldo de convites e generate_invite_code (Escrever) | Escrever deixa um terceiro criar conta. Limite de 5 códigos por dia por token, inclusive para admin. |
 | `documentos.paginas` | Documentos › Páginas | Excluir | pages: árvore pelo RLS (page_is_readable/page_is_writable), metadados, criar com as linhas de note_contents/drawing_contents, mover e reordenar. Excluir = exclusão com subárvore, via lixeira de 7 dias, e limpeza adiada de note-images | O SELECT em pages também é liberado para quem lê notas, desenhos ou tarefas. Páginas compartilhadas comigo só aparecem com incluir_compartilhados (exige compartilhamento.pessoas:ler); escrever nelas exige compartilhamento.pessoas:escrever. A exclusão pede confirm_subtree e aceita dry_run. |
-| `documentos.notas` | Documentos › Conteúdo de notas | Escrever | note_contents (BlockNote validado; Markdown nos dois sentidos; versão), bucket note-images (envio e URL assinada de 1 h), blocos diagram e projectCard | Inserir bloco de card de projeto exige também projetos.cards:ler, e o snapshot é montado no servidor a partir do card lido (API-044): `newProjectCardIds(antes, depois)` (`_domain/blocknote/projectCard.ts`) aponta os blocos projectCard novos ou alterados. Anexar valida o documento já juntado: ids únicos, 5000 blocos e 2 MiB valem sobre a nota final na forma canônica (a saída do `normalizeNoteContent`, que é a gravada). O snapshot do card é montado, ou o bloco recusado, antes da validação, porque card sem snapshot é contrato. Toda escrita leva expected_updated_at ou force explícito. Nota de outra pessoa volta marcada como conteúdo não confiável. |
+| `documentos.notas` | Documentos › Conteúdo de notas | Escrever | note_contents (BlockNote validado; Markdown nos dois sentidos; versão), bucket note-images (envio e URL assinada de 1 h), blocos diagram e projectCard | Inserir bloco de card de projeto exige também projetos.cards:ler, e o snapshot é montado no servidor a partir do card lido (API-044): `newProjectCardIds(antes, depois)` (`_domain/blocknote/projectCard.ts`) aponta os blocos projectCard novos ou alterados. Anexar valida o documento já juntado: ids únicos, 5000 blocos e 2 MiB valem sobre a nota final na forma canônica (a saída do `normalizeNoteContent`, que é a gravada), e o teto de células da nota inteira (Σ células²) vale contra o custo da nota atual (`noteLimitIssues` com `baseline`). O snapshot do card é montado, ou o bloco recusado, antes da validação, porque card sem snapshot é contrato. Toda escrita leva expected_updated_at ou force explícito. Nota de outra pessoa volta marcada como conteúdo não confiável. |
 | `documentos.desenhos` | Documentos › Desenhos | Escrever | drawing_contents: elementos Excalidraw, app_state e files sob demanda | Escrita validada, com limites de tamanho e incremento de version/versionNonce para o canvas aberto perceber a mudança. |
 | `documentos.tarefas` | Documentos › Tarefas (listas) | Excluir | todos de páginas do tipo todo: listar por página e as minhas, criar, atualizar, concluir e excluir | Criar a página de tarefas é de documentos.paginas. A API nunca muda user_id nem page_id. |
 | `documentos.notas_rapidas` | Documentos › Notas rápidas | Excluir | quick_notes: conteúdo, cor e linked_items por operação de item | Vincular página ou card exige leitura do alvo (documentos.paginas ou projetos.cards). Depende do API-003, que acaba com a sobrescrita offline. |
-| `estudos.conteudo` | Estudos › Tópicos e roteiros | Excluir | study_topics e study_cards (título, descrição, prazos, checkpoints como texto, recursos, definição do quiz, blocks), RPCs study_* de conteúdo, importação em Markdown ou JSON, contrato do prompt, visão geral, estatísticas e planejamento | Excluir tópico apaga cards e diário em cascata (com lixeira). Os status planned e paused são daqui; studying e completed são de estudos.progresso. |
-| `estudos.progresso` | Estudos › Progresso (checkpoints e quiz) | Escrever | study_checkpoint_toggle, study_quiz_answer e study_quiz_reset, status studying/completed do tópico | Separado para que uma IA que gera roteiros não consiga marcar o aprendizado como feito. |
+| `estudos.conteudo` | Estudos › Tópicos e roteiros | Excluir | study_topics e study_cards (título, descrição, prazos, checkpoints como texto, recursos, definição do quiz, blocks), RPCs de conteúdo do API-024 (study_checkpoint_add, study_checkpoint_edit, study_checkpoint_remove, study_resource_add, study_resource_remove, study_cards_append, study_import_topic e study_reschedule; até 100 cards e 4 MiB por chamada), importação em Markdown ou JSON, contrato do prompt, visão geral, estatísticas e planejamento | Excluir tópico apaga cards e diário em cascata (com lixeira). Os status planned e paused são daqui; studying e completed são de estudos.progresso. |
+| `estudos.progresso` | Estudos › Progresso (checkpoints e quiz) | Escrever | study_checkpoint_toggle, study_quiz_answer e study_quiz_reset (RPCs do API-024), status studying/completed do tópico | Separado para que uma IA que gera roteiros não consiga marcar o aprendizado como feito. |
 | `estudos.diario` | Estudos › Diário | Excluir | study_logs: listar por tópico ou global, criar e excluir | Texto livre pessoal. |
 | `projetos.quadros` | Projetos › Quadros e colunas | Excluir | project_boards, project_columns, create_project_board, reorder_project_columns, membros (sem e-mail, via api_profile_cards), estatísticas e cq_boards. Excluir = excluir quadro, excluir coluna (apaga os cards) e cq_setup_flow | Renomear coluna pode desligar o fluxo da fila, e a resposta avisa. Quadros compartilhados comigo só aparecem com incluir_compartilhados; escrever neles exige compartilhamento.pessoas:escrever. |
 | `projetos.cards` | Projetos › Cards | Excluir | project_cards (todos os campos, itens, relações, responsável, página vinculada), reorder_project_cards, schedule_project_cards, bucket project-card-images, importação de backlog, agenda automática, exportação em Markdown, cq_cards e cq_card | Mover para a coluna de concluído num quadro com fluxo e marcar itens do usuário exigem também projetos.validacao, conferido no banco. |
@@ -867,3 +1084,32 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 - Cronograma longo: são 22 lotes, e os 11 primeiros (fundação e pré-requisitos) precisam ser concluídos antes de qualquer domínio chegar à produção. Os pré-requisitos já corrigem bugs do app nesse período, mas o valor visível da API para o usuário só aparece a partir do lote 12.
 - Empréstimos não têm tela no repo e src/lib/loanCalc.ts não existe. A regra de saldo precisa ser confirmada pelo usuário (cards P3).
 - A identificação por ID externo ('ABC-123 — Título') não é única e resolve para o card mais antigo. Importações repetidas sem deduplicação poderiam mirar o card errado; o API-055 deduplica.
+- **CPU do Markdown (API-023).**
+  - **Por que um parser próprio:** o marked e o micromark (o motor do BlockNote) são quadráticos com entrada adversária, com mais de 20 s com 16 a 64 KiB. Por isso o parser é próprio e linear, com limite de 512 KiB de Markdown por chamada.
+  - **Medido (Apple M-series, Node 22, mínimo de 3 execuções):**
+    - pior caso da bateria patológica a 512 KiB, agora com 64 casos: os 43 do cmark, do cmark-gfm e da avaliação, mais 21 da revisão do lote 05 (autolink literal recusado na mesma corrida, parênteses e `;` no fim do autolink, corrida de espaços ou tabs no meio de parágrafo, título e célula, texto e imagem, imagem seguida de quebras duras, crase depois da cerca e definição sozinha na citação). Dá de 150 a 190 ms, ou 582 ms com o coverage do V8 (linkParenteses), sempre num caso antigo. Os 21 novos ficam em até 116 ms, ou 226 ms com coverage. Medido em 11/10, com a máquina carregada (load 4 a 5). Em 12/10, com o macOS ocupando ~2 núcleos, tudo ficou ~3× mais lento: de 280 a 770 ms sem coverage (linkSemFecharB, sozinho ou com a suíte em paralelo) e até 1.864 ms com coverage (linkParenteses). Com isso o teto de 3 s fica só 1,6× acima;
+    - razão de escala t(n)/t(n/4), medida em pares: o pequeno e logo depois o grande, até 6 pares. A razão é o menor grande dividido pelo menor pequeno, e a decisão sai do 3º ao 6º par, com até 2 retentativas por caso. Antes, os dois mínimos saíam de janelas separadas (3 grandes, depois 3 pequenos), e a suíte inteira dava falso vermelho (3 em 3 execuções na revisão 2). Linear, em 12/10 no M2 com o macOS ocupando ~2 núcleos: até 7,8 com o arquivo sozinho e 7,2 na suíte inteira com coverage. Com carga, a 1ª tentativa passou de 8 em 7 de 839 medidas (até 14), e o retry refez todas com 4,2 a 6,4. Quadrático: de 10 a 44 nos mutantes da 1ª rodada a 64 KiB. O indexOf do finalize, o único que fica abaixo do teto de 3 s a 512 KiB, dá de 9,5 a 12,7 nas três tentativas;
+    - antes da revisão, os 21 casos novos eram quadráticos. A 512 KiB: `(http://` repetido levava cerca de 270 s; `a`, 512 Ki espaços e `b`, cerca de 177 s; a imagem seguida de 262 mil quebras duras, 42 s; a linha de crases com uma crase no fim, 41 s; `&` seguido de ` http://a;` repetido, 8,1 s. Com 32 KiB: `_www.` repetido, 2,5 s; `http://a.co/` com `)` até o fim, 1,1 s. A regravação de `x` sobre uma nota com 64 Ki espaços no meio de um parágrafo e de um título caiu de 7,6 s para 3 ms;
+    - nota realista de 512 KiB (2.511 blocos, 2,07 MB canônicos): cerca de 55 ms;
+    - regravação com reconciliação sobre uma nota de 1,8 MB: de 85 a 120 ms;
+    - render de 5000 blocos: cerca de 40 ms;
+    - render e regravação de nota com 20 mil blocos sem id ou com o mesmo id: de 8,5 a 9,7 s antes (o `withUniqueIds` era quadrático), de 54 a 125 ms depois;
+    - reconcile com 80 mil grupos sem projeção entre dois com projeção: 5,3 s antes, 19 ms depois;
+    - tabela gravada com largura 1000 (20 células com colspan 50) e 40 mil linhas, 600 KB de JSON: passava de 1 GB de memória no render. Agora sai ilegível em 5 ms, sem montar a grade;
+    - regravação (`markdownToNote('# Nota refeita', { existing })`) sobre notas gravadas fundas, antes e depois da revisão 2 (M2 com a máquina carregada):
+      - 64 níveis numerados com start 999999999 e código `a\n` × 5 mil (23 KiB): de 1.256 ms para 9 ms;
+      - a mesma nota com × 20 mil (67 KiB): de 5.031 ms para 10 ms;
+      - 64 níveis de marcadores com 20 mil linhas: de 1.086 ms para 7 ms;
+      - nota válida de 880 KiB com 10 níveis: de 2.976 ms para 21 ms;
+      - nota válida de 296 KiB: de 967 ms para 130 ms;
+      - as 300 tabelas do R9: de 4.310 ms para 80 ms;
+    - o render do código de 200 mil linhas no 64º nível (594 KiB) dava 139 Mi unidades e agora para no teto em 11 ms;
+    - memória do `findNextNonspace`: o render de 63 itens numerados com 2.900 linhas de código (1,94 Mi unidades) é relido em 1.364 ms sem ela e em 42 a 60 ms com ela. O raso do mesmo tamanho leva de 27 a 41 ms;
+    - pior caso logo abaixo dos tetos da reconciliação:
+      - 24 tabelas 100×100 mescladas (245 mil `|`): de 290 a 370 ms;
+      - 65 mil linhas em branco no 64º nível: 180 ms;
+      - 255 mil quebras duras na raiz: de 155 a 260 ms no plan, mais de 0,6 a 0,9 s de render.
+  - **O que o teste prende:** em `markdown.test.ts`, o teto absoluto de 3 s e a razão abaixo de 8 em cada um dos 64 casos, medidos em pares na mesma janela e com até 2 retentativas. O quadrático fica acima de 8, ou do teto, nas três. Cada caso confere também o tamanho exato (512 e 128 KiB) na geração que já faz. Com o mesmo teto, prende também a regravação sobre uma nota com 64 Ki espaços e tabs no meio de um parágrafo e de um título, os 20 mil blocos sem id ou com o mesmo id e os 80 mil grupos sem projeção. A equivalência com a conta antiga dos cortes por laço, do `splitRow` e do autolink literal memorizado fica presa por propriedades com semente fixa.
+  - **O que o teste prende (revisão 2):** com o teto de 3 s, a regravação sobre as notas fundas. Prende também a razão abaixo de 10 entre a releitura funda e a rasa do mesmo tamanho, e os tetos da reconciliação nas bordas. A memória não muda o resultado: num diferencial com semente fixa (39 mil entradas, no rascunho do lote), o parser saiu igual ao de antes, e a memória errada derruba 26 testes antigos.
+  - **Risco que fica:** a edge é mais lenta que o Mac e tem 2 s de CPU, e o tempo real lá só vai ser medido no API-044. O render de nota com muitas quebras duras custa de 2,5 a 3 µs por linha. A nota válida de 2 MiB com 700 mil quebras na raiz leva ~2 s só no render; o plan, os tetos já cortam. O `blocksToText` não tem teto de saída: o código de 200 mil linhas no 64º nível (594 KiB de JSON) vira 24 Mi caracteres de texto, e numa nota de 2 MiB seriam ~85 Mi. A margem da razão é pequena: o linear chega a 7,8 com o arquivo sozinho (macOS ocupando ~2 núcleos) (cache: 512 KiB não cabem onde 128 KiB cabem), e quem segura o falso vermelho com carga é o retry. Uma regressão quadrática forte leva minutos para falhar: o timeout de 60 s não interrompe código síncrono, e o retry repete as 3 tentativas. A regex de volta no Converter.inline levou 18,6 min.
+  - **Fora do card:** a colagem do NoteEditor ainda passa pelo micromark (1,5 s com 512 KiB realistas, 16 s com 64 KiB adversários), e o copiar do editor ainda grava o Markdown com perdas do BlockNote. Os dois cards propostos no plano trocam isso pelo `render.ts` e pelo `markdownToNote`.
