@@ -1,4 +1,5 @@
 import type { ProjectCard, ProjectCardPriority } from '../types'
+import { isOverdue as isOverdueOn } from '../../supabase/functions/_domain/isoDate'
 import { hasCardLabel, labelKey } from './cardLabels'
 import { localKey } from './localKeys'
 
@@ -32,9 +33,9 @@ export function todayStr(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** API-027: a regra mora em _domain/isoDate.ts (sem relógio); aqui o "hoje" padrão é o do aparelho. */
 export function isOverdue(card: ProjectCard, today?: string): boolean {
-  const t = today ?? todayStr()
-  return !!(card.due_date && !card.completed && card.due_date < t)
+  return isOverdueOn(card, today ?? todayStr())
 }
 
 export function isDueToday(card: ProjectCard, today?: string): boolean {

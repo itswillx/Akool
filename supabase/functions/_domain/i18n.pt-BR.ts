@@ -1,0 +1,70 @@
+// Dicionário pt-BR do _domain (§3 de docs/api-arquitetura.md). Os módulos puros
+// não podem importar o i18n do app (src/i18n), então os textos que eles
+// produzem (Markdown de card, texto puro de nota, avisos de importação) moram
+// aqui. Cada chave que existe também no app tem o mesmo texto lá: o teste de
+// paridade em src/lib/projectDomain.test.ts confere.
+//
+// A interpolação é a mesma do getT do app (src/i18n/translations.ts): {nome}
+// vira o valor, numa passada só, e um placeholder sem valor fica como está.
+
+export const DOMAIN_PT_BR = {
+  // Texto puro de nota (blocksToText, API-023): rótulos dos blocos sem texto.
+  note_text_image: '[imagem: {name}]',
+  note_text_image_unnamed: '[imagem]',
+  note_text_diagram: '[diagrama]',
+  note_text_card: '[card: {title}]',
+  note_text_card_unnamed: '[card]',
+  note_text_file: '[arquivo: {name}]',
+  note_text_file_unnamed: '[arquivo]',
+  note_text_video: '[vídeo: {name}]',
+  note_text_video_unnamed: '[vídeo]',
+  note_text_audio: '[áudio: {name}]',
+  note_text_audio_unnamed: '[áudio]',
+  // Markdown do card (cardMarkdown, API-027): as mesmas chaves do app.
+  projects_new_card: 'Novo card',
+  projects_table_column: 'Coluna',
+  projects_priority: 'Prioridade',
+  projects_priority_urgent: 'Urgente',
+  projects_priority_high: 'Alta',
+  projects_priority_medium: 'Média',
+  projects_priority_low: 'Baixa',
+  projects_assignee: 'Responsável',
+  projects_unassigned: 'Sem responsável',
+  projects_start_date: 'Início',
+  projects_due_date: 'Prazo',
+  projects_estimated_days: 'Duração estimada (dias)',
+  projects_labels: 'Etiquetas',
+  projects_parent_task: 'Tarefa-pai',
+  projects_dependencies: 'Dependências',
+  projects_card_completed: 'Concluído',
+  projects_card_description: 'Descrição',
+  projects_checklist: 'Checklist',
+  projects_links: 'Links',
+  projects_attachments: 'Imagens',
+  // Avisos do parser de backlog na tela de importação (backlogIssueText, API-027).
+  projects_import_issue_invalid_heading: 'Bloco ignorado: cabeçalho CARD inválido ou ausente',
+  projects_import_issue_id_mismatch: '{id}: o ID da tabela ({detail}) é diferente do cabeçalho',
+  projects_import_issue_no_subtasks: '{id}: nenhuma subtarefa encontrada',
+  projects_import_issue_no_priority: '{id}: sem prioridade, usando média',
+  projects_import_issue_no_effort: '{id}: sem esforço',
+  projects_import_issue_no_topic: '{id}: sem seção Tópico',
+  projects_import_issue_duplicate_id: '{id}: ID repetido, só a primeira ocorrência entra',
+  projects_import_issue_no_cards: 'Nenhum card encontrado no arquivo',
+} as const satisfies Record<string, string>
+
+export type DomainKey = keyof typeof DOMAIN_PT_BR
+export type DomainT = (key: DomainKey, vars?: Record<string, string | number>) => string
+
+/**
+ * API-027: o `t` de um módulo que só usa as chaves `K` (o Markdown do card, os
+ * avisos da importação). O tPtBR serve, e o `t` do app também, desde que as `K`
+ * existam no app (src/lib/projectDomain.test.ts confere pelo tsc).
+ */
+export type DomainTFor<K extends DomainKey> = (key: K, vars?: Record<string, string | number>) => string
+
+/** O `t` do _domain em pt-BR. O `t` do app também serve onde as chaves existem nos dois. */
+export const tPtBR: DomainT = (key, vars) => {
+  const str: string = DOMAIN_PT_BR[key]
+  if (!vars) return str
+  return str.replace(/\{(\w+)\}/g, (match, name: string) => (Object.hasOwn(vars, name) ? String(vars[name]) : match))
+}

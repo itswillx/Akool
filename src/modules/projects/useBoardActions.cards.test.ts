@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '../../test/rtl'
 import type { ProjectCard } from '../../types'
 import type { useBoardData } from './useBoardData'
@@ -18,6 +18,7 @@ const api = vi.hoisted(() => {
     deleteResult,
     reschedule,
     calls: [] as string[],
+    schedules: [] as { boardId: string; patches: { id: string; start_date: string | null; due_date: string | null; depends_on: string[] }[] }[],
   }
 })
 
@@ -27,6 +28,10 @@ vi.mock('../../lib/data/projects', async importOriginal => ({
   insertCard: () => Promise.resolve(api.insertResult),
   deleteCard: () => { api.calls.push('delete'); return Promise.resolve(api.deleteResult) },
   rescheduleCard: () => Promise.resolve(api.reschedule),
+  scheduleCards: (boardId: string, patches: (typeof api.schedules)[number]['patches']) => {
+    api.schedules.push({ boardId, patches })
+    return Promise.resolve({ data: null, error: null })
+  },
 }))
 vi.mock('../../contexts/PagesContext', () => ({ usePages: () => ({ pages: [], sharedPages: [], setActivePage: () => {} }) }))
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ showToast: () => {} }) }))
@@ -73,7 +78,12 @@ beforeEach(() => {
   api.deleteResult = { data: [{ id: 'c1' }], error: null }
   api.reschedule = { data: [{ id: 'c1', updated_at: 'v9' }], error: null }
   api.calls = []
+  api.schedules = []
   sessionStorage.clear()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('E/S do editor (cardIO)', () => {
@@ -164,5 +174,69 @@ describe('datas na linha do tempo', () => {
     const { handleRescheduleCard } = actions()
     await act(() => handleRescheduleCard('c1', { start_date: null, due_date: null }))
     expect(state.persistError).toBe('projects_persist_error')
+  })
+})
+
+// API-027: a agenda mora em _domain, com `today` obrigatório. O wrapper do app
+// (src/lib/autoSchedule.ts) preenche o dia de hoje do aparelho; se perdesse o
+// padrão, o cronograma do botão sairia com outro dia e nenhum outro teste veria.
+describe('Gerar cronograma (handleGenerateSchedule): "hoje" é o dia no fuso do aparelho', () => {
+  // O relógio fica em segunda 23:30 ou terça 00:30 no fuso de quem roda, em
+  // fusos com offsets a 1 h ou mais um do outro (nenhum muda de horário em
+  // março de 2026). O dia UTC do servidor ou um offset fixo (o UTC−3 de
+  // Brasília) só acertam os dois lados da meia-noite num fuso a menos de meia
+  // hora do seu, então algum dos fusos os pega. Em UTC (o CI), e só em São
+  // Paulo, o "hoje" errado passaria.
+  // O stubEnv grava no process.env, e o Node relê o TZ (o pool do vitest é forks).
+  afterEach(() => { vi.unstubAllEnvs() })
+  const zones = [
+    { tz: 'America/Sao_Paulo', offset: 180 },
+    { tz: 'America/Manaus', offset: 240 },
+    { tz: 'Asia/Tokyo', offset: -540 },
+  ]
+  // c1 (alta, 2 dias) e depois c2 (baixa, 1 dia). Com o prazo 14/03, a janela
+  // de 6 dias (de segunda) ou de 5 (de terça) é dividida na proporção 2:1.
+  const moments = [
+    {
+      when: 'segunda 23:30', day: 9, hour: 23,
+      gaps: [['c1', '2026-03-09', '2026-03-10'], ['c2', '2026-03-11', '2026-03-11']],
+      deadline: [['c1', '2026-03-09', '2026-03-12'], ['c2', '2026-03-13', '2026-03-14']],
+    },
+    {
+      when: 'terça 00:30', day: 10, hour: 0,
+      gaps: [['c1', '2026-03-10', '2026-03-11'], ['c2', '2026-03-12', '2026-03-12']],
+      deadline: [['c1', '2026-03-10', '2026-03-12'], ['c2', '2026-03-13', '2026-03-14']],
+    },
+  ]
+  const cases = zones.flatMap(z => moments.map(m => ({ ...z, ...m })))
+  const twoCards = () => [
+    card({ id: 'c1', priority: 'high', estimated_days: 2, sort_order: 0 }),
+    card({ id: 'c2', priority: 'low', estimated_days: 1, sort_order: 1 }),
+  ]
+  const clockAt = (tz: string, offset: number, day: number, hour: number) => {
+    vi.stubEnv('TZ', tz)
+    const now = new Date(2026, 2, day, hour, 30)
+    // Pré-condição: o fuso fixado vale; sem ela o caso rodaria no fuso do processo.
+    expect(now.getTimezoneOffset()).toBe(offset)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(now)
+  }
+  const patchesOf = (rows: string[][]) => rows.map(([id, start_date, due_date], i) => ({ id, start_date, due_date, depends_on: i === 0 ? [] : ['c1'] }))
+
+  it.each(cases)('sem prazo: começa hoje e encadeia na ordem de prioridade ($when em $tz)', async ({ tz, offset, day, hour, gaps }) => {
+    clockAt(tz, offset, day, hour)
+    const { state, actions } = setup({ open: false }, twoCards())
+    const { handleGenerateSchedule } = actions()
+    expect(await act(() => handleGenerateSchedule(null))).toEqual({ scheduled: 2, overflowDays: 0 })
+    expect(api.schedules).toEqual([{ boardId: 'b1', patches: patchesOf(gaps) }])
+    expect(state.cards.map(c => [c.id, c.start_date, c.due_date])).toEqual(gaps)
+  })
+
+  it.each(cases)('com prazo: replaneja de hoje até o prazo, e o último card termina nele ($when em $tz)', async ({ tz, offset, day, hour, deadline }) => {
+    clockAt(tz, offset, day, hour)
+    const { actions } = setup({ open: false }, twoCards())
+    const { handleGenerateSchedule } = actions()
+    expect(await act(() => handleGenerateSchedule('2026-03-14'))).toEqual({ scheduled: 2, overflowDays: 0 })
+    expect(api.schedules[0].patches).toEqual(patchesOf(deadline))
   })
 })

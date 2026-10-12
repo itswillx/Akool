@@ -6,16 +6,20 @@
 // - fatal: o tipo dos campos que o bloco React desenha. Título em objeto,
 //   rótulos ou checklist em texto derrubam o render, e o erro vai para o
 //   ErrorBoundary da seção (a nota inteira some);
-// - contrato: as 12 chaves exatas, os limites do API-013 (cardLimits.ts e
-//   cardLabels.ts) contados por code point, como o Postgres, a data válida por
-//   Date.UTC e o enum de prioridade. Prioridade desconhecida não quebra o render
-//   (cai na cor padrão). No modo gravado, chave a mais é tolerada: uma versão
+// - contrato: as 12 chaves exatas, os limites do API-013 (_domain/cardLimits.ts
+//   e _domain/cardLabels.ts) contados por code point, como o Postgres, a data
+//   válida por Date.UTC e o enum de prioridade. Prioridade desconhecida não
+//   quebra o render (cai na cor padrão). No modo gravado, chave a mais é tolerada: uma versão
 //   nova do app pode gravar um campo que a function ainda não conhece.
 
 import { compileSchema, jsonPointer, type JsonSchema, type SchemaIssue } from '../../_api/schema.ts'
+import { CARD_LABEL_MAX_LENGTH, CARD_LABELS_MAX } from '../cardLabels.ts'
+import { CHECKLIST_MAX_ITEMS, CHECKLIST_MAX_TEXT } from '../cardLimits.ts'
+import type { ProjectCardPriority } from '../projectTypes.ts'
 import { HARD_MAX_DEPTH } from './spec.ts'
 
-export type ProjectCardPriority = 'low' | 'medium' | 'high' | 'urgent'
+// API-027: o tipo mora em _domain/projectTypes.ts; o nome continua saindo daqui.
+export type { ProjectCardPriority }
 
 /**
  * Snapshot de um card de projeto dentro do bloco `projectCard` de uma nota:
@@ -37,10 +41,18 @@ export interface ProjectCardSnapshot {
   boardColor: string
 }
 
+// A ordem do enum aparece nas mensagens e no OpenAPI: não é a de exibição
+// (PROJECT_PRIORITIES, da mais urgente para a menos).
 export const PROJECT_CARD_PRIORITIES: readonly ProjectCardPriority[] = ['low', 'medium', 'high', 'urgent']
 
-// Os números do API-013 (src/lib/cardLimits.ts e src/lib/cardLabels.ts).
-export const SNAPSHOT_LIMITS = { labels: 30, labelLength: 50, checklist: 500, checklistText: 2000, boardColor: 64 } as const
+// Os números do API-013, de _domain/cardLimits.ts e _domain/cardLabels.ts (API-027).
+export const SNAPSHOT_LIMITS = {
+  labels: CARD_LABELS_MAX,
+  labelLength: CARD_LABEL_MAX_LENGTH,
+  checklist: CHECKLIST_MAX_ITEMS,
+  checklistText: CHECKLIST_MAX_TEXT,
+  boardColor: 64,
+} as const
 
 const dateOrNull: JsonSchema = { type: ['string', 'null'], format: 'date' }
 

@@ -35,8 +35,9 @@ Era um painel irmão de Documentos (`activePanel: 'projects'` + modo
   `docs/matriz-rls.md`) põe o card novo no fim da coluna e cuida do
   `updated_at`, que é a versão do conteúdo (mover não muda). O app nunca manda
   `updated_at`, nem `sort_order` de card novo — exceto a importação
-  (`lib/importProjectCards.ts`), que manda o max+1 da coluna por lote para os
-  importados ficarem na ordem do arquivo.
+  (`lib/importProjectCards.ts`, com o plano em `_domain/importPlan.ts`), que
+  manda o max+1 da coluna por lote para os importados ficarem na ordem do
+  arquivo.
 - Cada abertura do modal é um editor (`card/useCardEditor.ts`), com uma
   gravação em voo por vez. Cada gravação lê o formulário mais novo e manda pelo
   `saveCardVersioned` (`lib/data/projects.ts`) só o que mudou desde a base
@@ -54,8 +55,31 @@ Era um painel irmão de Documentos (`activePanel: 'projects'` + modo
   de onde partiu: retomado, ele grava só o que mudou e cai no mesmo conflito.
 - Perdeu a permissão de editar o quadro no meio: o editor para de gravar e
   avisa.
-- Rótulo não diferencia caixa (`lib/cardLabels.ts`: filtro, modal e
-  importação), como no `cq_cards` e no `cq_enqueue`.
+- Rótulo não diferencia caixa (`_domain/cardLabels.ts`, reexportado por
+  `lib/cardLabels.ts`: filtro, modal e importação), como no `cq_cards` e no
+  `cq_enqueue`.
+
+## Regras puras em `_domain` (API-027)
+
+A agenda, as estatísticas, o parser de backlog, o plano da importação, o
+Markdown do card e os limites do API-013 moram em `supabase/functions/_domain/`
+(`autoSchedule`, `projectStats`, `backlogMarkdownParser`, `importPlan`,
+`cardMarkdown`, `cardLimits`, `cardLabels`, `cardLinks`, `isoDate`, `text` e
+`projectTypes`), para a API dar o mesmo resultado que a tela. Os arquivos de
+`src/lib` com o mesmo nome reexportam; o módulo continua importando de
+`src/lib`.
+
+- **Sem relógio em `_domain`:** `today` é obrigatório lá. Os padrões ficam nos
+  wrappers de `src/lib` (`autoSchedule`, `projectStats`, `projectCardFilters`),
+  com o dia do aparelho. O `createdPerWeek` recebe o dia de criação de cada card
+  (`dayOf`): o app passa o dia local do `created_at` (`createdDayLocal`), e o
+  servidor vai passar o dia no fuso da pessoa, calculado no SQL.
+- **Textos:** o Markdown do card e os avisos da importação recebem um `t`. O
+  app passa o seu; a API passa o `tPtBR` de `_domain/i18n.pt-BR.ts`, que tem os
+  mesmos textos (`src/lib/projectDomain.test.ts` confere).
+- **Imports:** `_domain` só importa caminhos relativos `.ts` dentro de
+  `supabase/functions` (`_api/importBoundary.test.ts`), e o eslint barra
+  relógio, hora local, `localStorage` e DOM lá.
 
 ## Regras
 
