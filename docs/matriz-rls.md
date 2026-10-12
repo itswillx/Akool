@@ -114,7 +114,7 @@ já versionadas (`finance_store_module.sql`/`finance_projects_module.sql`/
 | Tabela | Operação | Quem |
 |---|---|---|
 | `quick_notes` | SELECT/INSERT/UPDATE/DELETE | own; `updated_at` é do servidor (gatilho `quick_notes_updated_at`, API-003) e serve de versão: o app grava condicionado a ela |
-| `study_topics` / `study_cards` / `study_logs` | SELECT/INSERT/UPDATE/DELETE | own. Card e diário só em tópico do mesmo dono: os gatilhos `study_cards_rules` e `study_logs_rules` (API-021) dão P0002 "Tópico não encontrado", igual para tópico alheio e inexistente. A forma dos JSON de `study_cards` é conferida pelo gatilho (só a coluna que mudou) e pelas CHECK `study_cards_resources_safe`/`study_cards_json_arrays`, que valem também sem usuário. `started_at`, `completed_at` e `updated_at` são do servidor (sem usuário, um UPDATE que mude só o `updated_at` guarda o valor: é o conserto à mão de versão no futuro). O `sort_order` é escolhido pelo cliente; sem valor no INSERT, o gatilho põe max+1 entre os cards do mesmo dono no tópico. A posição não é única: duas abas ou dois INSERTs simultâneos podem repetir o valor |
+| `study_topics` / `study_cards` / `study_logs` | SELECT/INSERT/UPDATE/DELETE | own. Card e diário só em tópico do mesmo dono: os gatilhos `study_cards_rules` e `study_logs_rules` (API-021) dão P0002 "Tópico não encontrado", igual para tópico alheio e inexistente. A forma dos JSON de `study_cards` é conferida pelo gatilho (só a coluna que mudou) e pelas CHECK `study_cards_resources_safe`/`study_cards_json_arrays`, que valem também sem usuário. `started_at`, `completed_at` e `updated_at` são do servidor (sem usuário, um UPDATE que mude só o `updated_at` guarda o valor: é o conserto à mão de versão no futuro). O `sort_order` é escolhido pelo cliente; sem valor no INSERT, o gatilho põe max+1 entre os cards do mesmo dono no tópico. A posição não é única: duas abas ou dois INSERTs simultâneos podem repetir o valor. As operações por item, a importação atômica e o reagendamento também existem como RPCs SECURITY INVOKER (API-024, parágrafo abaixo). Nelas, a posição do card novo é max+1 calculado no servidor, com o tópico travado. |
 | `site_backups` / `site_backup_settings` | SELECT | admin apenas |
 | `site_backups` / `site_backup_settings` | INSERT/UPDATE/DELETE | **nenhuma policy** | só `service_role` (edge function `site-backup`) escreve |
 | `profile_secrets` | qualquer operação | **RLS habilitado, zero policies** | intencional: só `service_role` acessa (chaves de API de IA); ver advisory `rls_enabled_no_policy` — não é um gap, é o desenho |
@@ -289,6 +289,28 @@ EXECUTE só para `authenticated`. As funções novas em `private` (`finance_mate
 - as funções de forma (`private.study_checkpoints_problem`, `study_resources_problem`, `study_quiz_problem`, `study_blocks_problem`, `study_json_index` e `study_without_progress`) são imutáveis e sem EXECUTE para clientes.
 
 Nada disso muda a conta do advisor.
+
+**RPCs `SECURITY INVOKER` de Estudos (API-024, 11/10/2026):** `study_checkpoint_add`, `study_checkpoint_edit`, `study_checkpoint_toggle`, `study_checkpoint_remove`, `study_resource_add`, `study_resource_remove`, `study_quiz_answer`, `study_quiz_reset`, `study_cards_append`, `study_import_topic` e `study_reschedule` (migration `20261011120000_api024_study_rpcs.sql`).
+
+- Rodam como quem chama. O RLS de dono de `study_cards` e `study_topics` vale, e o card ou tópico de outra pessoa dá o mesmo P0002 do inexistente.
+- A forma dos JSON continua no gatilho DEFINER `study_cards_rules` (API-021). As RPCs não chamam nada de `private`.
+- As RPCs por item travam o card (`FOR NO KEY UPDATE`) e gravam só o índice do item. Anexar, importar e reagendar travam o tópico.
+- Repetição sem efeito não grava: nem o `updated_at` muda nem nasce tupla nova. O harness compara o `xmin` da linha e, no reagendar, conta os cards com `xmin` novo (0 na repetição, 1 de amanhã para hoje).
+- A trava do quiz (segunda resposta diferente, P0001) existe só na `study_quiz_answer`, sem gatilho.
+- EXECUTE só para `authenticated`, revogado de PUBLIC e `anon`.
+
+A regra abaixo pede o grant "só se o frontend chamar com o JWT do usuário". Aqui ele vem antes da chamada por dois motivos:
+- o API-029 troca a tela de Estudos por essas RPCs;
+- o `akool_api` herda o EXECUTE de `authenticated` pela §1.2 de `docs/api-arquitetura.md` (`inherit true`). No plano B, a transação da API já roda como `authenticated`.
+
+Não há grant direto para o `akool_api`, porque o papel ainda não existe (API-004). O harness tem o caso condicional.
+
+Não entram na conta do advisor, que só lista `SECURITY DEFINER`: continuam 40.
+
+Prova: `supabase/checks/api024-study-rpcs.sql`. No staging, em 11/10/2026, com as transações desfeitas e a versão da revisão (R1/R2, `p_today` e data-alvo infinitos): bloco 1 161/161 (pelo MCP, em duas metades: 107 + 54), subtransações 4/4 e bloco 2 8/8. O bloco 2 simula a RESTRICTIVE de SELECT em `study_topics` do API-022:
+- toggle, resposta, reset e operações de conteúdo por item continuam, porque só tocam `study_cards`;
+- anexar e reagendar falham fechados com P0002;
+- importar falha com 42501, no RETURNING do tópico novo.
 
 **Função nova exposta pela API:** dê `grant execute … to authenticated` na própria migration, só se o frontend chamar com o JWT do usuário, e confira quem chama dentro dela com `coalesce(..., false)` ou `public.is_admin()`, nunca com `!= 'admin'` solto (vira NULL sem linha em `profiles`; era o caso da `generate_invite_code`, corrigida no SEC-012).
 

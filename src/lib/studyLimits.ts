@@ -24,6 +24,14 @@ export const STUDY_OPTION_MAX = 1000
 
 export const STUDY_BLOCKS_MAX = 50
 
+// API-024: teto por chamada de study_cards_append e study_import_topic
+// (supabase/migrations/20261011120000_api024_study_rpcs.sql; "estudo 100
+// cards" do §9.3 de docs/api-arquitetura.md) e o tamanho da lista de cards
+// em texto. A importação é tudo ou nada: o parser que alimentar essas RPCs
+// tem de cortar antes (API-029), senão a importação inteira falha.
+export const STUDY_IMPORT_CARDS_MAX = 100
+export const STUDY_IMPORT_MAX_BYTES = 4 * 1024 * 1024
+
 /**
  * A regra do servidor para url e licenseUrl (a mesma de
  * private.card_links_are_safe, SEC-010): http(s), sem espaço nem caractere de

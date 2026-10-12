@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import migration from '../../supabase/migrations/20261008130000_api021_study_rules.sql?raw'
+import migration024 from '../../supabase/migrations/20261011120000_api024_study_rpcs.sql?raw'
 import {
   cutText,
   isSafeStudyUrl,
@@ -9,6 +10,8 @@ import {
   STUDY_CHECKPOINTS_MAX,
   STUDY_EXPLANATION_MAX,
   STUDY_ID_MAX,
+  STUDY_IMPORT_CARDS_MAX,
+  STUDY_IMPORT_MAX_BYTES,
   STUDY_JSON_MAX_BYTES,
   STUDY_OPTION_MAX,
   STUDY_OPTIONS_MAX,
@@ -68,6 +71,78 @@ describe('studyLimits: os mesmos números do servidor', () => {
   })
 })
 
+// API-024: as RPCs de Estudos (20261011120000_api024_study_rpcs.sql) com os
+// mesmos números e o mesmo aparar do app.
+
+const STUDY_RPCS = [
+  'study_checkpoint_add', 'study_checkpoint_edit', 'study_checkpoint_toggle', 'study_checkpoint_remove',
+  'study_resource_add', 'study_resource_remove', 'study_quiz_answer', 'study_quiz_reset',
+  'study_cards_append', 'study_reschedule', 'study_import_topic',
+]
+
+/** Corpo de uma RPC da migration do API-024. */
+function rpcBody(name: string): string {
+  const start = migration024.indexOf(`create function public.${name}(`)
+  expect(start, name).toBeGreaterThan(-1)
+  return migration024.slice(start, migration024.indexOf('$$;', migration024.indexOf('as $$', start)))
+}
+
+/** Os caracteres (BMP) que o String.prototype.trim tira. */
+function jsTrimSet(): number[] {
+  const set: number[] = []
+  for (let code = 0; code <= 0xffff; code++) {
+    if (code >= 0xd800 && code <= 0xdfff) continue
+    if (`${String.fromCharCode(code)}x`.trim() === 'x') set.push(code)
+  }
+  return set
+}
+
+describe('API-024: as RPCs de Estudos com os números do app', () => {
+  it('as 11 RPCs estão na migration', () => {
+    for (const name of STUDY_RPCS) rpcBody(name)
+    expect(migration024.match(/^create function public\.study_/gm)).toHaveLength(STUDY_RPCS.length)
+  })
+
+  it('anexar e importar: até STUDY_IMPORT_CARDS_MAX cards e STUDY_IMPORT_MAX_BYTES por chamada', () => {
+    const append = rpcBody('study_cards_append')
+    expect(append).toContain(`jsonb_array_length(p_cards) not between 1 and ${STUDY_IMPORT_CARDS_MAX} then`)
+    expect(append).toContain(`octet_length(p_cards::text) > ${STUDY_IMPORT_MAX_BYTES} then`)
+    const importTopic = rpcBody('study_import_topic')
+    expect(importTopic).toContain(`jsonb_array_length(v_cards) > ${STUDY_IMPORT_CARDS_MAX} then`)
+    expect(importTopic).toContain(`octet_length(p_payload::text) > ${STUDY_IMPORT_MAX_BYTES} then`)
+  })
+
+  it('o título derivado da URL é cortado no teto do título do recurso', () => {
+    expect(rpcBody('study_resource_add')).toContain(
+      `v_title := left(regexp_replace(v_url, '^https?://', '', 'i'), ${STUDY_RESOURCE_TITLE_MAX});`,
+    )
+  })
+
+  it('a regex de URL e o teto do id ficam só no gatilho do API-021 (nada copiado para derivar)', () => {
+    for (const name of STUDY_RPCS) {
+      const body = rpcBody(name)
+      expect(body, name).not.toContain('[:cntrl:]')
+      expect(body, name).not.toMatch(/length\(v_id\)|->> 'id'\) not between/)
+    }
+  })
+
+  it('c_ws, o aparar das RPCs, tira os mesmos caracteres que o trim da tela', () => {
+    const literals = [...migration024.matchAll(/c_ws\s+constant text := U&'([^']*)';/g)].map(match => match[1])
+    expect(literals).toHaveLength(5)
+    expect(new Set(literals).size).toBe(1)
+    // Só escapes \XXXX no literal: nenhum caractere invisível cru no arquivo.
+    expect(literals[0].replace(/\\[0-9a-f]{4}/g, '')).toBe('')
+    const sqlSet = [...literals[0].matchAll(/\\([0-9a-f]{4})/g)].map(match => parseInt(match[1], 16))
+    expect(sqlSet).toEqual(jsTrimSet())
+  })
+
+  it('todo btrim das RPCs usa c_ws (o btrim sem lista só tira o espaço)', () => {
+    const calls = [...migration024.matchAll(/btrim\(((?:[^()]|\([^()]*\))*)\)/g)].map(match => match[1])
+    expect(calls.length).toBeGreaterThan(0)
+    for (const args of calls) expect(args).toMatch(/, c_ws$/)
+  })
+})
+
 describe('isSafeStudyUrl', () => {
   it('aceita http(s) em qualquer caixa', () => {
     expect(isSafeStudyUrl('https://example.com/a?b=1#c')).toBe(true)
@@ -77,7 +152,7 @@ describe('isSafeStudyUrl', () => {
 
   it('recusa outro esquema, "https://" vazio, espaço e caractere de controle ou invisível', () => {
     for (const url of ['javascript:alert(1)', 'data:text/html,x', 'ftp://a.b', 'https://', 'https://a b.com',
-      'https://a.b/\tx', 'https://a.b/\u0001', 'https://a.b/​x', 'https://a.b/ ', ' https://a.b']) {
+      'https://a.b/\tx', 'https://a.b/\u0001', 'https://a.b/\u200bx', 'https://a.b/\u00a0', ' https://a.b']) {
       expect(isSafeStudyUrl(url), url).toBe(false)
     }
   })

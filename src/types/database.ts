@@ -2804,7 +2804,266 @@ export type Database = {
         Args: { p_api_key: string; p_provider: string }
         Returns: undefined
       }
+      study_cards_append: {
+        Args: { p_cards: Json; p_topic: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      study_checkpoint_add: {
+        Args: { p_card: string; p_id?: string; p_text: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_checkpoint_edit: {
+        Args: {
+          p_card: string
+          p_checkpoint: string
+          p_note?: string
+          p_text?: string
+        }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_checkpoint_remove: {
+        Args: { p_card: string; p_checkpoint: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_checkpoint_toggle: {
+        Args: { p_card: string; p_checkpoint: string; p_completed?: boolean }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_import_topic: {
+        Args: { p_payload: Json; p_today?: string }
+        Returns: Json
+      }
       study_lookup_cache_prune: { Args: never; Returns: number }
+      study_quiz_answer: {
+        Args: { p_answer: Json; p_card: string; p_question: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_quiz_reset: {
+        Args: { p_card: string; p_only_wrong?: boolean }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_reschedule: {
+        Args: { p_today?: string; p_topic: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      study_resource_add: {
+        Args: { p_card: string; p_id?: string; p_title?: string; p_url: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_resource_remove: {
+        Args: { p_card: string; p_resource: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       try_cast_uuid: { Args: { p_text: string }; Returns: string }
       update_api_token_scopes: {
         Args: { p_id: string; p_scopes: Json }
