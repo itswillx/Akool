@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import exampleMd from '../../docs/exemplos/estudo-api021.md?raw'
-import { parseStudyMarkdown, type ParsedStudyCard } from './studyMarkdownParser'
+import { fitImportCards, parseStudyMarkdown, type ParsedStudyCard } from './studyMarkdownParser'
 import { buildStudyPrompt } from './studyPrompt'
 import {
   isSafeStudyUrl,
   STUDY_CHECKPOINT_TEXT_MAX,
   STUDY_CHECKPOINTS_MAX,
   STUDY_EXPLANATION_MAX,
+  STUDY_IMPORT_CARDS_MAX,
+  STUDY_IMPORT_MAX_BYTES,
   STUDY_JSON_MAX_BYTES,
   STUDY_OPTION_MAX,
   STUDY_OPTIONS_MAX,
@@ -677,6 +679,58 @@ describe('parseStudyMarkdown: limites do servidor (API-021)', () => {
     expect(result.cards[0].resources[0].url).toHaveLength(2048)
     expect(result.cards[0].quiz[0]).toEqual(expect.objectContaining({ kind: 'choice', answer: 9 }))
     expect(serverProblems(result.cards[0])).toEqual([])
+  })
+})
+
+// API-029: study_cards_append e study_import_topic aceitam até 100 cards e
+// 4 MiB (o texto do jsonb do payload inteiro) e recusam a importação toda
+// acima disso. Antes, 101 cards passavam pelo parser (scratchpad
+// l06/API-029/parser-cap.test.ts) e o servidor recusava tudo.
+describe('fitImportCards e o teto por importação (API-029)', () => {
+  const titled = (n: number) => Array.from({ length: n }, (_, i) => ({ title: `C${i + 1}` }))
+  const heavy = (title: string, kib: number) => ({ title, description: 'x'.repeat(kib * 1024) })
+
+  it('101 cards no .md viram 100, e o dropped diz quantos ficaram de fora', () => {
+    const md = ['# Estudo: X', ...Array.from({ length: 101 }, (_, i) => `## Card ${i + 1}: C${i + 1}\n**Pontos de estudo:**\n- [ ] ponto`)].join('\n')
+    const result = parseStudyMarkdown(md)
+    expect(result.cards).toHaveLength(STUDY_IMPORT_CARDS_MAX)
+    expect(result.cards.at(-1)?.title).toBe('C100')
+    expect(result.dropped).toEqual(['só os primeiros 100 cards foram mantidos (limite por importação); 1 ficaram de fora'])
+  })
+
+  it('corta do fim pelos bytes do payload inteiro, medidos como o servidor (jsonb em texto)', () => {
+    const cards = [heavy('A', 1500), heavy('B', 1500), heavy('C', 1500)]
+    const fit = fitImportCards(cards)
+    expect(fit.cards.map(c => c.title)).toEqual(['A', 'B'])
+    expect(fit.dropped).toEqual(['o card 3 ("C") passa de 4 MiB por importação e ficou de fora'])
+    expect(studyJsonBytes(fit.cards)).toBeLessThanOrEqual(STUDY_IMPORT_MAX_BYTES)
+    // O tópico conta: com um objetivo grande, cabe um card a menos.
+    const withTopic = fitImportCards(cards.slice(0, 2), { title: 'X', objective: 'o'.repeat(1100 * 1024) })
+    expect(withTopic.cards.map(c => c.title)).toEqual(['A'])
+    const many = fitImportCards([heavy('A', 3600), heavy('B', 600), heavy('C', 600)])
+    expect(many.dropped).toEqual(['os cards 2 a 3 passam de 4 MiB por importação e ficaram de fora'])
+  })
+
+  it('exatamente no teto passa; um byte acima, não', () => {
+    const envelope = studyJsonBytes([{ title: 'A', description: '' }])
+    const exact = [{ title: 'A', description: 'x'.repeat(STUDY_IMPORT_MAX_BYTES - envelope) }]
+    expect(studyJsonBytes(exact)).toBe(STUDY_IMPORT_MAX_BYTES)
+    expect(fitImportCards(exact).cards).toHaveLength(1)
+    const over = [{ title: 'A', description: 'x'.repeat(STUDY_IMPORT_MAX_BYTES - envelope + 1) }]
+    expect(fitImportCards(over).cards).toHaveLength(0)
+  })
+
+  it('um card sozinho acima de 4 MiB deixa 0 cards, com o motivo (o botão de importar desliga)', () => {
+    const md = `# Estudo: X\n## Card 1: Enorme\n${'d'.repeat(4 * 1024 * 1024 + 10)}\n**Pontos de estudo:**\n- [ ] ponto`
+    const result = parseStudyMarkdown(md)
+    expect(result.cards).toEqual([])
+    expect(result.dropped).toEqual(['"Enorme": o card passa de 4 MiB por importação; nenhum card pode ser importado'])
+  })
+
+  it('dentro dos tetos, nada muda e nada é dito', () => {
+    const cards = titled(STUDY_IMPORT_CARDS_MAX)
+    expect(fitImportCards(cards)).toEqual({ cards, dropped: [] })
+    expect(fitImportCards([])).toEqual({ cards: [], dropped: [] })
   })
 })
 

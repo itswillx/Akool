@@ -10,7 +10,8 @@ import { ModalShell } from './StudyBits'
 interface ImportStudyAppendModalProps {
   open: boolean
   onClose: () => void
-  onAppend: (parsed: StudyParseResult) => Promise<number>
+  // API-029: a recusa traz a mensagem (o card N, servidor desatualizado); o hook não abre outro aviso.
+  onAppend: (parsed: StudyParseResult) => Promise<{ count: number; message?: string }>
   isMobile?: boolean
 }
 
@@ -37,13 +38,13 @@ export default function ImportStudyAppendModal({ open, onClose, onAppend, isMobi
     if (!parsed || !canAppend || saving) return
     setSaving(true)
     setErrorMsg(null)
-    const count = await onAppend(parsed)
+    const { count, message } = await onAppend(parsed)
     setSaving(false)
     if (count > 0) {
       setResultMsg(t('study_append_success', { count }))
       setTimeout(handleClose, 1500)
     } else {
-      setErrorMsg(t('study_error_generic'))
+      setErrorMsg(message ?? t('study_error_generic'))
     }
   }
 

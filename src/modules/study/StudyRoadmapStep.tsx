@@ -4,7 +4,8 @@ import type { StudyCard, StudyCheckpoint } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { cardProgress, type StudyStepState } from '../../lib/studyProgress'
 import { isCardOverdue } from '../../lib/studySchedule'
-import type { StudyCardPatch } from './useStudyTopics'
+import type { StudyCardOps, StudyCardPatch } from './useStudyTopics'
+import type { StudyFieldOutcome } from './studyMutations'
 import StudyCardItem from './StudyCardItem'
 import { formatDateISO } from './studyUi'
 
@@ -19,25 +20,33 @@ interface StudyRoadmapStepProps {
   index: number
   isLast: boolean
   state: StudyStepState
-  // Repassado ao StudyCardItem: false (ou uma promessa de false) = o servidor recusou.
-  onUpdate: (patch: StudyCardPatch) => unknown
-  onToggleCheckpoint: (checkpointId: string) => void
+  // Repassados ao StudyCardItem (API-029): campos escalares com a base do
+  // início da edição, e as listas item a item pelas RPCs.
+  onUpdate: (patch: StudyCardPatch, base?: StudyCardPatch) => Promise<StudyFieldOutcome> | void
+  ops: StudyCardOps
   onRequestDelete: () => void
   onRequestRemoveCheckpoint: (checkpoint: StudyCheckpoint) => void
+  listsDisabled?: boolean
   isMobile?: boolean
 }
 
+const isTextField = (el: EventTarget) => el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && el.type !== 'checkbox')
+
 export default function StudyRoadmapStep({
-  card, index, isLast, state, onUpdate, onToggleCheckpoint, onRequestDelete, onRequestRemoveCheckpoint, isMobile = false,
+  card, index, isLast, state, onUpdate, ops, onRequestDelete, onRequestRemoveCheckpoint, listsDisabled = false, isMobile = false,
 }: StudyRoadmapStepProps) {
   const { t, lang } = useLanguage()
   // null = "auto": expanded iff this is the current step. Completing the
   // current step therefore auto-collapses it and auto-expands the next one —
   // purely derived, no effects.
   const [expandedOverride, setExpandedOverride] = useState<boolean | null>(null)
-  const [editingRationale, setEditingRationale] = useState(false)
+  // null = fechado; senão, o "por que agora" no início da edição (a base).
+  const [rationaleBase, setRationaleBase] = useState<string | null>(null)
 
-  const expanded = expandedOverride ?? (state === 'current')
+  // API-029: o refetch traz pontos marcados em outra aba e pode mudar o passo
+  // atual; o passo com um campo de texto em edição não fecha debaixo da pessoa.
+  const [typing, setTyping] = useState(false)
+  const expanded = expandedOverride ?? (state === 'current' || typing)
   const progress = cardProgress(card)
   const overdue = isCardOverdue(card)
   const nodeSize = isMobile ? 28 : 34
@@ -81,7 +90,11 @@ export default function StudyRoadmapStep({
         title={state === 'locked' && !expanded ? t('study_roadmap_locked_hint') : undefined}
         style={{ flex: 1, minWidth: 0, paddingBottom: isLast ? 0 : isMobile ? 14 : 18, opacity: state === 'locked' ? 0.55 : 1 }}
       >
-        <div style={{ border: '1px solid var(--color-border)', borderRadius: 12, backgroundColor: 'var(--color-surface)', padding: isMobile ? 12 : 16 }}>
+        <div
+          onFocus={e => { if (isTextField(e.target)) setTyping(true) }}
+          onBlur={e => { if (isTextField(e.target)) setTyping(false) }}
+          style={{ border: '1px solid var(--color-border)', borderRadius: 12, backgroundColor: 'var(--color-surface)', padding: isMobile ? 12 : 16 }}
+        >
           <div
             role="button"
             tabIndex={0}
@@ -120,16 +133,16 @@ export default function StudyRoadmapStep({
 
           {expanded && (
             <div style={{ marginTop: 10 }}>
-              {editingRationale ? (
+              {rationaleBase !== null ? (
                 <textarea
-                  defaultValue={card.rationale}
+                  defaultValue={rationaleBase}
                   autoFocus
                   rows={2}
                   placeholder={t('study_card_rationale_placeholder')}
                   onBlur={e => {
                     const value = e.target.value.trim()
-                    if (value !== card.rationale) onUpdate({ rationale: value })
-                    setEditingRationale(false)
+                    if (value !== rationaleBase) void onUpdate({ rationale: value }, { rationale: rationaleBase })
+                    setRationaleBase(null)
                   }}
                   style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.45 }}
                 />
@@ -145,7 +158,7 @@ export default function StudyRoadmapStep({
                     </p>
                   </div>
                   <button
-                    onClick={() => setEditingRationale(true)}
+                    onClick={() => setRationaleBase(card.rationale)}
                     type="button"
                     title={t('study_card_rationale_label')}
                     style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}
@@ -155,7 +168,7 @@ export default function StudyRoadmapStep({
                 </div>
               ) : (
                 <button
-                  onClick={() => setEditingRationale(true)}
+                  onClick={() => setRationaleBase(card.rationale)}
                   type="button"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 12, fontWeight: 500, padding: 0 }}
                 >
@@ -169,7 +182,8 @@ export default function StudyRoadmapStep({
                 embedded
                 isMobile={isMobile}
                 onUpdate={onUpdate}
-                onToggleCheckpoint={onToggleCheckpoint}
+                ops={ops}
+                listsDisabled={listsDisabled}
                 onRequestDelete={onRequestDelete}
                 onRequestRemoveCheckpoint={onRequestRemoveCheckpoint}
               />

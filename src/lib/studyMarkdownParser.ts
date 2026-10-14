@@ -5,6 +5,8 @@ import {
   STUDY_CHECKPOINT_TEXT_MAX,
   STUDY_CHECKPOINTS_MAX,
   STUDY_EXPLANATION_MAX,
+  STUDY_IMPORT_CARDS_MAX,
+  STUDY_IMPORT_MAX_BYTES,
   STUDY_JSON_MAX_BYTES,
   STUDY_OPTION_MAX,
   STUDY_OPTIONS_MAX,
@@ -405,6 +407,42 @@ function fitToServerLimits(card: ParsedStudyCard, dropped: string[]): ParsedStud
   return { ...card, ...fitted }
 }
 
+/**
+ * API-029: o teto por chamada de study_cards_append e study_import_topic
+ * (API-024): até STUDY_IMPORT_CARDS_MAX cards e STUDY_IMPORT_MAX_BYTES no
+ * texto do jsonb. A importação é tudo ou nada, então quem a alimenta corta
+ * antes e diz o que ficou de fora. O tamanho é o do payload inteiro, como o
+ * servidor mede: `{topic, cards}` na importação (passe `topic`) e só a lista
+ * no anexar. Corta do fim, para o roteiro não ganhar um buraco no meio. Pura,
+ * linear, sem relógio nem DOM: o porte para a API (API-034) a reaproveita.
+ */
+export function fitImportCards<T extends { title: string }>(cards: readonly T[], topic?: unknown): { cards: T[]; dropped: string[] } {
+  const dropped: string[] = []
+  let kept = cards.slice(0, STUDY_IMPORT_CARDS_MAX)
+  if (cards.length > kept.length) {
+    dropped.push(`só os primeiros ${STUDY_IMPORT_CARDS_MAX} cards foram mantidos (limite por importação); ${cards.length - kept.length} ficaram de fora`)
+  }
+  // Envelope sem cards ('[]' ou '{"topic": …, "cards": []}') + cada card + ", " entre eles.
+  const sizes = kept.map(card => studyJsonBytes(card))
+  let count = kept.length
+  let total = studyJsonBytes(topic === undefined ? [] : { topic, cards: [] }) + sizes.reduce((sum, size) => sum + size, 0) + 2 * Math.max(0, count - 1)
+  while (count > 0 && total > STUDY_IMPORT_MAX_BYTES) {
+    count--
+    total -= sizes[count] + (count > 0 ? 2 : 0)
+  }
+  if (count < kept.length) {
+    const from = count + 1
+    const to = kept.length
+    dropped.push(count === 0
+      ? `"${kept[0].title}": o card passa de 4 MiB por importação; nenhum card pode ser importado`
+      : from === to
+        ? `o card ${from} ("${kept[from - 1].title}") passa de 4 MiB por importação e ficou de fora`
+        : `os cards ${from} a ${to} passam de 4 MiB por importação e ficaram de fora`)
+    kept = kept.slice(0, count)
+  }
+  return { cards: kept, dropped }
+}
+
 export function parseStudyMarkdown(source: string): StudyParseResult {
   const warnings: string[] = []
   const dropped: string[] = []
@@ -431,5 +469,10 @@ export function parseStudyMarkdown(source: string): StudyParseResult {
     warnings.push('Nenhum card encontrado no arquivo')
   }
 
-  return { topic, cards, warnings, dropped }
+  // Medido com o tópico do .md e uma data-alvo de 10 caracteres (a do
+  // formulário); o hook mede de novo com o tópico do formulário.
+  const fit = fitImportCards(cards, { ...topic, target_date: 'AAAA-MM-DD' })
+  dropped.push(...fit.dropped)
+
+  return { topic, cards: fit.cards, warnings, dropped }
 }

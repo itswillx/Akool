@@ -4,17 +4,21 @@ import type { StudyCard, StudyLog, StudyTopic, StudyTopicStatus } from '../../ty
 import { useLanguage } from '../../i18n/LanguageContext'
 import { currentStepIndex, isTopicOverdue, stepState, topicProgress } from '../../lib/studyProgress'
 import { STUDY_LEVELS } from '../../lib/studyPrompt'
-import type { StudyStore } from './useStudyTopics'
+import { bindCardOps, type StudyStore } from './useStudyTopics'
 import StudyRoadmapStep from './StudyRoadmapStep'
 import StudyDiary from './StudyDiary'
 import ImportStudyAppendModal from './ImportStudyAppendModal'
 import { ProgressBar, SectionLabel, StatusPill } from './StudyBits'
-import { STATUS_LABEL_KEY, STATUS_ORDER, formatTimestamp } from './studyUi'
+import { compareCardOrder } from './studyMutations'
+import { STATUS_LABEL_KEY, STATUS_ORDER, formatTimestamp, useFieldDraft } from './studyUi'
 
 // Focus view of a single study topic: editable metadata, status with
-// started/completed side effects (handled by the hook), target date with
+// started/completed side effects (filled by the server), target date with
 // overdue highlight, the study cards with tappable checkpoints and the
-// per-topic diary.
+// per-topic diary. Title, area and objective are controlled drafts
+// (useFieldDraft): they follow a refetch while not focused, the save carries
+// the value from when the edit started, and a failed save keeps the typed
+// text in the field for the next blur to retry (API-029).
 
 interface StudyTopicDetailProps {
   topic: StudyTopic
@@ -47,22 +51,29 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
 
   const progress = topicProgress(cards)
   const overdue = isTopicOverdue(topic)
-  const orderedCards = [...cards].sort((a, b) => a.sort_order - b.sort_order)
+  const orderedCards = [...cards].sort(compareCardOrder)
+  const outdated = store.serverOutdated
   const stepIndex = currentStepIndex(orderedCards)
   const allDone = orderedCards.length > 0 && stepIndex === -1
 
-  const commitText = (field: 'title' | 'area' | 'level' | 'objective') => (value: string) => {
-    const trimmed = field === 'title' ? value.trim() : value.trim()
+  // Grava só o que a pessoa mudou desde o foco, com essa base: se outra aba
+  // mudou o mesmo campo no meio, o hook recarrega e oferece o texto de volta.
+  // A promessa volta ao rascunho: na falha, o texto fica no campo.
+  const commitText = (field: 'title' | 'area' | 'objective') => (draft: string, base: string) => {
+    const trimmed = draft.trim()
     if (field === 'title' && !trimmed) return
-    if (trimmed !== topic[field]) store.updateTopic(topic.id, { [field]: trimmed })
+    if (trimmed !== base) return store.updateTopic(topic.id, { [field]: trimmed }, { [field]: base })
   }
+  const titleField = useFieldDraft(topic.title, commitText('title'))
+  const areaField = useFieldDraft(topic.area, commitText('area'))
+  const objectiveField = useFieldDraft(topic.objective, commitText('objective'))
 
   const handleDeleteTopic = () => {
     requestDelete(
       t('study_delete_topic_title'),
       t('study_delete_topic_message', { title: topic.title }),
       () => {
-        store.deleteTopic(topic.id)
+        void store.deleteTopic(topic.id)
         onBack()
       },
     )
@@ -90,9 +101,8 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
       </div>
 
       <input
-        defaultValue={topic.title}
+        {...titleField}
         placeholder={t('study_title_placeholder')}
-        onBlur={e => commitText('title')(e.target.value)}
         className="keep-font-size"
         style={{ width: '100%', boxSizing: 'border-box', border: 'none', background: 'transparent', fontSize: isMobile ? 20 : 24, fontWeight: 800, color: 'var(--color-text)', fontFamily: 'inherit', padding: 0, marginBottom: 4 }}
       />
@@ -125,7 +135,7 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
             />
           </Field>
           <Field label={t('study_area')}>
-            <input defaultValue={topic.area} placeholder={t('study_area_placeholder')} onBlur={e => commitText('area')(e.target.value)} style={fieldInput} />
+            <input {...areaField} placeholder={t('study_area_placeholder')} style={fieldInput} />
           </Field>
           <Field label={t('study_level')}>
             <select
@@ -148,10 +158,9 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
           <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
             <Field label={t('study_objective')}>
               <textarea
-                defaultValue={topic.objective}
+                {...objectiveField}
                 placeholder={t('study_objective_placeholder')}
                 rows={isMobile ? 3 : 4}
-                onBlur={e => commitText('objective')(e.target.value)}
                 style={{
                   ...fieldInput, resize: 'vertical', lineHeight: 1.5,
                   minHeight: isMobile ? 76 : 100,
@@ -193,9 +202,9 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
             <button
               onClick={() => store.rescheduleCards(topic.id)}
               type="button"
-              disabled={orderedCards.length === 0}
+              disabled={orderedCards.length === 0 || outdated}
               title={t('study_reschedule_hint')}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12.5, fontWeight: 600, cursor: orderedCards.length === 0 ? 'default' : 'pointer', opacity: orderedCards.length === 0 ? 0.5 : 1 }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12.5, fontWeight: 600, cursor: orderedCards.length === 0 || outdated ? 'default' : 'pointer', opacity: orderedCards.length === 0 || outdated ? 0.5 : 1 }}
             >
               <RefreshCw size={13} />
               {t('study_reschedule')}
@@ -204,7 +213,8 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
           <button
             onClick={() => store.createCard(topic.id)}
             type="button"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+            disabled={outdated}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12.5, fontWeight: 600, cursor: outdated ? 'default' : 'pointer', opacity: outdated ? 0.5 : 1 }}
           >
             <Plus size={13} />
             {t('study_add_card')}
@@ -212,7 +222,8 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
           <button
             onClick={() => setAppendOpen(true)}
             type="button"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+            disabled={outdated}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12.5, fontWeight: 600, cursor: outdated ? 'default' : 'pointer', opacity: outdated ? 0.5 : 1 }}
           >
             <FileUp size={13} />
             {t('study_import_append')}
@@ -239,8 +250,9 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
               isLast={index === orderedCards.length - 1}
               state={stepState(index, orderedCards)}
               isMobile={isMobile}
-              onUpdate={patch => store.updateCard(card.id, patch)}
-              onToggleCheckpoint={checkpointId => store.toggleCheckpoint(card.id, checkpointId)}
+              onUpdate={(patch, base) => store.updateCard(card.id, patch, base)}
+              ops={bindCardOps(store, card.id)}
+              listsDisabled={outdated}
               onRequestDelete={() => requestDelete(
                 t('study_delete_card_title'),
                 t('study_delete_card_message', { title: card.title || t('study_card_untitled') }),
@@ -249,7 +261,7 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
               onRequestRemoveCheckpoint={point => requestDelete(
                 t('study_delete_checkpoint_title'),
                 t('study_delete_checkpoint_message', { text: point.text.length > 80 ? `${point.text.slice(0, 80)}…` : point.text }),
-                async () => { await store.updateCard(card.id, { checkpoints: card.checkpoints.filter(p => p.id !== point.id) }) },
+                async () => { await store.removeCheckpoint(card.id, point.id) },
               )}
             />
           ))}
@@ -272,10 +284,7 @@ export default function StudyTopicDetail({ topic, cards, logs, store, requestDel
         open={appendOpen}
         onClose={() => setAppendOpen(false)}
         isMobile={isMobile}
-        onAppend={async parsed => {
-          const count = await store.appendCards(topic.id, parsed.cards)
-          return count
-        }}
+        onAppend={parsed => store.appendCards(topic.id, parsed.cards)}
       />
     </div>
   )

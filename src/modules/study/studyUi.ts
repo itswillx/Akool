@@ -1,7 +1,8 @@
-import { useState, type ChangeEvent, type KeyboardEvent, type SyntheticEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type KeyboardEvent, type SyntheticEvent } from 'react'
 import type { StudyTopicStatus } from '../../types'
 import { localeOf, type Lang, type TranslationKey } from '../../i18n/translations'
 import { cutText, isSafeStudyUrl, STUDY_RESOURCE_TITLE_MAX, STUDY_URL_MAX } from '../../lib/studyLimits'
+import type { StudyFieldOutcome } from './studyMutations'
 
 // Non-component UI helpers of the study module (kept out of StudyBits.tsx so
 // component files only export components — react-refresh friendly).
@@ -157,6 +158,80 @@ export function createSentField() {
           else if (start > 0) touch(start - 1)
         },
       }
+    },
+  }
+}
+
+/**
+ * API-029: o id de um item novo (ponto, recurso), estável por rascunho. O
+ * mesmo texto reenviado depois de uma falha leva o mesmo id, e a RPC o trata
+ * como repetição (sem ponto duplicado, se a primeira chegou a gravar); texto
+ * diferente leva outro id. Depois de gravar, `release` solta o id: o mesmo
+ * texto de novo é outro item.
+ */
+export function createDraftIds(newId: () => string = () => crypto.randomUUID()) {
+  const ids = new Map<string, string>()
+  return {
+    idFor(key: string): string {
+      let id = ids.get(key)
+      if (!id) {
+        id = newId()
+        ids.set(key, id)
+      }
+      return id
+    },
+    release(key: string): void {
+      ids.delete(key)
+    },
+  }
+}
+
+/**
+ * API-029: campo de texto controlado que acompanha o servidor (o refetch traz
+ * a mudança de outra aba) sem pisar no que a pessoa digita. Sem foco, mostra
+ * `value`; com foco, o rascunho, e guarda a `base` (o valor no início da
+ * edição), que o hook usa para saber se o campo mudou em outra aba no meio.
+ * No blur, `commit(rascunho, base)`; a promessa que ele devolve diz como a
+ * gravação terminou. Na falha (rede, RLS, limite de tentativas) o rascunho
+ * volta, sem foco, com a mesma base: o texto fica no campo e a próxima saída
+ * dele tenta de novo (antes do API-029, o campo não controlado fazia isso).
+ * Só a última gravação devolve o rascunho: uma anterior que falha com a
+ * seguinte já enviada não volta o texto velho. Só conta como envio a saída
+ * que grava: entrar e sair sem mudar nada, com a gravação em voo, não tira
+ * dela a volta do rascunho (o texto sumia). Com a pessoa de novo no campo,
+ * o que ela digita fica; se ela partiu do valor que falhou (a tela o
+ * mostrava), a base vira a de antes dele, que nunca saiu do servidor. No
+ * conflito, o servidor vence (o aviso traz "Copiar meu texto"). O foco fica
+ * em state, não em ref: ler ref no render quebra a regra react-hooks/refs.
+ */
+export function useFieldDraft(value: string, commit: (draft: string, base: string) => Promise<StudyFieldOutcome> | void) {
+  const [edit, setEdit] = useState<{ draft: string; base: string } | null>(null)
+  // Conta as saídas que gravaram (lido só nos handlers e na resposta, nunca no render).
+  const sentRef = useRef(0)
+  return {
+    value: edit ? edit.draft : value,
+    // Rascunho que voltou de uma falha continua, com a base dele.
+    onFocus: () => setEdit(prev => prev ?? { draft: value, base: value }),
+    onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const draft = e.target.value
+      setEdit(prev => (prev ? { ...prev, draft } : { draft, base: value }))
+    },
+    onBlur: () => {
+      setEdit(null)
+      if (!edit) return
+      const sent = edit
+      const outcome = commit(sent.draft, sent.base)
+      // Nada saiu (o texto não mudou): a gravação em voo continua a última.
+      if (!outcome) return
+      const seq = ++sentRef.current
+      // Exceção na gravação conta como falha: o texto fica.
+      void outcome.catch((): StudyFieldOutcome => 'failed').then(result => {
+        if (result !== 'failed' || seq !== sentRef.current) return
+        setEdit(prev => {
+          if (!prev) return sent
+          return prev.base === sent.draft ? { ...prev, base: sent.base } : prev
+        })
+      })
     },
   }
 }
