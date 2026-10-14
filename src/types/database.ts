@@ -2804,6 +2804,48 @@ export type Database = {
         Args: { p_api_key: string; p_provider: string }
         Returns: undefined
       }
+      store_product_figures: {
+        Args: { p_products: string[] }
+        Returns: {
+          available: number
+          avg_unit_cost: number
+          product_id: string
+          purchased: number
+          reserved: number
+          sold: number
+        }[]
+      }
+      store_sale_create: { Args: { p_sale: Json }; Returns: Json }
+      store_sale_delete: { Args: { p_sale: string }; Returns: Json }
+      store_sale_generate_income: {
+        Args: { p_category?: string; p_description?: string; p_sale: string }
+        Returns: Json
+      }
+      store_sale_items_add: {
+        Args: { p_items: Json; p_sale: string }
+        Returns: Json
+      }
+      store_sale_items_remove: { Args: { p_item: string }; Returns: Json }
+      store_sale_items_update: {
+        Args: { p_item: string; p_patch: Json }
+        Returns: Json
+      }
+      store_sale_set_status: {
+        Args: {
+          p_category?: string
+          p_create_income?: boolean
+          p_description?: string
+          p_sale: string
+          p_sold_on?: string
+          p_status: string
+          p_today?: string
+        }
+        Returns: Json
+      }
+      store_sale_update: {
+        Args: { p_patch: Json; p_sale: string }
+        Returns: Json
+      }
       study_cards_append: {
         Args: { p_cards: Json; p_topic: string }
         Returns: {

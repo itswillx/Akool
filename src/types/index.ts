@@ -181,8 +181,10 @@ export interface FinanceAttachment {
 // ─── Finance Store / Loja ───────────────────────────────────────────────────
 // Estoque de revenda (hardware etc.), pipeline de venda e clientes. O estoque
 // disponível é DERIVADO (comprado − vendido − reservado) em
-// src/lib/financeStoreCalc.ts; sale_items guardam snapshot de preço/custo para
-// o lucro histórico não mudar com edições no produto. Valores em centavos.
+// supabase/functions/_domain/financeStoreCalc.ts (o app usa por
+// src/lib/financeStoreCalc.ts; o servidor tem a mesma conta em SQL, API-028);
+// sale_items guardam snapshot de preço/custo para o lucro histórico não mudar
+// com edições no produto. Valores em centavos.
 
 // Fornecedor de uma compra. Veio de Obras e sobreviveu à remoção dela: a Loja
 // cria e lê as mesmas linhas de `finance_suppliers`.

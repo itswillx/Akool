@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { formatBRL, fromCents, toCents } from '../../../lib/money'
-import { averageUnitCost, productStock, saleProfit } from '../../../lib/financeStoreCalc'
+import { averageUnitCost, productStock, saleNetReceived, saleProfit } from '../../../lib/financeStoreCalc'
 import type { FinanceAccount, FinanceStoreChannel, FinanceStoreSale } from '../../../types'
 import { Modal, FIN_NEG, FIN_POS, ghostBtnStyle, inputStyle, labelStyle, primaryBtnStyle, sectionCaptionStyle, tabularNums, useFinanceMobile } from '../ui'
 import { AttachmentField } from '../ui'
 import { CHANNELS, CHANNEL_KEY } from './storeUi'
 import { CustomerModal } from './CustomerModal'
+import { saleDateMax } from './saleDates'
 import { STORE_ATTACHMENT_BUCKET, type FinanceStoreStore } from './useFinanceStore'
 
 interface ItemDraft {
@@ -18,12 +19,18 @@ interface ItemDraft {
   unit_cost_at_sale: number
 }
 
-// Create/edit form for a sale. On create the items live in local state and are
-// persisted in one batch after the sale row exists; on edit they are already
-// rows — add/remove persist immediately (QuotesPanel pattern), and the price
-// commits ON BLUR through a local string draft, so typing "12,50" never
-// fights the re-render nor fires a write per keystroke.
+// Create/edit form for a sale. On create the items live in local state and go
+// with the sale in ONE call (store_sale_create, API-028): an item above the
+// stock no longer leaves an empty sale behind. On edit they are already rows —
+// add/remove persist immediately (QuotesPanel pattern), and the price commits
+// ON BLUR through a local string draft, so typing "12,50" never fights the
+// re-render nor fires a write per keystroke.
 // Status transitions live in SalesView, not here.
+//
+// API-028: o servidor confere estoque, item único, data e dinheiro; a recusa
+// aparece aqui (o aviso da aba fica atrás do modal) e o modal não fecha. Com
+// a receita lançada, o líquido não pode ficar <= 0: o item novo entra antes de
+// remover o último, e a remoção que zeraria o líquido fica desligada.
 export function SaleModal({ store, sale, accounts, onClose }: {
   store: FinanceStoreStore
   sale?: FinanceStoreSale
@@ -54,11 +61,15 @@ export function SaleModal({ store, sale, accounts, onClose }: {
   const [newCustomer, setNewCustomer] = useState(false)
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  // A última gravação foi recusada: mostra o motivo (store.error) no modal.
+  const [failed, setFailed] = useState(false)
 
   const persistedItems = sale ? store.saleItems.filter(i => i.sale_id === sale.id) : []
   const items = sale ? persistedItems : drafts
   const rowKey = (index: number) => (sale ? persistedItems[index].id : String(index))
   const soldOnVisible = !!sale && sale.status !== 'negotiating' && sale.status !== 'cancelled'
+  // Venda consumida precisa da data (o servidor recusa sem ela).
+  const soldOnMissing = soldOnVisible && !soldOn
 
   const moneyDraft = {
     shipping_charged: toCents(shippingCharged),
@@ -82,6 +93,9 @@ export function SaleModal({ store, sale, accounts, onClose }: {
 
   const picked = pickable.find(x => x.p.id === pickId)
 
+  // Track a gravação: a recusa fica visível e o modal continua aberto.
+  const track = (ok: boolean) => { setFailed(!ok); return ok }
+
   const addItem = async () => {
     if (!picked) return
     const qty = Math.min(Math.max(1, Math.floor(Number(pickQty) || 1)), picked.available)
@@ -92,33 +106,46 @@ export function SaleModal({ store, sale, accounts, onClose }: {
       unit_price: pickPrice ? toCents(pickPrice) : picked.p.target_price,
       unit_cost_at_sale: averageUnitCost(picked.p.id, store.purchases),
     }
-    if (sale) await store.addSaleItem({ ...draft, sale_id: sale.id })
-    else setDrafts(prev => [...prev, draft])
+    if (sale) {
+      // Nome e custo médio são do servidor; vão só produto, quantidade e preço.
+      if (!track(await store.addSaleItems(sale.id, [{ product_id: draft.product_id, quantity: draft.quantity, unit_price: draft.unit_price }]))) return
+    } else {
+      setDrafts(prev => [...prev, draft])
+    }
     setPickId(''); setPickQty('1'); setPickPrice('')
   }
 
+  // Com a receita lançada, tirar este item não pode zerar o líquido (o servidor
+  // recusa): o item novo entra antes, e só então este sai.
+  const removeBlocked = (index: number): boolean => {
+    if (!sale?.transaction_id) return false
+    const rest = persistedItems.filter((_, i) => i !== index)
+    return saleNetReceived(sale, rest) <= 0
+  }
+
   const removeItem = async (index: number) => {
-    if (sale) await store.removeSaleItem(persistedItems[index].id)
+    if (sale) track(await store.removeSaleItem(persistedItems[index].id))
     else setDrafts(prev => prev.filter((_, i) => i !== index))
   }
 
-  const commitPrice = async (index: number) => {
+  const commitPrice = async (index: number): Promise<boolean> => {
     const key = rowKey(index)
     const draft = priceDrafts[key]
-    if (draft === undefined) return
+    if (draft === undefined) return true
     const cents = toCents(draft)
-    setPriceDrafts(prev => { const { [key]: _committed, ...rest } = prev; return rest })
+    setPriceDrafts(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key)))
     if (sale) {
       if (cents !== persistedItems[index].unit_price) {
-        await store.updateSaleItem(persistedItems[index].id, { unit_price: cents })
+        return track(await store.updateSaleItem(persistedItems[index].id, { unit_price: cents }))
       }
     } else {
       setDrafts(prev => prev.map((d, i) => (i === index ? { ...d, unit_price: cents } : d)))
     }
+    return true
   }
 
   const handleSave = async () => {
-    if (items.length === 0 && !sale) return
+    if ((items.length === 0 && !sale) || soldOnMissing) return
     setSaving(true)
     try {
       const draft = {
@@ -134,17 +161,20 @@ export function SaleModal({ store, sale, accounts, onClose }: {
       }
       if (sale) {
         // Flush any price still in a draft before the sale-level save.
-        for (let i = 0; i < persistedItems.length; i++) await commitPrice(i)
-        await store.updateSale(sale.id, soldOnVisible ? { ...draft, sold_on: soldOn || null } : draft)
+        for (let i = 0; i < persistedItems.length; i++) {
+          if (!(await commitPrice(i))) return
+        }
+        if (!track(await store.updateSale(sale.id, soldOnVisible ? { ...draft, sold_on: soldOn } : draft))) return
       } else {
         const finalItems = drafts.map((d, i) => {
           const pending = priceDrafts[String(i)]
           return pending === undefined ? d : { ...d, unit_price: toCents(pending) }
         })
-        const created = await store.createSale(draft)
-        if (created) {
-          await store.addSaleItems(finalItems.map(d => ({ ...d, sale_id: created.id })))
-        }
+        // Venda e itens numa chamada: tudo ou nada.
+        const created = await store.createSale(draft, finalItems.map(d => ({
+          product_id: d.product_id, quantity: d.quantity, unit_price: d.unit_price,
+        })))
+        if (!track(!!created)) return
       }
       onClose()
     } finally {
@@ -196,8 +226,10 @@ export function SaleModal({ store, sale, accounts, onClose }: {
                     onChange={e => setPriceDrafts(prev => ({ ...prev, [rowKey(index)]: e.target.value }))}
                     onBlur={() => commitPrice(index)}
                     placeholder="0,00" />
-                  <button type="button" onClick={() => removeItem(index)} title={t('finance_delete')}
-                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-error)', display: 'flex', padding: 2 }}>
+                  <button type="button" onClick={() => removeItem(index)} disabled={removeBlocked(index)}
+                    title={removeBlocked(index) ? t('finance_store_remove_needs_add') : t('finance_delete')}
+                    aria-label={removeBlocked(index) ? t('finance_store_remove_needs_add') : t('finance_delete')}
+                    style={{ border: 'none', background: 'none', cursor: removeBlocked(index) ? 'not-allowed' : 'pointer', color: 'var(--color-error)', display: 'flex', padding: 2, opacity: removeBlocked(index) ? 0.4 : 1 }}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -306,7 +338,11 @@ export function SaleModal({ store, sale, accounts, onClose }: {
           {soldOnVisible && (
             <div>
               <label style={labelStyle}>{t('finance_store_sold_on')}</label>
-              <input style={inputStyle} type="date" value={soldOn} onChange={e => setSoldOn(e.target.value)} />
+              <input style={inputStyle} type="date" value={soldOn} max={saleDateMax()} required
+                onChange={e => setSoldOn(e.target.value)} />
+              {soldOnMissing && (
+                <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--color-error)' }}>{t('finance_store_sold_on_required')}</div>
+              )}
             </div>
           )}
 
@@ -320,9 +356,13 @@ export function SaleModal({ store, sale, accounts, onClose }: {
               value={attachments} onChange={setAttachments} />
           )}
 
+          {failed && store.error && (
+            <div role="alert" style={{ fontSize: 12.5, color: 'var(--color-error)', lineHeight: 1.45 }}>{store.error}</div>
+          )}
+
           <div style={{ display: 'flex', gap: 8 }}>
-            <button style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center', opacity: saving || (items.length === 0 && !sale) ? 0.7 : 1 }}
-              onClick={handleSave} disabled={saving || (items.length === 0 && !sale)}>{t('finance_save')}</button>
+            <button style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center', opacity: saving || (items.length === 0 && !sale) || soldOnMissing ? 0.7 : 1 }}
+              onClick={handleSave} disabled={saving || (items.length === 0 && !sale) || soldOnMissing}>{t('finance_save')}</button>
             {/* Item edits already persisted, so "Cancel" would lie on edit. */}
             <button style={ghostBtnStyle} onClick={onClose}>{sale ? t('finance_store_close') : t('finance_cancel')}</button>
           </div>
@@ -332,7 +372,7 @@ export function SaleModal({ store, sale, accounts, onClose }: {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)', flex: 1 }}>{t('finance_store_sale_delete_warning')}</span>
                 <button style={{ ...ghostBtnStyle, color: 'var(--color-error)' }}
-                  onClick={async () => { await store.deleteSale(sale.id); onClose() }}>{t('finance_confirm_delete')}</button>
+                  onClick={async () => { if (track(await store.deleteSale(sale.id))) onClose() }}>{t('finance_confirm_delete')}</button>
                 <button style={ghostBtnStyle} onClick={() => setConfirming(false)}>{t('finance_cancel')}</button>
               </div>
             ) : (

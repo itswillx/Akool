@@ -44,13 +44,25 @@ export function ProductModal({ store, product, accounts, onClose, onEditPurchase
   const [createExpense, setCreateExpense] = useState(false)
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  // A gravação recusada: o modal fica aberto com o motivo.
+  const [failed, setFailed] = useState(false)
+  // O produto novo já gravado quando a compra inicial foi recusada: salvar de
+  // novo atualiza esse produto e regrava só a compra (sem produto duplicado).
+  const [createdId, setCreatedId] = useState<string | null>(null)
 
   const qty = kind === 'unique' ? 1 : Math.max(1, Math.floor(Number(quantity) || 1))
   const totalCost = qty * toCents(unitCost) + toCents(otherCosts)
+  // O min="0" dos inputs não barra o que se digita: o banco recusa (23514).
+  const negative = toCents(targetPrice) < 0 || (!product && (toCents(unitCost) < 0 || toCents(otherCosts) < 0))
+  // Custo zero é permitido, mas sem despesa (o CHECK amount > 0 de
+  // finance_transactions a recusa): 'Gerar despesa' desliga e desmarca.
+  const canExpense = !!accountId && totalCost > 0
+  if (createExpense && !canExpense) setCreateExpense(false)
 
   const handleSave = async () => {
-    if (!name.trim()) return
+    if (!name.trim() || negative) return
     setSaving(true)
+    setFailed(false)
     try {
       const draft = {
         kind,
@@ -63,35 +75,45 @@ export function ProductModal({ store, product, accounts, onClose, onEditPurchase
         attachments,
       }
       if (product) {
-        await store.updateProduct(product.id, draft)
+        if (await store.updateProduct(product.id, draft)) onClose()
+        else setFailed(true)
+        return
+      }
+      let productId = createdId
+      if (productId) {
+        if (!(await store.updateProduct(productId, draft))) { setFailed(true); return }
       } else {
         const created = await store.createProduct(draft)
-        if (created) {
-          let supplier = supplierId || null
-          if (supplierId === '__new' && newSupplier.trim()) {
-            supplier = (await store.createSupplier(newSupplier.trim()))?.id ?? null
-          } else if (supplierId === '__new') supplier = null
-          await store.createPurchase({
-            product_id: created.id,
-            supplier_id: supplier,
-            quantity: qty,
-            unit_cost: toCents(unitCost),
-            other_costs: toCents(otherCosts),
-            date,
-            account_id: accountId || null,
-            notes: '',
-            attachments: [],
-            // Cadastrar o produto com a compra embutida significa que ele já é
-            // meu: nasce 'received', preservando o comportamento anterior à
-            // coluna de fase.
-            status: 'received',
-          }, {
-            createTransaction: createExpense,
-            description: t('finance_store_tx_purchase_desc', { name: name.trim() }),
-          })
-        }
+        if (!created) { setFailed(true); return }
+        productId = created.id
+        setCreatedId(productId)
       }
-      onClose()
+      let supplier = supplierId || null
+      if (supplierId === '__new' && newSupplier.trim()) {
+        supplier = (await store.createSupplier(newSupplier.trim()))?.id ?? null
+        // Tentar de novo não cria o fornecedor outra vez.
+        if (supplier) { setSupplierId(supplier); setNewSupplier('') }
+      } else if (supplierId === '__new') supplier = null
+      const bought = await store.createPurchase({
+        product_id: productId,
+        supplier_id: supplier,
+        quantity: qty,
+        unit_cost: toCents(unitCost),
+        other_costs: toCents(otherCosts),
+        date,
+        account_id: accountId || null,
+        notes: '',
+        attachments: [],
+        // Cadastrar o produto com a compra embutida significa que ele já é
+        // meu: nasce 'received', preservando o comportamento anterior à
+        // coluna de fase.
+        status: 'received',
+      }, {
+        createTransaction: createExpense,
+        description: t('finance_store_tx_purchase_desc', { name: name.trim() }),
+      })
+      if (bought) onClose()
+      else setFailed(true)
     } finally {
       setSaving(false)
     }
@@ -172,7 +194,7 @@ export function ProductModal({ store, product, accounts, onClose, onEditPurchase
               </div>
             </div>
 
-            {totalCost > 0 && (
+            {totalCost > 0 && !negative && (
               <div style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: -6, ...tabularNums }}>
                 {t('finance_store_purchase_total', { value: formatBRL(totalCost) })}
               </div>
@@ -206,11 +228,14 @@ export function ProductModal({ store, product, accounts, onClose, onEditPurchase
               </select>
             </div>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={createExpense} disabled={!accountId}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: canExpense ? 'pointer' : 'not-allowed' }}>
+              <input type="checkbox" checked={createExpense} disabled={!canExpense}
                 onChange={e => setCreateExpense(e.target.checked)} />
               {t('finance_store_create_expense')}
             </label>
+            {!!accountId && !negative && totalCost <= 0 && (
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -6 }}>{t('finance_store_expense_not_positive_hint')}</div>
+            )}
           </>
         )}
 
@@ -246,16 +271,30 @@ export function ProductModal({ store, product, accounts, onClose, onEditPurchase
             value={attachments} onChange={setAttachments} />
         )}
 
+        {negative && (
+          <div role="alert" style={{ fontSize: 12, color: 'var(--color-error)' }}>{t('finance_store_error_negative')}</div>
+        )}
+        {failed && (store.error || createdId) && (
+          <div role="alert" style={{ fontSize: 12.5, color: 'var(--color-error)', lineHeight: 1.45 }}>
+            {createdId ? t('finance_store_product_saved_no_stock') : null}
+            {createdId && store.error ? ' ' : null}
+            {store.error}
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center', opacity: saving || !name.trim() ? 0.7 : 1 }}
-            onClick={handleSave} disabled={saving || !name.trim()}>{t('finance_save')}</button>
+          <button style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center', opacity: saving || negative || !name.trim() ? 0.7 : 1 }}
+            onClick={handleSave} disabled={saving || negative || !name.trim()}>{t('finance_save')}</button>
           <button style={ghostBtnStyle} onClick={onClose}>{t('finance_cancel')}</button>
         </div>
 
         {product && (
           <>
             <button style={{ ...ghostBtnStyle, justifyContent: 'center' }}
-              onClick={async () => { await store.updateProduct(product.id, { archived: !product.archived }); onClose() }}>
+              onClick={async () => {
+                if (await store.updateProduct(product.id, { archived: !product.archived })) onClose()
+                else setFailed(true)
+              }}>
               {product.archived ? t('finance_store_unarchive') : t('finance_store_archive')}
             </button>
             {confirming ? (

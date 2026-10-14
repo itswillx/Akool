@@ -48,8 +48,10 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
   `received`) para o funil de compra da Loja. **Additiva e reversível**
   (`DROP COLUMN status`). RLS e trigger não precisaram de mudança: as policies
   são por linha, não por coluna. Atenção: `quoting` é excluído do estoque
-  derivado e do custo médio em `src/lib/financeStoreCalc.ts` — mexer no default
-  reescreveria o saldo histórico de estoque.
+  derivado e do custo médio em `supabase/functions/_domain/financeStoreCalc.ts`
+  (reexportado por `src/lib/financeStoreCalc.ts`) e no SQL do API-028
+  (`store_product_figures` e `private.store_product_available`) — mexer no
+  default reescreveria o saldo histórico de estoque.
 
 - `20260812140000_sec_admin_revoke_sessions.sql` — aplicada em 2026-08-12 em **duas
   passagens** no ledger remoto (`sec_admin_revoke_sessions` criou a função;

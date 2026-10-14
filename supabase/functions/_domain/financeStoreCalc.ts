@@ -1,0 +1,230 @@
+import {
+  STORE_CONSUMED_STATUSES,
+  type StoreProductLike,
+  type StorePurchaseLike,
+  type StorePurchaseMoney,
+  type StoreSaleItemLike,
+  type StoreSaleItemMoney,
+  type StoreSaleItemRef,
+  type StoreSaleLike,
+  type StoreSaleMoney,
+  type StoreSaleStatus,
+} from './storeTypes.ts'
+
+// Pure calculations for the "Loja" submodule (finance store / resale). Money
+// is in integer cents everywhere; quantities are integers (units of hardware),
+// so sums never accumulate float drift.
+//
+// The central design decision: stock on hand is DERIVED, never stored. A
+// product's availability is purchased − sold − reserved, where "sold" counts
+// sale items whose sale reached at least 'sold' and "reserved" counts the ones
+// still in 'negotiating'. Cancelling a sale returns its units automatically.
+//
+// Dates are 'YYYY-MM-DD' strings compared and sliced as text, never parsed
+// with `new Date(string)` (UTC shift in UTC-3).
+//
+// API-028: mora em _domain (a API usa os mesmos números) e o app reexporta por
+// src/lib/financeStoreCalc.ts. O servidor tem a mesma conta em SQL
+// (public.store_product_figures e o líquido das RPCs store_sale_*), e
+// fixtures/storeParity.json prende os dois lados (storeParity.test.ts e o
+// harness supabase/checks/api028-store-sales.sql). Sem relógio: o dia de
+// criação do customerHistory vem de quem chama.
+
+/**
+ * Uma compra em 'quoting' é intenção: não há unidade na prateleira nem dinheiro
+ * gasto, então ela fica fora do estoque e do custo médio. 'purchased' já conta
+ * — o dinheiro saiu e a unidade é minha, ainda que a caminho.
+ *
+ * `status` ausente conta: protege linhas anteriores à coluna e mantém os
+ * chamadores que passam apenas as colunas de que precisam.
+ */
+function isCommitted(purchase: Pick<StorePurchaseLike, 'status'>): boolean {
+  return purchase.status !== 'quoting'
+}
+
+function isConsumed(status: StoreSaleStatus): boolean {
+  return STORE_CONSUMED_STATUSES.includes(status)
+}
+
+// Total money that left the pocket in one purchase: the whole lot plus its
+// freight/taxes. All integers, no rounding needed.
+export function purchaseTotal(p: StorePurchaseMoney): number {
+  return p.quantity * p.unit_cost + p.other_costs
+}
+
+export interface ProductStock {
+  purchased: number
+  /** Units in sales that reached at least 'sold' (not cancelled). */
+  sold: number
+  /** Units held by sales still in 'negotiating'. */
+  reserved: number
+  /** purchased − sold − reserved. */
+  available: number
+}
+
+// Derived stock for one product. Needs the sales list to know each sale item's
+// status; items of cancelled sales count as returned to the shelf.
+export function productStock(
+  productId: string,
+  purchases: readonly Pick<StorePurchaseLike, 'product_id' | 'quantity' | 'status'>[],
+  saleItems: readonly StoreSaleItemRef[],
+  sales: readonly Pick<StoreSaleLike, 'id' | 'status'>[],
+): ProductStock {
+  const statusOf = new Map(sales.map(s => [s.id, s.status]))
+  let purchased = 0
+  for (const p of purchases) if (p.product_id === productId && isCommitted(p)) purchased += p.quantity
+  let sold = 0
+  let reserved = 0
+  for (const si of saleItems) {
+    if (si.product_id !== productId) continue
+    const status = statusOf.get(si.sale_id)
+    if (status === undefined) continue
+    if (isConsumed(status)) sold += si.quantity
+    else if (status === 'negotiating') reserved += si.quantity
+  }
+  return { purchased, sold, reserved, available: purchased - sold - reserved }
+}
+
+export type UniqueItemState = 'in_stock' | 'reserved' | 'sold'
+
+// State of a kind='unique' product, read off the same derivation. A unit that
+// was both sold and (buggy data) reserved reads as sold — money talks.
+export function uniqueItemState(stock: ProductStock): UniqueItemState {
+  if (stock.sold > 0) return 'sold'
+  if (stock.reserved > 0) return 'reserved'
+  return 'in_stock'
+}
+
+// Average unit cost of everything ever purchased for a product, freight
+// included, rounded once to cents. Zero when nothing was bought yet. Used as
+// the default `unit_cost_at_sale` snapshot when a sale item is created.
+//
+// API-028: o SQL faz div(2t + q, 2q) em numeric, que é o Math.round(t / q)
+// para t ≥ 0 (o CHECK de dinheiro garante) e t < 2^52.
+export function averageUnitCost(productId: string, purchases: readonly StorePurchaseLike[]): number {
+  let total = 0
+  let qty = 0
+  for (const p of purchases) {
+    // Uma cotação não pode puxar o custo médio: o dinheiro não saiu.
+    if (p.product_id !== productId || !isCommitted(p)) continue
+    total += purchaseTotal(p)
+    qty += p.quantity
+  }
+  return qty > 0 ? Math.round(total / qty) : 0
+}
+
+export function saleItemsTotal(items: readonly StoreSaleItemMoney[]): number {
+  return items.reduce((sum, i) => sum + i.quantity * i.unit_price, 0)
+}
+
+// Gross revenue: items plus the freight charged to the customer.
+export function saleRevenue(sale: StoreSaleMoney, items: readonly StoreSaleItemMoney[]): number {
+  return saleItemsTotal(items) + sale.shipping_charged
+}
+
+// What actually lands in the account (gross minus the channel's fees). This is
+// the amount of the linked income transaction.
+export function saleNetReceived(sale: StoreSaleMoney, items: readonly StoreSaleItemMoney[]): number {
+  return saleRevenue(sale, items) - sale.fees
+}
+
+// Profit of a sale: revenue minus fees, minus the freight I paid, minus the
+// cost snapshot of every unit that left. Cancelled sales are the caller's
+// business — this computes what the numbers on the sale say.
+export function saleProfit(sale: StoreSaleMoney, items: readonly StoreSaleItemMoney[]): number {
+  const cost = items.reduce((sum, i) => sum + i.quantity * i.unit_cost_at_sale, 0)
+  return saleNetReceived(sale, items) - sale.shipping_cost - cost
+}
+
+// Capital sitting on the shelf: available units × average cost, across every
+// non-archived product. The number the overview shows as "capital parado".
+export function stockCapital(
+  products: readonly StoreProductLike[],
+  // Compras em 'quoting' já são excluídas por productStock/averageUnitCost.
+  purchases: readonly StorePurchaseLike[],
+  saleItems: readonly StoreSaleItemRef[],
+  sales: readonly Pick<StoreSaleLike, 'id' | 'status'>[],
+): number {
+  let total = 0
+  for (const p of products) {
+    if (p.archived) continue
+    const stock = productStock(p.id, purchases, saleItems, sales)
+    if (stock.available <= 0) continue
+    total += stock.available * averageUnitCost(p.id, purchases)
+  }
+  return total
+}
+
+export interface MonthAggregates {
+  revenue: number
+  cost: number
+  profit: number
+  count: number
+}
+
+// Consolidated numbers for one 'YYYY-MM': every sale whose `sold_on` falls in
+// the month and whose status reached at least 'sold'. Negotiating sales have
+// no `sold_on` yet and cancelled ones are excluded outright.
+export function monthAggregates(
+  ym: string,
+  sales: readonly Pick<StoreSaleLike, 'id' | 'status' | 'sold_on' | 'shipping_charged' | 'shipping_cost' | 'fees'>[],
+  saleItems: readonly (StoreSaleItemMoney & Pick<StoreSaleItemLike, 'sale_id'>)[],
+): MonthAggregates {
+  const out: MonthAggregates = { revenue: 0, cost: 0, profit: 0, count: 0 }
+  for (const sale of sales) {
+    if (!isConsumed(sale.status)) continue
+    if (!sale.sold_on || sale.sold_on.slice(0, 7) !== ym) continue
+    const items = saleItems.filter(i => i.sale_id === sale.id)
+    out.revenue += saleRevenue(sale, items)
+    out.cost += sale.shipping_cost + sale.fees
+      + items.reduce((sum, i) => sum + i.quantity * i.unit_cost_at_sale, 0)
+    out.profit += saleProfit(sale, items)
+    out.count += 1
+  }
+  return out
+}
+
+/**
+ * Sales of one customer, newest first by `sold_on`, falling back to the DAY
+ * the sale was created for sales still in negotiation, so both sides compare
+ * as plain 'YYYY-MM-DD'. Cancelled sales stay in the history — they tell a
+ * story too. The sort is stable: same-day sales keep the order they came in.
+ *
+ * API-028: `createdDay` converte o created_at (instante UTC do banco) no dia
+ * de quem vê. O app passa o fuso do aparelho (src/lib/financeStoreCalc.ts); o
+ * slice(0, 10), o dia UTC de antes, punha uma venda criada às 22:30 de São
+ * Paulo no dia seguinte, à frente de outra vendida no mesmo dia.
+ */
+export function customerHistory<T extends Pick<StoreSaleLike, 'customer_id' | 'sold_on' | 'created_at'>>(
+  customerId: string,
+  sales: readonly T[],
+  createdDay: (createdAt: string) => string,
+): T[] {
+  const dayOf = (s: T) => s.sold_on ?? createdDay(s.created_at)
+  return sales
+    .filter(s => s.customer_id === customerId)
+    .sort((a, b) => dayOf(b).localeCompare(dayOf(a)))
+}
+
+export interface CustomerStats {
+  /** Sales that reached at least 'sold'. */
+  count: number
+  /** Total revenue of those sales, in cents. */
+  total: number
+}
+
+export function customerStats(
+  customer: { id: string },
+  sales: readonly Pick<StoreSaleLike, 'id' | 'customer_id' | 'status' | 'shipping_charged' | 'shipping_cost' | 'fees'>[],
+  saleItems: readonly (StoreSaleItemMoney & Pick<StoreSaleItemLike, 'sale_id'>)[],
+): CustomerStats {
+  let count = 0
+  let total = 0
+  for (const sale of sales) {
+    if (sale.customer_id !== customer.id) continue
+    if (!isConsumed(sale.status)) continue
+    count += 1
+    total += saleRevenue(sale, saleItems.filter(i => i.sale_id === sale.id))
+  }
+  return { count, total }
+}

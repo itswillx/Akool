@@ -55,8 +55,10 @@ export function SalesBoard({ store, categories, onEdit }: {
   const requestStatus = (sale: FinanceStoreSale, to: FinanceStoreSaleStatus): Promise<boolean> => {
     const action = confirmActionFor(sale.status, to, !!sale.transaction_id)
     if (!action) {
-      // Sem efeito colateral em finance_transactions: aplica direto.
-      return store.setSaleStatus(sale.id, to).then(() => true)
+      // Sem efeito colateral em finance_transactions: aplica direto. O
+      // resultado é o do servidor (API-028): recusado, o card volta e o aviso
+      // da aba mostra o motivo.
+      return store.setSaleStatus(sale.id, to)
     }
     setConfirming({ sale, action })
     return new Promise<boolean>(resolve => { resolveRef.current = resolve })
