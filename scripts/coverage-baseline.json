@@ -1,7 +1,7 @@
 {
   "src": 0,
-  "src/components": 33.7,
-  "src/contexts": 68.61,
+  "src/components": 34.03,
+  "src/contexts": 70.49,
   "src/hooks": 95.63,
   "src/i18n": 94.64,
   "src/lib": 80.1,
@@ -13,9 +13,9 @@
   "src/modules/study": 16.16,
   "src/pages": 98.86,
   "src/shared": 82.68,
-  "supabase/functions/_shared": 98.67,
+  "supabase/functions/_shared": 98.73,
   "supabase/functions/admin-ops": 12.62,
   "supabase/functions/cards-api": 0,
   "supabase/functions/site-backup": 5.22,
-  "total": 47.82
+  "total": 47.94
 }

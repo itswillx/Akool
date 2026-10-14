@@ -1,32 +1,43 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Fingerprint, QrCode } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 import type { TranslationKey } from '../i18n/translations'
 import { MFA_PASSKEY_ENABLED } from '../lib/env'
 import { hasCoarsePointer, isPasskeyErrorKind, PASSKEY_ERROR_KEYS, passkeyDevice, supportsPasskeys, type PasskeyDevice } from '../lib/mfa'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { ghostBtnStyle } from '@/shared/ui/uiTokens'
 
-// Tela do código do MFA: "Entrar com o celular" com a passkey de MFA. No
+// Tela do código do MFA: "Entrar com o celular" com a passkey de login. No
 // computador o navegador mostra um QR para ler com a câmera do celular; no
-// celular, Face ID ou digital. O código continua valendo. O `t` vem por prop
-// porque a tela fica fora do LanguageProvider.
+// celular, Face ID ou digital. O código continua valendo. Só aparece para a
+// conta que tem passkey (a lista vem do Supabase com a sessão só de senha). O
+// `t` vem por prop porque a tela fica fora do LanguageProvider.
 
 type Translate = (key: TranslationKey, vars?: Record<string, string | number>) => string
 
 export function MfaPasskeyOption({ t }: { t: Translate }) {
-  const { hasPasskey, verifyMfaPasskey } = useAuth()
+  const { signInWithPasskey } = useAuth()
   const isMobile = useIsMobile()
   const [supported] = useState(() => MFA_PASSKEY_ENABLED && supportsPasskeys())
   const [coarsePointer] = useState(hasCoarsePointer)
-  if (!hasPasskey || !supported) return null
-  return <MfaPasskeyButton t={t} device={passkeyDevice(isMobile, coarsePointer)} onAuthenticate={verifyMfaPasskey} />
+  const [hasPasskey, setHasPasskey] = useState(false)
+
+  useEffect(() => {
+    if (!supported) return
+    let cancelled = false
+    void supabase.auth.passkey.list().then(({ data }) => { if (!cancelled) setHasPasskey((data?.length ?? 0) > 0) })
+    return () => { cancelled = true }
+  }, [supported])
+
+  if (!supported || !hasPasskey) return null
+  return <MfaPasskeyButton t={t} device={passkeyDevice(isMobile, coarsePointer)} onAuthenticate={signInWithPasskey} />
 }
 
 interface ButtonProps {
   t: Translate
   device: PasskeyDevice
-  onAuthenticate: (device: PasskeyDevice) => Promise<{ error: string | null }>
+  onAuthenticate: () => Promise<{ error: string | null }>
 }
 
 export function MfaPasskeyButton({ t, device, onAuthenticate }: ButtonProps) {
@@ -40,7 +51,7 @@ export function MfaPasskeyButton({ t, device, onAuthenticate }: ButtonProps) {
     if (busy) return
     setBusy(true)
     setError('')
-    const { error: err } = await onAuthenticate(device)
+    const { error: err } = await onAuthenticate()
     setBusy(false)
     if (err) setError(isPasskeyErrorKind(err) ? t(PASSKEY_ERROR_KEYS[err]) : t('mfa_error', { message: err }))
   }

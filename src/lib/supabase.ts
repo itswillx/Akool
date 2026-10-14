@@ -19,7 +19,11 @@ export const recoveryLinkError = /error_code=otp_expired|error=access_denied/.te
 
 // ARCH-004: tipado pelo schema (src/types/db.ts sobre o gerado). Tabela,
 // coluna ou argumento de RPC que não existe no banco vira erro de compilação.
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey)
+// A passkey de login ("Entrar com o celular" na tela do código) é experimental
+// no supabase-js e precisa desta opção (ver src/lib/mfa.ts).
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  auth: { experimental: { passkey: true } },
+})
 
 // Throwaway client to verify a password via signInWithPassword without
 // firing SIGNED_IN on the main client or touching its persisted session.
