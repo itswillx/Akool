@@ -1,6 +1,6 @@
-// Fase genérica de um "projeto" financeiro: uma venda da loja ou uma meta de
-// poupança. É o que permite o kanban unificado do Resumo de "Projetos" colocar
-// os dois domínios nas mesmas colunas.
+// Fase genérica de um "projeto" financeiro: hoje, uma meta de poupança. É o que
+// dá as colunas do kanban do Resumo de "Projetos". As vendas da Loja também
+// entravam aqui até a Loja sair do frontend (14/10/2026).
 //
 // Nada disso é armazenado: a fase é SEMPRE derivada do status que cada domínio
 // já mantém. Uma coluna `phase` no banco divergiria dos números na primeira vez
@@ -9,27 +9,13 @@
 // Vive em `src/lib/` (e não em `modules/finance/`) porque cruza vários
 // submódulos e precisa rodar nos testes, que usam o ambiente `node`.
 
-import type { FinanceGoalStatus, FinanceStoreSaleStatus } from '../types'
+import type { FinanceGoalStatus } from '../types'
 
 export type FinancePhase = 'planned' | 'doing' | 'done'
 export type FinancePhaseOrCancelled = FinancePhase | 'cancelled'
 
 /** Ordem das colunas do board. 'cancelled' é a última e nasce oculta na UI. */
 export const FINANCE_PHASES: FinancePhaseOrCancelled[] = ['planned', 'doing', 'done', 'cancelled']
-
-/**
- * Venda. `sold` e `shipped` são 'doing': o dinheiro entrou, mas a operação só
- * fecha na entrega — é ali que o produto deixa de ser responsabilidade minha.
- */
-export function salePhase(status: FinanceStoreSaleStatus): FinancePhaseOrCancelled {
-  switch (status) {
-    case 'negotiating': return 'planned'
-    case 'sold':
-    case 'shipped': return 'doing'
-    case 'delivered': return 'done'
-    case 'cancelled': return 'cancelled'
-  }
-}
 
 /**
  * Meta de poupança: o status manda, e o valor acumulado desempata entre "é um

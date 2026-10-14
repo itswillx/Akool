@@ -3,11 +3,9 @@
 // the tab needs. Framework-agnostic and side-effect free; amounts are integer
 // cents throughout (format with formatBRL at the edge).
 //
-// v1 scope is the personal data useFinanceData already loads. Store data
-// (products/customers/sales) is intentionally out: the Projects tab owns the
-// single useFinanceStore instance, so wiring it here would either duplicate the
-// hook or couple the two tabs. Extend by adding new node kinds when that hook
-// gains a shared home.
+// v1 scope is the personal data useFinanceData already loads. Extend by adding
+// new node kinds when another finance module (e.g. the future store/loans
+// modules; the old ones left the frontend on 2026-10-14) loads its own data.
 
 import type {
   FinanceAccount, FinanceCategory, FinanceGoal, FinanceGoalContribution,

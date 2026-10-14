@@ -15,7 +15,8 @@ import { exactDateTime, exactDay } from './relativeTime'
 //   page_shared                   → page_id, page_title, role, changed, actor_*
 //   board_shared                  → board_id, board_name, role, changed, actor_*
 //   card_assigned                 → card_id, card_title, board_id, board_name, actor_*
-//   loan_*                        → loan_id, amount (centavos)?, actor_* (sem tela no app)
+// loan_* (empréstimos) saiu daqui em 14/10/2026 com o módulo: notificação antiga
+// desse tipo cai no visual padrão (UNKNOWN) com o texto gravado.
 // actor_name e workspace_name vêm do gatilho de enriquecimento (migração notif001).
 // A `data` leva os valores crus: título vazio fica vazio e, sem o perfil de quem
 // agiu, não há actor_name; aqui entram "Sem título" / "Alguém" no idioma da tela.
@@ -31,7 +32,7 @@ export const CATEGORY_LABELS: Record<NotificationCategory, TranslationKey> = {
   system: 'notif_cat_system',
 }
 
-export type NotificationIcon = 'userPlus' | 'userCheck' | 'userX' | 'users' | 'userMinus' | 'database' | 'fileText' | 'kanban' | 'cardCheck' | 'banknote' | 'bell'
+export type NotificationIcon = 'userPlus' | 'userCheck' | 'userX' | 'users' | 'userMinus' | 'database' | 'fileText' | 'kanban' | 'cardCheck' | 'bell'
 export type NotificationTone = 'accent' | 'success' | 'warning' | 'error' | 'neutral'
 
 export type NotificationTarget =
@@ -80,16 +81,6 @@ function roleLabel(n: AppNotification, t: T, roles: Record<string, TranslationKe
   return role && roles[role] ? t(roles[role]) : undefined
 }
 
-const moneyFormats = new Map<Lang, Intl.NumberFormat>()
-function money(cents: number, lang: Lang): string {
-  let format = moneyFormats.get(lang)
-  if (!format) {
-    format = new Intl.NumberFormat(lang === 'en' ? 'en-US' : 'pt-BR', { style: 'currency', currency: 'BRL' })
-    moneyFormats.set(lang, format)
-  }
-  return format.format(cents / 100)
-}
-
 /** Workspace: título com quem agiu e o nome do workspace; sem os dois, o texto gravado. */
 function workspaceText(titleKey: TranslationKey, bodyKey: TranslationKey) {
   return (n: AppNotification, t: T) => {
@@ -106,13 +97,6 @@ const workspaceDetails = (n: AppNotification, t: T): NotificationDetail[] => {
 }
 
 const toFinanceWorkspace = (): NotificationTarget => ({ kind: 'finance-workspace' })
-
-const loanKind: KindSpec = {
-  category: 'finance',
-  icon: 'banknote',
-  tone: 'neutral',
-  details: (n, t, lang) => (typeof n.data.amount === 'number' ? [{ label: t('notif_detail_amount'), value: money(n.data.amount, lang) }] : []),
-}
 
 const KINDS: Record<string, KindSpec> = {
   workspace_invite: {
@@ -245,13 +229,6 @@ const KINDS: Record<string, KindSpec> = {
       return rows
     },
   },
-  loan_borrower_linked: loanKind,
-  loan_requested: loanKind,
-  loan_approved: loanKind,
-  loan_rejected: loanKind,
-  loan_payment_reported: loanKind,
-  loan_payment_confirmed: loanKind,
-  loan_payment_rejected: loanKind,
 }
 
 const UNKNOWN: KindSpec = { category: 'system', icon: 'bell', tone: 'neutral' }

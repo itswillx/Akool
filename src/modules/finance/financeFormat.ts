@@ -17,7 +17,8 @@ function isTabId(value: unknown): value is TabId {
 
 /**
  * Único ponto do painel que entende os ids de aba antigos ('projects',
- * 'store', 'investments', 'goals'), hoje sub-abas de "Projetos". Usado pelo
+ * 'store', 'investments', 'goals'): Metas é sub-aba de "Projetos"; os outros,
+ * módulos que saíram, caem no Resumo. Usado pelo
  * localStorage (ARCH-007: o CustomEvent `finance_tab_change` saiu).
  *
  * O TabId continua sendo 'myprojects' mesmo com o rótulo "Projetos": trocá-lo

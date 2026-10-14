@@ -9,12 +9,12 @@ import { readStoredSection, type ProjectsSection } from './myprojects/section'
 // fica guardado no localStorage e a navegação por evento.
 export function useFinanceNavigation() {
   // Uma leitura só do localStorage: o valor gravado pode ser um id antigo
-  // ('store'), que resolve para a aba nova MAIS a sub-aba correspondente.
+  // ('goals'), que resolve para a aba nova MAIS a sub-aba correspondente.
   const [tab, setTab] = useState<TabId>(
     () => resolveTabRequest(localStorage.getItem(LOCAL_KEYS.financeTab))?.tab ?? 'overview',
   )
   // A sub-aba vive AQUI, e não dentro do MyProjectsTab: um atalho do Resumo
-  // precisa poder mandar "vá para a Loja" mesmo com a aba já montada — se o
+  // precisa poder mandar "vá para Metas" mesmo com a aba já montada — se o
   // estado morasse lá dentro, a navegação viraria um no-op silencioso.
   const [projSection, setProjSection] = useState<ProjectsSection>(
     () => resolveTabRequest(localStorage.getItem(LOCAL_KEYS.financeTab))?.section ?? readStoredSection(),

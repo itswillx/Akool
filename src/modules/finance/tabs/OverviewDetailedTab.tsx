@@ -1,10 +1,9 @@
 import { useMemo } from 'react'
-import { ChevronRight, Landmark, Layers, TrendingDown, TrendingUp, Users } from 'lucide-react'
+import { ChevronRight, Landmark, TrendingDown, TrendingUp, Users } from 'lucide-react'
 import type {
   FinanceAccount, FinanceBudget, FinanceCategory, FinanceGoal, FinanceGoalContribution,
   FinanceRecurring, FinanceRecurringEntry, FinanceTransaction,
 } from '../../../types'
-import { useAllocationSummary } from '../useAllocationSummary'
 import { formatBRL } from '../../../lib/money'
 import {
   accountBalance, budgetStatus, monthTotals, monthlySeries, monthsOfYear,
@@ -56,7 +55,6 @@ export default function OverviewDetailedTab({
   const { user, profile } = useAuth()
   const isMobile = useFinanceMobile()
   const locale = localeOf(lang)
-  const allocation = useAllocationSummary(user?.id)
 
   // ─── Aggregations (all cents, all via financeCalc) ─────────────────────────
   const monthTxs = useMemo(() => transactionsInMonth(transactions, month), [transactions, month])
@@ -175,25 +173,6 @@ export default function OverviewDetailedTab({
       {statRow(t('finance_detail_net_worth_cards'), fmt(cardsBalance), cardsBalance < 0 ? FIN_NEG : 'var(--color-text)')}
     </>,
     goalsReserved > 0 ? t('finance_detail_net_worth_goals', { amount: fmt(goalsReserved) }) : undefined,
-  )
-
-  // Sem estoque, todo ativo já está nos saldos das contas acima — o card só
-  // repetiria o patrimônio.
-  const hasAllocation = allocation.stockCapital > 0
-
-  // Answers "where is the money", which the overview could not answer before:
-  // unsold stock is a real asset that never appeared here.
-  const allocationCard = (
-    <div style={{ ...cardSurfaceStyle, padding: '16px 18px', minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <span style={{ ...sectionCaptionStyle, fontSize: 11.5 }}>{t('finance_alloc_title')}</span>
-        <span style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--color-active)', color: 'var(--color-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Layers size={17} />
-        </span>
-      </div>
-      {statRow(t('finance_alloc_in_accounts'), fmt(netWorth))}
-      {allocation.stockCapital > 0 && statRow(t('finance_alloc_stock'), fmt(allocation.stockCapital))}
-    </div>
   )
 
   const incomeCard = heroCard(
@@ -388,8 +367,6 @@ export default function OverviewDetailedTab({
         {incomeCard}
         {expenseCard}
       </div>
-
-      {hasAllocation && allocationCard}
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.6fr', gap: 14, alignItems: 'stretch' }}>
         {spendingCard}

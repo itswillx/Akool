@@ -27,10 +27,11 @@ import { emitAppEvent } from '../../lib/appEvents'
 import { NotificationBell } from './NotificationBell'
 
 const page: AppNotification = { id: 'p', user_id: 'u1', type: 'page_shared', title: 't', body: '', read: false, created_at: '2026-10-04T12:00:00Z', data: { page_id: 'p1' } }
-const loan: AppNotification = { ...page, id: 'l', type: 'loan_approved', data: {} }
+// Sem page_id não há destino: o item abre a central.
+const semDestino: AppNotification = { ...page, id: 'l', data: {} }
 
 beforeEach(() => {
-  ctx.notifications = [page, loan]
+  ctx.notifications = [page, semDestino]
   ctx.unreadCount = 12
   for (const fn of [ctx.markAsRead, ctx.setCenterOpen, openTarget]) fn.mockReset()
 })

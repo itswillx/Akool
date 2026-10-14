@@ -43,8 +43,8 @@ import { useFinanceModals } from './useFinanceModals'
 import { useFinanceNavigation } from './useFinanceNavigation'
 import { useViewedMonthBudgets } from './useViewedMonthBudgets'
 
-// Obras, Investimentos e Loja deixaram de ser abas irmãs: viraram sub-abas de
-// "Projetos", que é quem faz o lazy import de cada uma agora.
+// "Projetos" reúne o Resumo por fase e as Metas. Obras e Investimentos saíram
+// antes; a Loja saiu do frontend em 14/10/2026 (tabelas mantidas no banco).
 const MyProjectsTab = lazy(() => import('./myprojects/MyProjectsTab'))
 
 // Lazy pelo mesmo motivo: o layout de força e o SVG do grafo só entram no
@@ -110,9 +110,9 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
     if (tab === 'network' && !loading) ensureMonthsLoaded(lastNMonths(currentYM(), 12))
   }, [tab, loading, ensureMonthsLoaded])
 
-  // The store submodule writes to finance_transactions on its own (linked
-  // income/expense of a sale/purchase) and announces it here, so the
-  // Transactions tab reflects the change without an F5. Silent: a full reload
+  // A module that writes to finance_transactions on its own announces it here,
+  // so the Transactions tab reflects the change without an F5 (the Store did
+  // this until it left the frontend on 2026-10-14). Silent: a full reload
   // would flip `loading` and unmount the tab the user is standing on.
   useEffect(() => onAppEvent('finance_transactions_changed', () => { refetchTransactions() }), [refetchTransactions])
 
@@ -157,13 +157,11 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
   const { openImportModal, quickAddTx, bulkDeleteTx, deleteBudget, deleteGoal, updateGoalStatus, deleteContribution, handleMarkPaid, skipEntry } = actions
 
   // Uma meta atravessa vários meses, então o seletor de mês só confundiria —
-  // mesmo raciocínio de categorias/recorrentes. Dentro de Projetos a decisão é
-  // por sub-aba: a Loja usa o mês nos seus cards de resumo, Metas e o Resumo
-  // por fase não.
-  const monthlessSection = projSection === 'summary' || projSection === 'goals'
+  // mesmo raciocínio de categorias/recorrentes. Vale para as duas sub-abas de
+  // Projetos (Resumo e Metas).
   // A aba Rede tem seletor de período próprio (1m/3m/6m/12m nos filtros).
   const monthNavVisible = tab !== 'categories' && tab !== 'recurring' && tab !== 'network'
-    && !(tab === 'myprojects' && monthlessSection)
+    && tab !== 'myprojects'
 
   // Desktop nav arrangement (mobile always uses the bottom nav).
   const showSidebar = !isMobile && direction === 'side'
@@ -432,7 +430,7 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
             )}
             {tab === 'myprojects' && (
               <Suspense fallback={<div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>}>
-                {/* Loja e Metas numa aba só.
+                {/* Resumo e Metas numa aba só.
 
                     Metas vai como elemento pronto (`goalsSlot`): são treze
                     props e três modais que continuam morando aqui — encaná-los
@@ -440,10 +438,6 @@ export default function FinancePanel({ isMobile: isMobileProp }: { isMobile?: bo
                 <MyProjectsTab
                   section={projSection}
                   onSectionChange={setProjSection}
-                  workspaceId={workspace?.id ?? null}
-                  accounts={accounts}
-                  categories={workspace ? resolveCategories : categories}
-                  month={month}
                   goals={goals}
                   contributions={contributions}
                   goalsSlot={(

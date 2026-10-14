@@ -168,7 +168,8 @@ export interface FinanceWorkspaceInvite {
 // ─── Finance: anexos ────────────────────────────────────────────────────────
 // Coleção embutida (jsonb) apontando para objetos de um bucket privado. `path`
 // é a chave do Storage, resolvida sob demanda com resolveSignedUrl(). Nasceu
-// com Obras; hoje só a Loja usa, via `ui/AttachmentField`.
+// com Obras e serviu à Loja; desde 14/10/2026 nenhuma tela usa, mas as colunas
+// jsonb das tabelas da Loja continuam com este formato.
 export interface FinanceAttachment {
   id: string
   path: string
@@ -179,10 +180,13 @@ export interface FinanceAttachment {
 }
 
 // ─── Finance Store / Loja ───────────────────────────────────────────────────
+// A tela da Loja saiu do frontend em 14/10/2026; as tabelas, as RPCs e os
+// gatilhos do API-028 ficaram no banco para os módulos novos, e estes tipos
+// seguem porque src/types/db.ts os usa nas colunas das tabelas.
 // Estoque de revenda (hardware etc.), pipeline de venda e clientes. O estoque
 // disponível é DERIVADO (comprado − vendido − reservado) em
-// supabase/functions/_domain/financeStoreCalc.ts (o app usa por
-// src/lib/financeStoreCalc.ts; o servidor tem a mesma conta em SQL, API-028);
+// supabase/functions/_domain/financeStoreCalc.ts (o servidor tem a mesma
+// conta em SQL, API-028);
 // sale_items guardam snapshot de preço/custo para o lucro histórico não mudar
 // com edições no produto. Valores em centavos.
 
@@ -326,13 +330,6 @@ export type NotificationType =
   | 'page_shared'
   | 'board_shared'
   | 'card_assigned'
-  | 'loan_borrower_linked'
-  | 'loan_requested'
-  | 'loan_approved'
-  | 'loan_rejected'
-  | 'loan_payment_reported'
-  | 'loan_payment_confirmed'
-  | 'loan_payment_rejected'
 
 export interface AppNotification {
   id: string

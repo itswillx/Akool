@@ -35,8 +35,17 @@ export function visibleSections(isAdmin: boolean): SectionKey[] {
   return SECTIONS.map(s => s.key).filter(key => isAdmin || key !== 'admin')
 }
 
+/**
+ * Subseções do catálogo que a tela não mostra. Loja e Empréstimos saíram do
+ * frontend em 14/10/2026 e ainda não têm endpoint. O catálogo, o banco e os
+ * tokens que já as têm ficam como estão (a paridade com a migration api001
+ * continua); para voltarem à tela, basta tirá-las daqui.
+ */
+export const HIDDEN_SUBSECTIONS: ReadonlySet<string> = new Set(['financas.loja', 'financas.emprestimos'])
+
+/** Subseções visíveis da seção, na ordem do catálogo. */
 export function subsectionsOf(section: SectionKey): ScopeSubsection[] {
-  return SUBSECTIONS.filter(s => s.section === section)
+  return SUBSECTIONS.filter(s => s.section === section && !HIDDEN_SUBSECTIONS.has(s.key))
 }
 
 const cap = (level: ScopeLevel, max: ScopeLevel): ScopeLevel => (levelRank(level) > levelRank(max) ? max : level)
@@ -119,14 +128,19 @@ export function summarizeScopes(scopes: ScopeMap): SectionSummary[] {
 
 export interface ViewStatus {
   view: CompositeView
-  /** Quantas fontes da visão o token pode ler. */
+  /** As fontes da visão que a tela mostra (sem HIDDEN_SUBSECTIONS). */
+  sources: string[]
+  /** Quantas dessas fontes o token pode ler. */
   granted: number
   total: number
 }
 
 /** As leituras compostas: cada bloco sai com a leitura da subseção de origem. */
 export function viewStatuses(scopes: ScopeMap): ViewStatus[] {
-  return COMPOSITE_VIEWS.map(view => ({ view, granted: view.anyOf.filter(key => scopes[key] !== undefined).length, total: view.anyOf.length }))
+  return COMPOSITE_VIEWS.map(view => {
+    const sources = view.anyOf.filter(key => !HIDDEN_SUBSECTIONS.has(key))
+    return { view, sources, granted: sources.filter(key => scopes[key] !== undefined).length, total: sources.length }
+  })
 }
 
 /** Escopos guardados → mapa do seletor: só chaves do catálogo e sem admin.* de quem deixou de ser admin. */

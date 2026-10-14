@@ -1,22 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FINANCE_PHASES, goalPhase, salePhase } from './financePhase'
-
-describe('salePhase', () => {
-  it('treats a sale still being negotiated as planned', () => {
-    expect(salePhase('negotiating')).toBe('planned')
-  })
-
-  it('keeps sold and shipped in doing', () => {
-    // The money came in, but the operation only closes on delivery.
-    expect(salePhase('sold')).toBe('doing')
-    expect(salePhase('shipped')).toBe('doing')
-  })
-
-  it('closes on delivered and isolates cancelled', () => {
-    expect(salePhase('delivered')).toBe('done')
-    expect(salePhase('cancelled')).toBe('cancelled')
-  })
-})
+import { FINANCE_PHASES, goalPhase } from './financePhase'
 
 describe('goalPhase', () => {
   it('is done once the goal is marked completed, even with nothing saved', () => {

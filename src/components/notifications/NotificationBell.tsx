@@ -24,7 +24,7 @@ export function NotificationBell({ isMobile }: { isMobile: boolean }) {
   useEffect(() => { setCenterOpen(open) }, [open, setCenterOpen])
 
   // Abre o item: marca como lida, fecha a central e navega. Sem destino (tipo
-  // sem tela, como empréstimos), a central fica aberta com o item à vista.
+  // sem tela, ou sem os dados do destino), a central fica aberta com o item à vista.
   const openItem = (n: AppNotification, target: NotificationTarget | null) => {
     void markAsRead(n.id)
     if (!target) {

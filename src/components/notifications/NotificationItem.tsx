@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
 import type { ComponentType } from 'react'
-import { Banknote, Bell, ChevronDown, Database, FileText, Mail, MailOpen, SquareCheck, SquareKanban, Trash2, UserCheck, UserMinus, UserPlus, Users, UserX } from 'lucide-react'
+import { Bell, ChevronDown, Database, FileText, Mail, MailOpen, SquareCheck, SquareKanban, Trash2, UserCheck, UserMinus, UserPlus, Users, UserX } from 'lucide-react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { emitAppEvent } from '../../lib/appEvents'
 import { acceptWorkspaceInvite, declineWorkspaceInvite, fetchInviteStates } from '../../lib/data/notifications'
@@ -29,7 +29,6 @@ const ICONS: Record<NotificationIcon, ComponentType<{ size?: number }>> = {
   fileText: FileText,
   kanban: SquareKanban,
   cardCheck: SquareCheck,
-  banknote: Banknote,
   bell: Bell,
 }
 

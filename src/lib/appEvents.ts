@@ -6,9 +6,9 @@
 /** Nome do evento → tipo do `detail` (`undefined` = sem payload). */
 export interface AppEvents {
   /**
-   * A Loja escreve em finance_transactions por conta própria (receita/despesa
-   * ligada a uma venda/compra) e avisa o FinancePanel, que recarrega a aba
-   * Transações sem F5.
+   * Um módulo que escreve em finance_transactions por conta própria avisa o
+   * FinancePanel, que recarrega a aba Transações sem F5. A Loja fazia isso até
+   * sair do frontend (14/10/2026); fica para os módulos novos.
    */
   finance_transactions_changed: undefined
   /**
