@@ -347,6 +347,7 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
           onClose={() => setImportOpen(false)}
           boardId={activeBoardId}
           columns={columns}
+          cards={cards}
           isMobile={isMobile}
           onImported={() => loadBoardData(activeBoardId, { silent: true })}
         />

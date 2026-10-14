@@ -37,20 +37,47 @@ test('criar card e movê-lo para outra coluna', async ({ app: page, unique }) =>
   }
 })
 
+// API-033: o aceite contra o banco real (com o gatilho do API-013): 2 cards,
+// Contexto de 3 linhas e Depende de. O dependente vem antes no arquivo, então
+// a gravação por níveis tem de inserir a dependência numa instrução anterior.
+// Os IDs casam [A-Z]{2,5}-\d{3} (o parser ignora outro formato); o quadro é
+// novo a cada teste, então um ID fixo não colide.
 test('importar cards de Markdown (BacklogCard v1)', async ({ app: page, unique }) => {
-  const id = `E2E-${Date.now().toString(36).toUpperCase()}`
+  const base = 'ETE-001'
+  const dependent = 'ETE-002'
+  const baseTitle = `${base} — ${unique} base`
+  const dependentTitle = `${dependent} — ${unique} depende`
+  const context = ['Linha 1 do contexto.', 'Linha 2 do contexto.', 'Linha 3 do contexto.']
   const markdown = `## Tópico: E2E
 
-### CARD ${id} — ${unique} importado
+### CARD ${dependentTitle}
 
 | Campo | Valor |
 | --- | --- |
-| **ID** | ${id} |
+| **ID** | ${dependent} |
 | **Prioridade** | P2 |
 | **Esforço** | S |
 | **Labels** | e2e |
+| **Depende de** | ${base} |
 
 **Problema:** Card criado pelo teste E2E.
+
+**Contexto:**
+${context.map(line => `- ${line}`).join('\n')}
+
+**Subtarefas Kanban:**
+
+- [ ] Primeiro passo
+
+### CARD ${baseTitle}
+
+| Campo | Valor |
+| --- | --- |
+| **ID** | ${base} |
+| **Prioridade** | P2 |
+| **Esforço** | S |
+
+**Problema:** A dependência do outro card.
 
 **Subtarefas Kanban:**
 
@@ -62,9 +89,23 @@ test('importar cards de Markdown (BacklogCard v1)', async ({ app: page, unique }
     await page.getByRole('button', { name: T.projects_import, exact: true }).first().click()
     const dialog = page.getByRole('dialog')
     await dialog.getByLabel(T.projects_import_paste_label).fill(markdown)
-    await expect(dialog.getByText(T.projects_import_preview.replace('{count}', '1'))).toBeVisible()
+    await expect(dialog.getByText(T.projects_import_preview.replace('{count}', '2'))).toBeVisible()
+    // A dependência está no arquivo: a prévia não tem aviso.
+    await expect(dialog.getByText(T.projects_import_warnings)).toBeHidden()
     await dialog.getByRole('button', { name: T.projects_import_confirm, exact: true }).click()
-    await expect(page.getByText(`${id} — ${unique} importado`).or(page.getByText(`${unique} importado`)).first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(dependentTitle).first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(baseTitle).first()).toBeVisible()
+    // Sem aviso nem card pulado, o modal fecha sozinho.
+    await expect(dialog).toBeHidden()
+
+    // O card dependente: o Contexto inteiro na descrição e a dependência gravada.
+    await page.getByText(dependentTitle).first().click()
+    const card = page.getByRole('dialog')
+    for (const line of context) await expect(card.getByText(line)).toBeVisible()
+    await card.getByRole('button', { name: T.projects_section_organization }).click()
+    const chip = card.locator('span').filter({ hasText: baseTitle }).filter({ has: page.getByRole('button', { name: T.common_remove }) })
+    await expect(chip.first()).toBeVisible()
+    await closeCardModal(page)
   } finally {
     await page.keyboard.press('Escape')
     await deleteOpenBoard(page)

@@ -1,6 +1,6 @@
 {
   "files": 17,
-  "cards": 434,
+  "cards": 435,
   "backlogs": {
     "backlog-api-v1.md": {
       "topics": [
@@ -219,7 +219,8 @@
       ],
       "issues": [],
       "cards": [
-        "SEC-001 | urgent | L | Segurança | segurança,supabase,migrations,esforço:l | arquivos 1 | subtarefas 0/8 | d3e114ba66ac5187"
+        "SEC-001 | urgent | L | Segurança | segurança,supabase,migrations,esforço:l | arquivos 1 | subtarefas 0/8 | dfbffcff837d3df0",
+        "EXE-001 | low | S | Segurança | exemplo,segurança,esforço:s | arquivos 0 | subtarefas 0/2 | ea273232674666e1 | depende de SEC-001"
       ]
     },
     "backlog-completo-2026-08.md": {

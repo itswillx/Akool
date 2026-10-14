@@ -42,6 +42,7 @@ export const DOMAIN_PT_BR = {
   projects_links: 'Links',
   projects_attachments: 'Imagens',
   // Avisos do parser de backlog na tela de importação (backlogIssueText, API-027).
+  // Cada BacklogIssueCode, ImportWarningCode e ImportIssueCode tem a sua chave (o tsc confere).
   projects_import_issue_invalid_heading: 'Bloco ignorado: cabeçalho CARD inválido ou ausente',
   projects_import_issue_id_mismatch: '{id}: o ID da tabela ({detail}) é diferente do cabeçalho',
   projects_import_issue_no_subtasks: '{id}: nenhuma subtarefa encontrada',
@@ -50,6 +51,17 @@ export const DOMAIN_PT_BR = {
   projects_import_issue_no_topic: '{id}: sem seção Tópico',
   projects_import_issue_duplicate_id: '{id}: ID repetido, só a primeira ocorrência entra',
   projects_import_issue_no_cards: 'Nenhum card encontrado no arquivo',
+  // Depende de (API-033): avisos do parser e do plano (importWarningText).
+  projects_import_issue_invalid_dependency: '{id}: "{detail}" em Depende de não é um ID de card e ficou de fora',
+  projects_import_issue_self_dependency: '{id}: o card depende de si mesmo, e a dependência ficou de fora',
+  projects_import_warning_dependency_not_found: '{id}: a dependência {detail} não está no arquivo nem no quadro e ficou de fora',
+  projects_import_warning_dependency_not_applied: '{id}: já está no quadro, então as dependências {detail} não foram gravadas nele',
+  // O que impede a importação (importIssueText, API-033): {max} é o limite.
+  projects_import_error_no_column: '{id}: sem coluna de destino',
+  projects_import_error_checklist_too_many: '{id}: mais de {max} subtarefas',
+  projects_import_error_checklist_text_too_long: '{id}: subtarefa com mais de {max} caracteres',
+  projects_import_error_dependency_cycle: '{id}: dependência em ciclo ({detail})',
+  projects_import_error_depends_on_too_many: '{id}: mais de {max} dependências',
 } as const satisfies Record<string, string>
 
 export type DomainKey = keyof typeof DOMAIN_PT_BR

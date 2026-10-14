@@ -169,3 +169,38 @@ describe('issues (UX-011)', () => {
     expect(parseBacklogMarkdown('nada aqui').issues).toEqual([{ code: 'no_cards' }])
   })
 })
+
+// API-033: o aceite, pelo reexport que a tela e a CLI usam.
+describe('Contexto multilinha e Depende de (API-033)', () => {
+  it('2 cards: Contexto de 3 linhas inteiro, Problema de 2 linhas e a dependência', () => {
+    const source = `${SEC001_BLOCK.replace('**Subtarefas Kanban:**', `**Contexto:**
+- Aceite: o diff contra o remoto não mostra diferença.
+- Aceite: toda tabela tem RLS.
+- Aceite: o CI falha com drift.
+
+**Subtarefas Kanban:**`)}
+### CARD EXE-001 — Exemplo de dependência
+
+| Campo | Valor |
+| --- | --- |
+| **Prioridade** | P3 |
+| **Esforço** | S |
+| **Depende de** | SEC-001 |
+
+**Problema:** Linha 1.
+Linha 2.
+
+**Subtarefas Kanban:**
+
+- [ ] Conferir
+`
+    const result = parseBacklogMarkdown(source)
+    expect(result.cards.map(c => c.externalId)).toEqual(['SEC-001', 'EXE-001'])
+    const [sec, exe] = result.cards
+    expect(sec.description).toContain('**Contexto:**\n- Aceite: o diff contra o remoto não mostra diferença.\n- Aceite: toda tabela tem RLS.\n- Aceite: o CI falha com drift.')
+    expect(sec.dependsOn).toEqual([])
+    expect(exe.description).toBe('**Problema:** Linha 1.\nLinha 2.\n\n**Esforço:** S')
+    expect(exe.dependsOn).toEqual(['SEC-001'])
+    expect(result.issues.filter(i => i.code.includes('dependency'))).toEqual([])
+  })
+})

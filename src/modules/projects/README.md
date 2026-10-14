@@ -74,9 +74,10 @@ Markdown do card e os limites do API-013 moram em `supabase/functions/_domain/`
   com o dia do aparelho. O `createdPerWeek` recebe o dia de criação de cada card
   (`dayOf`): o app passa o dia local do `created_at` (`createdDayLocal`), e o
   servidor vai passar o dia no fuso da pessoa, calculado no SQL.
-- **Textos:** o Markdown do card e os avisos da importação recebem um `t`. O
-  app passa o seu; a API passa o `tPtBR` de `_domain/i18n.pt-BR.ts`, que tem os
-  mesmos textos (`src/lib/projectDomain.test.ts` confere).
+- **Textos:** o Markdown do card, os avisos da importação e o que a impede
+  (`importIssueText`) recebem um `t`. O app passa o seu; a API e a CLI passam
+  o `tPtBR` de `_domain/i18n.pt-BR.ts`, que tem os mesmos textos
+  (`src/lib/projectDomain.test.ts` confere).
 - **Imports:** `_domain` só importa caminhos relativos `.ts` dentro de
   `supabase/functions` (`_api/importBoundary.test.ts`), e o eslint barra
   relógio, hora local, `localStorage` e DOM lá.

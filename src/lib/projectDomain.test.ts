@@ -3,7 +3,10 @@ import type { ScheduleCard } from '../../supabase/functions/_domain/autoSchedule
 import type { ProjectCardPriority as SnapshotPriority } from '../../supabase/functions/_domain/blocknote/projectCard'
 import type { CardMarkdownKey, CardMarkdownSource } from '../../supabase/functions/_domain/cardMarkdown'
 import { DOMAIN_PT_BR, tPtBR, type DomainKey, type DomainTFor } from '../../supabase/functions/_domain/i18n.pt-BR'
-import { backlogIssueText, type BacklogIssueKey } from '../../supabase/functions/_domain/importPlan'
+import {
+  backlogIssueText, importIssueText, importWarningText, type BacklogIssueKey, type ImportIssueCode, type ImportIssueKey,
+  type ImportWarningCode, type ImportWarningKey,
+} from '../../supabase/functions/_domain/importPlan'
 import type { StatsCard } from '../../supabase/functions/_domain/projectStats'
 import type {
   ProjectCardAttachmentItem,
@@ -46,6 +49,10 @@ describe('tipos de _domain × src/types', () => {
     expectTypeOf(getT('pt-BR')).toExtend<DomainTFor<CardMarkdownKey>>()
     expectTypeOf(getT('pt-BR')).toExtend<DomainTFor<BacklogIssueKey>>()
     expectTypeOf<`projects_import_issue_${BacklogIssueCode}`>().toEqualTypeOf<BacklogIssueKey>()
+    expectTypeOf(getT('pt-BR')).toExtend<DomainTFor<ImportWarningKey>>()
+    expectTypeOf<`projects_import_warning_${ImportWarningCode}`>().toEqualTypeOf<ImportWarningKey>()
+    expectTypeOf(getT('pt-BR')).toExtend<DomainTFor<ImportIssueKey>>()
+    expectTypeOf<`projects_import_error_${ImportIssueCode}`>().toEqualTypeOf<ImportIssueKey>()
   })
 })
 
@@ -54,14 +61,14 @@ describe('textos de _domain × src/i18n (pt-BR)', () => {
   const shared = keys.filter(k => !DOMAIN_ONLY.test(k)) as (DomainKey & TranslationKey)[]
 
   it('toda chave que não é só do domínio existe no app com o mesmo texto', () => {
-    expect(shared.length).toBeGreaterThanOrEqual(28)
+    expect(shared.length).toBeGreaterThanOrEqual(37)
     expect(shared.filter(k => !(k in ptBR))).toEqual([])
     expect(shared.filter(k => DOMAIN_PT_BR[k] !== ptBR[k])).toEqual([])
   })
 
   it('tPtBR interpola igual ao getT do app', () => {
     const t = getT('pt-BR')
-    const vars = { id: 'AB-001', detail: 'AB-002', name: 'x.png', title: 'Card' }
+    const vars = { id: 'AB-001', detail: 'AB-002', name: 'x.png', title: 'Card', max: 500 }
     expect(shared.filter(k => tPtBR(k, vars) !== t(k, vars))).toEqual([])
   })
 
@@ -82,12 +89,35 @@ describe('textos de _domain × src/i18n (pt-BR)', () => {
 
   it('os avisos da importação saem como na tela (ImportCardsModal)', () => {
     const t = getT('pt-BR')
-    const codes: BacklogIssueCode[] = ['invalid_heading', 'id_mismatch', 'no_subtasks', 'no_priority', 'no_effort', 'no_topic', 'duplicate_id', 'no_cards']
+    const codes: BacklogIssueCode[] = [
+      'invalid_heading', 'id_mismatch', 'no_subtasks', 'no_priority', 'no_effort', 'no_topic', 'duplicate_id', 'no_cards',
+      'invalid_dependency', 'self_dependency',
+    ]
     for (const code of codes) {
       const issue = { code, cardId: 'AB-001', detail: 'AB-002' }
       const screen = t(`projects_import_issue_${issue.code}`, { id: issue.cardId ?? '', detail: issue.detail ?? '' })
       expect(backlogIssueText(issue, tPtBR)).toBe(screen)
       expect(backlogIssueText(issue, t)).toBe(screen)
+    }
+  })
+
+  it('os avisos de dependência (API-033) saem iguais com o tPtBR e com o t do app', () => {
+    const t = getT('pt-BR')
+    const codes: ImportWarningCode[] = ['dependency_not_found', 'dependency_not_applied']
+    for (const code of codes) {
+      const warning = { code, cardId: 'AB-001', detail: 'AB-002, AB-003' }
+      expect(importWarningText(warning, tPtBR)).toBe(importWarningText(warning, t))
+      expect(importWarningText(warning, t)).toContain('AB-002, AB-003')
+    }
+  })
+
+  it('o que impede a importação (API-033) sai igual com o tPtBR e com o t do app', () => {
+    const t = getT('pt-BR')
+    const codes: ImportIssueCode[] = ['no_column', 'checklist_too_many', 'checklist_text_too_long', 'dependency_cycle', 'depends_on_too_many']
+    for (const code of codes) {
+      const issue = { code, cardId: 'AB-001', detail: 'AB-001 → AB-002 → AB-001' }
+      expect(importIssueText(issue, tPtBR)).toBe(importIssueText(issue, t))
+      expect(importIssueText(issue, t)).toMatch(/^AB-001: [^{}]+$/)
     }
   })
 })

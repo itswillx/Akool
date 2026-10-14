@@ -3,14 +3,22 @@ import { projectPriorityLabelKey } from '../../lib/priorities'
 import { Upload, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { parseBacklogMarkdown } from '../../lib/backlogMarkdownParser'
-import { ensureTopicColumns, importParsedCards, planTopicColumns } from '../../lib/importProjectCards'
+import {
+  ensureTopicColumns, importIssueText, importParsedCards, importWarningText, oldestFirst, planCardRows, planTopicColumns,
+  type ImportWarning,
+} from '../../lib/importProjectCards'
 import { supabase } from '../../lib/supabase'
-import type { ProjectColumn } from '../../types'
+import type { ProjectCard, ProjectColumn } from '../../types'
 import ModalShell from './ModalShell'
 
 
 // Quantos IDs pulados listar antes do "e mais N".
 const MAX_LISTED_IDS = 20
+// Quantos avisos mostrar antes do "e mais N".
+const MAX_NOTICES = 8
+// API-033: a prévia não grava, então o id das linhas não importa; um fixo evita
+// gerar UUID a cada tecla.
+const PREVIEW_ID = () => ''
 
 const isTextFile = (file: File) => file.type.startsWith('text/') || /\.(md|markdown|txt)$/i.test(file.name)
 const hasFiles = (types: readonly string[]) => types.includes('Files')
@@ -20,6 +28,8 @@ interface ImportCardsModalProps {
   onClose: () => void
   boardId: string
   columns: ProjectColumn[]
+  /** API-033: os cards do quadro (já em memória), para a prévia pular e resolver `Depende de`. */
+  cards: readonly Pick<ProjectCard, 'id' | 'title' | 'column_id' | 'sort_order' | 'depends_on' | 'created_at'>[]
   isMobile?: boolean
   onImported: () => void
 }
@@ -47,7 +57,7 @@ function TargetColumnSelect({ label, columns, value, onChange }: {
 }
 
 export default function ImportCardsModal({
-  open, onClose, boardId, columns, isMobile, onImported,
+  open, onClose, boardId, columns, cards, isMobile, onImported,
 }: ImportCardsModalProps) {
   const { t } = useLanguage()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -61,6 +71,9 @@ export default function ImportCardsModal({
   const [resultMsg, setResultMsg] = useState<string | null>(null)
   const [skippedMsg, setSkippedMsg] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  // Depois de importar, os avisos são os da gravação: a prévia, refeita contra o
+  // quadro já com os cards novos, só veria cards pulados.
+  const [resultWarnings, setResultWarnings] = useState<ImportWarning[] | null>(null)
 
   const parseResult = useMemo(() => {
     if (!markdown.trim()) return null
@@ -82,11 +95,34 @@ export default function ImportCardsModal({
   const untopicedCount = useTopics && parseResult ? parseResult.cards.filter(c => !c.topic).length : 0
   // Sem coluna de destino para algum card: sem opção por categoria, ou cards sem tópico.
   const missingColumn = !fallbackColumn && (!useTopics || untopicedCount > 0)
+  const fallbackColumnId = fallbackColumn?.id ?? null
+
+  // API-033: o mesmo plano da gravação, contra os cards do quadro em memória.
+  // Eles chegam na ordem do quadro (sort_order); com dois cards do mesmo ID
+  // externo, o que vale (para pular, resolver a dependência e o aviso
+  // dependency_not_applied) é o mais antigo, então a prévia ordena uma cópia
+  // como a gravação (oldestFirst).
+  const boardCards = useMemo(() => oldestFirst(cards), [cards])
+  const preview = useMemo(() => {
+    if (!parseResult || parseResult.cards.length === 0) return null
+    // Coluna que ainda vai ser criada: um id provisório, só para não virar no_column.
+    const columnByTopic = columnPlan ? Object.fromEntries(columnPlan.map(p => [p.topic, p.columnId ?? `nova:${p.topic}`])) : undefined
+    return planCardRows({ boardId, fallbackColumnId, cards: parseResult.cards, existing: boardCards, columnByTopic, skipDuplicates, newId: PREVIEW_ID })
+  }, [parseResult, columnPlan, boardId, fallbackColumnId, boardCards, skipDuplicates])
+  // Ciclo, limites: a gravação recusaria. A falta de coluna tem o aviso próprio.
+  const blocked = !!preview && preview.issues.length > 0
+  const notices = useMemo(() => [
+    ...(resultWarnings || !preview ? [] : preview.issues.filter(i => i.code !== 'no_column').map(issue => importIssueText(issue, t))),
+    ...(resultWarnings ?? preview?.warnings ?? []).map(w => importWarningText(w, t)),
+    // UX-011: o parser devolve códigos; o texto sai no idioma da tela.
+    ...(parseResult?.issues ?? []).map(issue => t(`projects_import_issue_${issue.code}`, { id: issue.cardId ?? '', detail: issue.detail ?? '' })),
+  ], [preview, resultWarnings, parseResult, t])
 
   const clearMessages = () => {
     setResultMsg(null)
     setSkippedMsg(null)
     setErrorMsg(null)
+    setResultWarnings(null)
   }
 
   const handleFile = useCallback((file: File) => {
@@ -96,6 +132,7 @@ export default function ImportCardsModal({
       setResultMsg(null)
       setSkippedMsg(null)
       setErrorMsg(null)
+      setResultWarnings(null)
     }
     reader.readAsText(file)
   }, [])
@@ -128,7 +165,7 @@ export default function ImportCardsModal({
     : `${ids.slice(0, MAX_LISTED_IDS).join(', ')} ${t('projects_import_more_ids', { count: ids.length - MAX_LISTED_IDS })}`
 
   const handleImport = async () => {
-    if (!parseResult || parseResult.cards.length === 0 || missingColumn) return
+    if (!parseResult || parseResult.cards.length === 0 || missingColumn || blocked) return
     setImporting(true)
     clearMessages()
 
@@ -145,9 +182,10 @@ export default function ImportCardsModal({
       columnsCreated = ensured.created
     }
 
-    const result = await importParsedCards(supabase, boardId, fallbackColumn?.id ?? null, parseResult.cards, { skipDuplicates, columnByTopic })
+    const result = await importParsedCards(supabase, boardId, fallbackColumnId, parseResult.cards, { skipDuplicates, columnByTopic, t })
 
     setImporting(false)
+    setResultWarnings(result.warnings)
 
     // Colunas ou lotes já gravados precisam aparecer no quadro mesmo se um lote falhar depois.
     if (columnsCreated > 0 || result.created > 0) onImported()
@@ -168,8 +206,8 @@ export default function ImportCardsModal({
     setResultMsg(columnsCreated > 0
       ? `${success} · ${t('projects_import_columns_created').replace('{count}', String(columnsCreated))}`
       : success)
-    // Com IDs pulados, o modal fica aberto para a lista ser lida.
-    if (result.created > 0 && result.skippedIds.length === 0) {
+    // Com IDs pulados ou avisos, o modal fica aberto para a lista ser lida.
+    if (result.created > 0 && result.skippedIds.length === 0 && result.warnings.length === 0) {
       setTimeout(() => {
         onClose()
         setMarkdown('')
@@ -305,8 +343,8 @@ export default function ImportCardsModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {parseResult.cards.map(card => (
-                    <tr key={card.externalId} style={{ borderTop: '1px solid var(--color-border)' }}>
+                  {parseResult.cards.map((card, i) => (
+                    <tr key={`${i}-${card.externalId}`} style={{ borderTop: '1px solid var(--color-border)' }}>
                       <td style={{ padding: '7px 10px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{card.externalId}</td>
                       <td style={{ padding: '7px 10px', color: 'var(--color-text)' }}>{card.title}</td>
                       <td style={{ padding: '7px 10px', color: 'var(--color-text-muted)' }}>{t(projectPriorityLabelKey(card.priority))}</td>
@@ -319,19 +357,18 @@ export default function ImportCardsModal({
           </>
         )}
 
-        {parseResult && parseResult.warnings.length > 0 && (
+        {notices.length > 0 && (
           <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: '#f59e0b18', border: '1px solid #f59e0b44', fontSize: 12, color: 'var(--color-text)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, marginBottom: 6 }}>
               <AlertTriangle size={14} color="#f59e0b" />
               {t('projects_import_warnings')}
             </div>
             <ul style={{ margin: 0, paddingLeft: 18 }}>
-              {/* UX-011: o parser devolve códigos; o texto sai no idioma da tela. */}
-              {parseResult.issues.slice(0, 8).map((issue, i) => (
-                <li key={`${issue.code}-${issue.cardId ?? i}`} style={{ marginBottom: 2 }}>
-                  {t(`projects_import_issue_${issue.code}`, { id: issue.cardId ?? '', detail: issue.detail ?? '' })}
-                </li>
+              {/* API-033: o que impede importar vem antes; o mesmo texto pode repetir, então a chave leva o índice. */}
+              {notices.slice(0, MAX_NOTICES).map((notice, i) => (
+                <li key={`${i}-${notice}`} style={{ marginBottom: 2 }}>{notice}</li>
               ))}
+              {notices.length > MAX_NOTICES && <li>{t('projects_import_more_ids', { count: notices.length - MAX_NOTICES })}</li>}
             </ul>
           </div>
         )}
@@ -368,8 +405,8 @@ export default function ImportCardsModal({
           <button
             type="button"
             onClick={handleImport}
-            disabled={importing || !parseResult || parseResult.cards.length === 0 || missingColumn}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: importing ? 'wait' : 'pointer', opacity: !parseResult || parseResult.cards.length === 0 || missingColumn ? 0.5 : 1 }}
+            disabled={importing || !parseResult || parseResult.cards.length === 0 || missingColumn || blocked}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: importing ? 'wait' : 'pointer', opacity: !parseResult || parseResult.cards.length === 0 || missingColumn || blocked ? 0.5 : 1 }}
           >
             {importing ? t('projects_importing') : t('projects_import_confirm')}
           </button>

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getT, loadLang } from '../i18n/translations'
+import type { Database } from '../types/db'
 import { ensureTopicColumns, importParsedCards, planTopicColumns } from './importProjectCards'
 import type { ParsedBacklogCard } from './backlogMarkdownParser'
+import { FETCH_PAGE_SIZE } from './fetchAllRows'
 
 function makeParsedCard(overrides: Partial<ParsedBacklogCard> = {}): ParsedBacklogCard {
   return {
@@ -15,55 +18,51 @@ function makeParsedCard(overrides: Partial<ParsedBacklogCard> = {}): ParsedBackl
     description: '**Problema:** test',
     checklist: [{ id: '1', text: 'Task', completed: false }],
     files: [],
+    dependsOn: [],
     ...overrides,
   }
 }
 
 type QueryResult = { data: unknown; error: { message: string } | null }
 
-function makeThenableBuilder(result: QueryResult) {
-  const builder = {
-    select: vi.fn(function select() { return builder }),
-    eq: vi.fn(function eq() { return builder }),
-    order: vi.fn(function order() { return builder }),
-    limit: vi.fn(function limit() { return builder }),
-    then(
-      onFulfilled: (value: QueryResult) => unknown,
-      onRejected?: (reason: unknown) => unknown,
-    ) {
-      return Promise.resolve(result).then(onFulfilled, onRejected)
-    },
-  }
-  return builder
-}
-
+/**
+ * O cliente da leitura (select … range, em páginas) e da gravação (insert). A
+ * leitura devolve `pages` em ordem; `boardCardsResult` é a página única.
+ */
 function createMockSupabase(config: {
   boardCardsResult?: QueryResult
+  pages?: QueryResult[]
   insertResult?: QueryResult | ((rows: unknown[]) => QueryResult)
 }) {
   const insertCalls: unknown[][] = []
-  let fromCallIndex = 0
+  const reads: { columns: string; eq: unknown[][]; order: unknown[][]; range: number[] }[] = []
+  const pages = config.pages ?? [config.boardCardsResult ?? { data: [], error: null }]
 
   const supabase = {
-    from: vi.fn(() => {
-      fromCallIndex++
-      if (fromCallIndex === 1) {
-        return makeThenableBuilder(config.boardCardsResult ?? { data: [], error: null })
-      }
-      return {
-        insert: vi.fn(async (rows: unknown[]) => {
-          insertCalls.push(rows)
-          const result =
-            typeof config.insertResult === 'function'
-              ? config.insertResult(rows)
-              : (config.insertResult ?? { data: null, error: null })
-          return result
-        }),
-      }
-    }),
+    from: vi.fn(() => ({
+      select: (columns: string) => {
+        const read = { columns, eq: [] as unknown[][], order: [] as unknown[][], range: [] as number[] }
+        reads.push(read)
+        const builder = {
+          eq: (...args: unknown[]) => { read.eq.push(args); return builder },
+          order: (...args: unknown[]) => { read.order.push(args); return builder },
+          range: (from: number, to: number) => {
+            read.range = [from, to]
+            return Promise.resolve(pages[reads.length - 1] ?? { data: [], error: null })
+          },
+        }
+        return builder
+      },
+      insert: vi.fn(async (rows: unknown[]) => {
+        insertCalls.push(rows)
+        return typeof config.insertResult === 'function'
+          ? config.insertResult(rows)
+          : (config.insertResult ?? { data: null, error: null })
+      }),
+    })),
   }
 
-  return { supabase: supabase as unknown as SupabaseClient, insertCalls }
+  return { supabase: supabase as unknown as SupabaseClient<Database>, insertCalls, reads }
 }
 
 describe('importParsedCards', () => {
@@ -74,7 +73,7 @@ describe('importParsedCards', () => {
 
     const result = await importParsedCards(supabase, 'board-1', 'col-1', [makeParsedCard()])
 
-    expect(result).toEqual({ created: 0, skipped: 0, skippedIds: [], errors: ['DB unavailable'] })
+    expect(result).toEqual({ created: 0, skipped: 0, skippedIds: [], errors: ['DB unavailable'], warnings: [] })
   })
 
   it('skips duplicates when skipDuplicates is true', async () => {
@@ -240,7 +239,7 @@ describe('importParsedCards', () => {
       { columnByTopic: { 'Segurança': 'col-sec', Performance: 'col-perf' } },
     )
 
-    expect(result).toEqual({ created: 4, skipped: 0, skippedIds: [], errors: [] })
+    expect(result).toEqual({ created: 4, skipped: 0, skippedIds: [], errors: [], warnings: [] })
     const rows = insertCalls[0] as { column_id: string; sort_order: number }[]
     expect(rows.map(r => [r.column_id, r.sort_order])).toEqual([
       ['col-sec', 5],
@@ -248,6 +247,123 @@ describe('importParsedCards', () => {
       ['col-sec', 6],
       ['col-todo', 0],
     ])
+  })
+
+  // API-033: o quadro inteiro (REL-003), do mais antigo para o mais novo, com
+  // o que o plano precisa para pular e resolver Depende de.
+  it('reads every page of the board, oldest first', async () => {
+    const page = (n: number, from: number) => ({
+      data: Array.from({ length: n }, (_, i) => ({ id: `c${from + i}`, title: `OLD-${String((from + i) % 1000).padStart(3, '0')} — x`, column_id: 'col-1', sort_order: from + i, depends_on: [] })),
+      error: null,
+    })
+    const { supabase, reads, insertCalls } = createMockSupabase({ pages: [page(FETCH_PAGE_SIZE, 0), page(3, FETCH_PAGE_SIZE)] })
+    const result = await importParsedCards(supabase, 'board-1', 'col-1', [makeParsedCard({ externalId: 'NEW-001', fullTitle: 'NEW-001 — n' })])
+    expect(reads.map(r => r.range)).toEqual([[0, FETCH_PAGE_SIZE - 1], [FETCH_PAGE_SIZE, 2 * FETCH_PAGE_SIZE - 1]])
+    expect(reads[0]).toMatchObject({
+      columns: 'id, title, column_id, sort_order, depends_on, created_at',
+      eq: [['board_id', 'board-1']],
+      order: [['created_at', { ascending: true }], ['id', { ascending: true }]],
+    })
+    // O sort_order continua depois do maior, que só vem na 2ª página.
+    expect((insertCalls[0] as { sort_order: number }[])[0].sort_order).toBe(FETCH_PAGE_SIZE + 3)
+    expect(result.created).toBe(1)
+  })
+
+  it('a dependency that comes later in the file is inserted in an earlier call, with the generated id', async () => {
+    const { supabase, insertCalls } = createMockSupabase({
+      boardCardsResult: { data: [{ id: 'board-sec', title: 'SEC-001 — antigo', column_id: 'col-1', sort_order: 0, depends_on: [] }], error: null },
+    })
+    const result = await importParsedCards(supabase, 'board-1', 'col-1', [
+      makeParsedCard({ externalId: 'EXE-001', fullTitle: 'EXE-001 — depende', dependsOn: ['EXE-002', 'SEC-001', 'ZZ-404'] }),
+      makeParsedCard({ externalId: 'EXE-002', fullTitle: 'EXE-002 — base' }),
+    ])
+    const [first, second] = insertCalls as { id: string; title: string; depends_on: string[] }[][]
+    expect(insertCalls).toHaveLength(2)
+    expect(first.map(r => [r.title, r.depends_on])).toEqual([['EXE-002 — base', []]])
+    expect(second.map(r => r.title)).toEqual(['EXE-001 — depende'])
+    expect(second[0].depends_on).toEqual([first[0].id, 'board-sec'])
+    expect(first[0].id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(result).toEqual({
+      created: 2, skipped: 0, skippedIds: [], errors: [],
+      warnings: [{ code: 'dependency_not_found', cardId: 'EXE-001', detail: 'ZZ-404' }],
+    })
+  })
+
+  it('a cycle is an error and nothing is inserted', async () => {
+    const { supabase, insertCalls } = createMockSupabase({})
+    const result = await importParsedCards(supabase, 'board-1', 'col-1', [
+      makeParsedCard({ externalId: 'A-001', fullTitle: 'A-001 — a', dependsOn: ['A-002'] }),
+      makeParsedCard({ externalId: 'A-002', fullTitle: 'A-002 — b', dependsOn: ['A-001'] }),
+    ])
+    expect(result.errors).toEqual(['A-001: dependência em ciclo (A-001 → A-002 → A-001)'])
+    expect(insertCalls).toHaveLength(0)
+  })
+
+  // API-033: a prévia (ImportCardsModal) e a gravação escolhem o mesmo card de
+  // cada ID externo pelo oldestFirst, não pela ordem em que as linhas chegam.
+  it('two board cards with the same external ID: the oldest one counts, whatever order the rows arrive in', async () => {
+    const { supabase, insertCalls } = createMockSupabase({
+      boardCardsResult: {
+        data: [
+          { id: 'z-copy', title: 'A-001 — cópia', column_id: 'col-1', sort_order: 0, depends_on: [], created_at: '2026-10-02T12:00:00+00:00' },
+          { id: 'b3', title: 'A-003 — base', column_id: 'col-1', sort_order: 1, depends_on: [], created_at: '2026-10-01T12:00:00.5+00:00' },
+          { id: 'x-old', title: 'A-001 — antigo', column_id: 'col-1', sort_order: 5, depends_on: ['b3'], created_at: '2026-10-01T12:00:00.123456+00:00' },
+        ],
+        error: null,
+      },
+    })
+    const result = await importParsedCards(supabase, 'board-1', 'col-1', [
+      makeParsedCard({ externalId: 'A-001', fullTitle: 'A-001 — a', dependsOn: ['A-003'] }),
+      makeParsedCard({ externalId: 'A-002', fullTitle: 'A-002 — b', dependsOn: ['A-001'] }),
+    ])
+    expect(result.skippedIds).toEqual(['A-001'])
+    expect(result.warnings).toEqual([])
+    expect((insertCalls[0] as { depends_on: string[] }[]).map(r => r.depends_on)).toEqual([['x-old']])
+  })
+
+  it('the problems that block the import come in the language of the given t', async () => {
+    await loadLang('en')
+    const cycle = [
+      makeParsedCard({ externalId: 'A-001', fullTitle: 'A-001 — a', dependsOn: ['A-002'] }),
+      makeParsedCard({ externalId: 'A-002', fullTitle: 'A-002 — b', dependsOn: ['A-001'] }),
+    ]
+    const en = await importParsedCards(createMockSupabase({}).supabase, 'board-1', 'col-1', cycle, { t: getT('en') })
+    expect(en.errors).toEqual(['A-001: dependency cycle (A-001 → A-002 → A-001)'])
+    const many = Array.from({ length: 501 }, (_, i) => ({ id: String(i), text: 't', completed: false }))
+    const limit = await importParsedCards(createMockSupabase({}).supabase, 'board-1', 'col-1', [makeParsedCard({ checklist: many })], { t: getT('en') })
+    expect(limit.errors).toEqual(['SEC-001: more than 500 subtasks'])
+  })
+
+  it('a skipped card with Depende de is reported, unless the board card already has it', async () => {
+    const { supabase } = createMockSupabase({
+      boardCardsResult: {
+        data: [
+          { id: 'b1', title: 'A-001 — já tem', column_id: 'col-1', sort_order: 0, depends_on: ['b3'] },
+          { id: 'b2', title: 'A-002 — falta', column_id: 'col-1', sort_order: 1, depends_on: [] },
+          { id: 'b3', title: 'A-003 — base', column_id: 'col-1', sort_order: 2, depends_on: [] },
+        ],
+        error: null,
+      },
+    })
+    const result = await importParsedCards(supabase, 'board-1', 'col-1', [
+      makeParsedCard({ externalId: 'A-001', fullTitle: 'A-001 — já tem', dependsOn: ['A-003'] }),
+      makeParsedCard({ externalId: 'A-002', fullTitle: 'A-002 — falta', dependsOn: ['A-003'] }),
+    ])
+    expect(result.skippedIds).toEqual(['A-001', 'A-002'])
+    expect(result.warnings).toEqual([{ code: 'dependency_not_applied', cardId: 'A-002', detail: 'A-003' }])
+  })
+
+  it('when a later level fails, every card already written has its dependencies written', async () => {
+    let attempt = 0
+    const { supabase, insertCalls } = createMockSupabase({
+      insertResult: () => (++attempt === 2 ? { data: null, error: { message: 'boom' } } : { data: null, error: null }),
+    })
+    const result = await importParsedCards(supabase, 'board-1', 'col-1', [
+      makeParsedCard({ externalId: 'A-001', fullTitle: 'A-001 — topo', dependsOn: ['A-002'] }),
+      makeParsedCard({ externalId: 'A-002', fullTitle: 'A-002 — base' }),
+    ])
+    expect((insertCalls[0] as { title: string }[]).map(r => r.title)).toEqual(['A-002 — base'])
+    expect(result).toMatchObject({ created: 1, errors: ['boom'] })
   })
 
   it('refuses to insert when a card has no target column', async () => {
@@ -318,7 +434,7 @@ describe('ensureTopicColumns', () => {
         }),
       })),
     }
-    return { supabase: supabase as unknown as SupabaseClient, inserted }
+    return { supabase: supabase as unknown as SupabaseClient<Database>, inserted }
   }
 
   it('inserts only missing columns and returns the full topic map', async () => {
