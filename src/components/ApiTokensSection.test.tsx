@@ -141,7 +141,7 @@ describe('ApiTokensSection: lista', () => {
     expect(row('Antigo').getByText('Revogado')).toBeTruthy()
     expect(row('Antigo').getByText(/Revogado em/)).toBeTruthy()
     expect(row('Vencido').getByText('Expirado')).toBeTruthy()
-    expect(row('Vencido').getByText('Finanças: Ler em 1 de 7')).toBeTruthy()
+    expect(row('Vencido').getByText('Finanças: Ler em 1 de 5')).toBeTruthy()
     expect(screen.getByText('1 de 20 ativos')).toBeTruthy()
     // Revogado e expirado: só Excluir.
     expect(row('Antigo').queryByRole('button', { name: 'Editar permissões' })).toBeNull()

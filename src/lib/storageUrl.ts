@@ -41,7 +41,8 @@ export function passThrough(stored: string): string {
 
 // SEC-017: arquivos financeiros (comprovantes, extratos, Loja, empréstimos,
 // despesas de projeto) valem 5 min; o resto, 1 h. Um link vazado ou deixado
-// numa aba aberta deixa de funcionar logo.
+// numa aba aberta deixa de funcionar logo. Loja e Empréstimos saíram do
+// frontend em 14/10/2026, mas os buckets continuam no banco: a regra fica.
 export const SHORT_LIVED_BUCKETS = new Set(['transaction-photos', 'store-files', 'bank-statements', 'loan-files', 'project-expense-files'])
 
 export function defaultExpiresIn(bucket: string): number {

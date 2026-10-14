@@ -1,18 +1,16 @@
-import { saleNetReceived } from '../../../lib/financeStoreCalc'
 import { formatBRL } from '../../../lib/money'
-import { goalPhase, salePhase, type FinancePhaseOrCancelled } from '../../../lib/financePhase'
+import { goalPhase, type FinancePhaseOrCancelled } from '../../../lib/financePhase'
 import type { FinanceGoal, FinanceGoalContribution } from '../../../types'
-import type { FinanceStoreStore } from '../store/useFinanceStore'
 import type { ProjectsSection } from './section'
 
-// Achata vendas e metas num card só, para o kanban unificado do Resumo. Sem JSX
-// de propósito (mesma divisão de storeUi.ts): um arquivo que exporta
-// componentes E funções quebra o fast refresh.
+// Achata as metas num card só, para o kanban do Resumo. Sem JSX de propósito:
+// um arquivo que exporta componentes E funções quebra o fast refresh. Até
+// 14/10/2026 as vendas da Loja também entravam aqui (o módulo saiu do frontend).
 
-export type UnifiedKind = 'sale' | 'goal'
+export type UnifiedKind = 'goal'
 
 export interface UnifiedCard {
-  /** Namespaced: dois UUIDs de tabelas diferentes colidiriam no dnd-kit. */
+  /** Namespaced (`goal:<id>`): o dnd-kit precisa de ids únicos entre tipos. */
   id: string
   kind: UnifiedKind
   title: string
@@ -28,34 +26,15 @@ export interface UnifiedCard {
 
 /** Onde cada tipo de card mora, para o clique navegar até lá. */
 export const KIND_SECTION: Record<UnifiedKind, ProjectsSection> = {
-  sale: 'store',
   goal: 'goals',
 }
 
 export function buildUnifiedCards(
-  store: FinanceStoreStore,
   goals: FinanceGoal[],
   contributions: FinanceGoalContribution[],
-  labels: { noCustomer: string; sale: string; goalTarget: (target: string) => string },
-  colors: { sale: string },
+  labels: { goalTarget: (target: string) => string },
 ): UnifiedCard[] {
-  const sales: UnifiedCard[] = store.sales.map(sale => {
-    const items = store.saleItems.filter(i => i.sale_id === sale.id)
-    const customer = sale.customer_id ? store.customers.find(c => c.id === sale.customer_id) : null
-    return {
-      id: `sale:${sale.id}`,
-      kind: 'sale',
-      title: items.map(i => `${i.quantity}× ${i.product_name}`).join(', ') || labels.sale,
-      subtitle: customer?.name ?? labels.noCustomer,
-      icon: '🛒',
-      accent: colors.sale,
-      amount: saleNetReceived(sale, items),
-      phase: salePhase(sale.status),
-      updatedAt: sale.updated_at,
-    }
-  })
-
-  const targets: UnifiedCard[] = goals.map(goal => {
+  return goals.map(goal => {
     // Acumulado é derivado das contribuições, como toda posição neste módulo.
     const accumulated = contributions
       .filter(c => c.goal_id === goal.id)
@@ -76,6 +55,4 @@ export function buildUnifiedCards(
       updatedAt: goal.created_at,
     }
   })
-
-  return [...sales, ...targets]
 }

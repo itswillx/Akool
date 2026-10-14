@@ -139,13 +139,13 @@ export function TokenScopePicker({ value, onChange, isAdmin, limits, emptyHint }
         <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--color-text)' }}>{t('api_picker_views_title')}</summary>
         <p style={{ ...hintStyle, margin: '6px 0' }}>{t('api_picker_views_hint')}</p>
         <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {viewStatuses(value).map(({ view, granted, total }) => (
+          {viewStatuses(value).map(({ view, sources, granted, total }) => (
             <li key={view.key}>
               <strong style={{ color: 'var(--color-text)' }}>{t(viewLabelKey(view.key))}</strong>
               {': '}
               {total === 0
                 ? t('api_picker_view_always')
-                : `${t('api_picker_view_count', { granted, total })} (${view.anyOf.map(key => t(subsectionLabelKey(key))).join(', ')})`}
+                : `${t('api_picker_view_count', { granted, total })} (${sources.map(key => t(subsectionLabelKey(key))).join(', ')})`}
             </li>
           ))}
         </ul>

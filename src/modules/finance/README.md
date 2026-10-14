@@ -47,10 +47,9 @@ src/modules/finance/
   index.ts            ← barrel (entrada pública)
   FinancePanel.tsx    ← orquestrador atual
   ui/                 ← primitivos compartilhados: Modal, Drawer, EmojiInput,
-                        AttachmentField, FinanceMobileContext e os design
-                        tokens (FIN_*, estilos, badgeStyle)
-  myprojects/         ← aba "Projetos": Resumo + Loja + Metas (README próprio)
-  store/              ← submódulo "Loja" (ver README próprio)
+                        FinanceMobileContext e os design tokens (FIN_*,
+                        estilos, badgeStyle)
+  myprojects/         ← aba "Projetos": Resumo + Metas (README próprio)
   integrations/       ← provedores externos
   tabs/ modals/ hooks/ utils/   ← split incremental do FinancePanel (a criar)
 ```
@@ -70,10 +69,14 @@ cotações não sobreviveram — só o nome do fornecedor, colado na nota da
 contribuição. O backup (dados reais) fica fora do repositório desde 26/09/2026
 (SEC-008), com o dono do projeto.
 
-Duas coisas de Obras continuam vivas porque a Loja também as usa:
 `finance_suppliers` (restaurada em `20260807130000_finance_restore_suppliers`
-depois de ter sido dropada por engano) e o `AttachmentField`, que subiu para
-`ui/`.
+depois de ter sido dropada por engano) sobreviveu a Obras porque a Loja a usava.
+
+**Loja** (`store/`, `finance_store_*`) e o que restava de **Empréstimos**
+(tipos de notificação) saíram do frontend em 14/10/2026, junto com o
+`AttachmentField` e o cartão "Onde está o dinheiro" da Visão geral. Tabelas,
+buckets, RPCs e o código de domínio ficaram para os módulos novos: ver "Fora do
+frontend" em `docs/arquitetura.md`.
 
 **Investimentos** (`investments/`, `finance_investments` +
 `finance_investment_movements`) foi removido inteiro, tabelas incluídas. As duas
@@ -94,9 +97,10 @@ e `localStorage`; o `CustomEvent` `finance_tab_change` saiu (ARCH-007). O único
 evento entre módulos é `finance_transactions_changed`, tipado em
 `src/lib/appEvents.ts`.
 
-Loja e Metas **não são abas**: são sub-abas de `'myprojects'`. Os ids antigos
+Resumo e Metas **não são abas**: são sub-abas de `'myprojects'`. Os ids antigos
 continuam sendo aceitos por `resolveTabRequest` (a única função que os conhece),
-que os traduz para a sub-aba correspondente — ver `myprojects/README.md`.
+que os traduz para a sub-aba correspondente (a Loja, que saiu, cai no Resumo) —
+ver `myprojects/README.md`.
 
 ### Recorrentes e orçamentos automáticos (API-016)
 

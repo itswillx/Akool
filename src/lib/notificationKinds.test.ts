@@ -85,7 +85,8 @@ describe('categoria, aparência, destino e detalhes', () => {
   it.each([
     ['workspace_invite', 'finance', 'userPlus', 'accent'],
     ['member_left', 'finance', 'userMinus', 'warning'],
-    ['loan_requested', 'finance', 'banknote', 'neutral'],
+    // Empréstimos saíram do app (14/10/2026): o tipo antigo cai no visual padrão.
+    ['loan_requested', 'system', 'bell', 'neutral'],
     ['page_shared', 'pages', 'fileText', 'accent'],
     ['board_shared', 'projects', 'kanban', 'accent'],
     ['card_assigned', 'projects', 'cardCheck', 'accent'],
@@ -121,9 +122,7 @@ describe('categoria, aparência, destino e detalhes', () => {
     expect(labels(note('card_assigned', {}))).toEqual([])
     expect(labels(note('backup_stale', {}))).toEqual(['Último backup: Nenhum'])
     expect(labels(note('backup_stale', { last_completed_at: '2026-10-01T09:00:00Z' }))[0]).toMatch(/^Último backup: 1 de outubro de 2026/)
-    expect(labels(note('loan_approved', { amount: 123456 }))).toEqual(['Valor: R$ 1.234,56'])
-    expect(notificationDetails(note('loan_approved', { amount: 500 }), getT('en'), 'en')).toEqual([{ label: 'Amount', value: 'R$5.00' }])
-    expect(labels(note('loan_approved', {}))).toEqual([])
+    expect(labels(note('loan_approved', { amount: 123456 }))).toEqual([])
     expect(labels(note('desconhecido'))).toEqual([])
   })
 

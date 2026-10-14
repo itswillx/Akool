@@ -7,7 +7,7 @@ import en from '../../i18n/translations.en'
 import { ptBR } from '../../i18n/translations.pt-BR'
 import { PRESET_CHOICES, PRESETS, presetOf } from './presets'
 import {
-  clampExpiry, createLimits, editLimits, expiryOptions, fitsLimits, levelAllowed, levelLabelKey, levelsFor, PICKER_LEVELS,
+  clampExpiry, createLimits, editLimits, expiryOptions, fitsLimits, HIDDEN_SUBSECTIONS, levelAllowed, levelLabelKey, levelsFor, PICKER_LEVELS,
   prefillScopes, sameScopes, scopeWarnings, sectionBulkLevel, sectionLabelKey, sectionMaxLevel, setLevel, setSectionLevel,
   subsectionLabelKey, subsectionsOf, summarizeScopes, viewLabelKey, viewStatuses, visibleSections,
 } from './scopeModel'
@@ -126,7 +126,7 @@ describe('avisos, chips e visões', () => {
 
   it('visões compostas: quantas fontes o token lê; "meta" não exige nada', () => {
     const byKey = Object.fromEntries(viewStatuses(LEGACY_SCOPES).map(s => [s.view.key, `${s.granted}/${s.total}`]))
-    expect(byKey).toEqual({ meta: '0/0', painel: '1/7', 'documentos.rede': '2/5', 'financas.relatorios': '0/7' })
+    expect(byKey).toEqual({ meta: '0/0', painel: '1/7', 'documentos.rede': '2/5', 'financas.relatorios': '0/5' })
   })
 })
 
@@ -195,10 +195,23 @@ describe('presets', () => {
     }
   })
 
-  it('Somente leitura lê tudo, menos Administração e Compartilhamento', () => {
+  it('Somente leitura lê tudo o que a tela mostra, menos Administração e Compartilhamento', () => {
     expect(Object.values(PRESETS.read_only).every(level => level === 'read')).toBe(true)
-    expect(Object.keys(PRESETS.read_only)).toHaveLength(SUBSECTIONS.filter(s => !s.adminOnly).length - 1)
+    expect(Object.keys(PRESETS.read_only)).toHaveLength(SUBSECTIONS.filter(s => !s.adminOnly).length - 1 - HIDDEN_SUBSECTIONS.size)
     expect(PRESETS.read_only['compartilhamento.pessoas']).toBeUndefined()
+    expect(PRESETS.read_only['financas.loja']).toBeUndefined()
+  })
+
+  it('Loja e Empréstimos somem da tela, mas continuam no catálogo (14/10/2026)', () => {
+    expect([...HIDDEN_SUBSECTIONS]).toEqual(['financas.loja', 'financas.emprestimos'])
+    for (const key of HIDDEN_SUBSECTIONS) expect(SUBSECTIONS.some(s => s.key === key)).toBe(true)
+    expect(subsectionsOf('financas').map(s => s.key)).not.toContain('financas.loja')
+    expect(subsectionsOf('financas').map(s => s.key)).not.toContain('financas.emprestimos')
+    const relatorios = viewStatuses({}).find(v => v.view.key === 'financas.relatorios')
+    expect(relatorios?.sources).not.toContain('financas.loja')
+    expect(relatorios?.view.anyOf).toContain('financas.loja')
+    // Token antigo com a permissão escondida: o resumo não a conta, e ela não some do mapa.
+    expect(summarizeScopes({ 'financas.loja': 'read' })).toEqual([])
   })
 
   it('Claude Code: fila é o conjunto dos tokens migrados; Entrada de dados financeiros escreve só onde precisa', () => {

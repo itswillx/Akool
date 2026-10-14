@@ -6,11 +6,13 @@ import { currentYM, daysUntil, fmt, last6Months, monthLabel, nextMonth, prevMont
 describe('resolveTabRequest', () => {
   it('aceita as abas atuais', () => {
     expect(resolveTabRequest('transactions')).toEqual({ tab: 'transactions', section: null })
-    expect(resolveTabRequest('myprojects:store')).toEqual({ tab: 'myprojects', section: 'store' })
+    expect(resolveTabRequest('myprojects:goals')).toEqual({ tab: 'myprojects', section: 'goals' })
   })
 
   it('traduz os ids antigos para a sub-aba de Projetos', () => {
-    expect(resolveTabRequest('store')).toEqual({ tab: 'myprojects', section: 'store' })
+    expect(resolveTabRequest('goals')).toEqual({ tab: 'myprojects', section: 'goals' })
+    // A Loja saiu do frontend (14/10/2026): o id antigo cai no Resumo.
+    expect(resolveTabRequest('store')).toEqual({ tab: 'myprojects', section: 'summary' })
   })
 
   it('recusa lixo e vazio', () => {

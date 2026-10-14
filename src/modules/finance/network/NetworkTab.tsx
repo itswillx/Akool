@@ -17,9 +17,8 @@ import { NetworkDetailPanel } from './NetworkDetailPanel'
 // pipeline puro de src/lib/financeGraph (janela → grafo → bounds → faixa →
 // busca) e o layout de força determinístico de src/lib/forceLayout.
 //
-// v1 usa só os dados pessoais que o useFinanceData já carrega. Dados da Loja
-// (produtos/clientes/vendas) ficam de fora de propósito: o useFinanceStore é
-// instanciado uma única vez pela aba Projetos — ver financeGraph.ts.
+// v1 usa só os dados pessoais que o useFinanceData já carrega — ver
+// financeGraph.ts.
 
 function currentYM() {
   const now = new Date()

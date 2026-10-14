@@ -30,8 +30,6 @@ export const LOCAL_KEYS = {
   financeTab: `${NS}finance.tab`,
   financeLayout: `${NS}finance.layout`,
   financeMyprojectsSection: `${NS}finance.myprojects-section`,
-  financeStoreSection: `${NS}finance.store-section`,
-  financeStoreSalesMode: `${NS}finance.store-sales-mode`,
   /** Abrir o modal do workspace da família quando o Financeiro montar (vindo de uma notificação). */
   financeOpenWorkspace: `${NS}finance.open-workspace`,
 
@@ -94,8 +92,6 @@ const LEGACY_FIXED: Record<string, string> = {
   finance_active_tab: LOCAL_KEYS.financeTab,
   finance_layout: LOCAL_KEYS.financeLayout,
   finance_myprojects_section: LOCAL_KEYS.financeMyprojectsSection,
-  finance_store_section: LOCAL_KEYS.financeStoreSection,
-  finance_store_sales_mode: LOCAL_KEYS.financeStoreSalesMode,
 }
 
 /** Prefixo antigo → construtor da chave nova (parte variável depois do prefixo). */
@@ -109,8 +105,12 @@ const LEGACY_PREFIXED: [prefix: string, build: (rest: string) => string][] = [
 /** `finance_board_<nome>:<view|hidden|sort>` → `boardPrefs('finance-<nome>')`. */
 const LEGACY_BOARD_PREFS = /^finance_board_([a-z]+):(view|hidden|sort)$/
 
-/** Chaves antigas sem dono: só apagar. */
-const LEGACY_DROP = new Set(['finance_view_mode'])
+/** Chaves sem dono: só apagar. As da Loja (nome antigo e com namespace) saíram com o módulo em 14/10/2026. */
+const LEGACY_DROP = new Set([
+  'finance_view_mode',
+  'finance_store_section', 'finance_store_sales_mode',
+  `${NS}finance.store-section`, `${NS}finance.store-sales-mode`,
+])
 
 /** A chave nova para uma chave antiga, ou `null` se não é nossa. */
 export function legacyKeyTarget(key: string): string | null {

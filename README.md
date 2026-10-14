@@ -11,7 +11,7 @@ Espaço de trabalho pessoal e colaborativo: páginas com notas, desenhos e taref
 | Páginas | Notas (editor de blocos), desenhos (Excalidraw), nota + desenho lado a lado e listas de tarefas, em árvore e compartilháveis | `src/components/PageEditor.tsx`, `src/contexts/PagesContext.tsx` |
 | Documentos | Painel que reúne as páginas, os projetos e a rede de ligações entre elas | `src/components/DocumentsPanel.tsx`, `src/modules/docsnetwork/` |
 | Projetos | Quadros kanban e Gantt, cards com checklist, importação de backlog em Markdown e a fila de desenvolvimento | `src/modules/projects/` |
-| Finanças | Transações, contas, orçamentos, metas, importação de extrato, loja e visões por projeto | `src/modules/finance/` ([README do módulo](src/modules/finance/README.md)) |
+| Finanças | Transações, contas, orçamentos, metas, importação de extrato e visões por projeto | `src/modules/finance/` ([README do módulo](src/modules/finance/README.md)) |
 | Estudos | Tópicos, cards de estudo, roteiros e diário | `src/modules/study/` |
 | Backup | Backups do banco, manuais e automáticos | `src/modules/backup/` |
 | Auditoria | Registro das ações administrativas e o estado da observabilidade | `src/modules/audit/` |

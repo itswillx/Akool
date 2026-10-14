@@ -10,13 +10,10 @@ import { FIN_NEG, FIN_POS, FIN_WARN, badgeStyle, tabularNums } from '../ui'
 import { KIND_SECTION, type UnifiedCard, type UnifiedKind } from './unifiedCards'
 import type { ProjectsSection } from './section'
 
-// Kanban unificado do Resumo: vendas e metas nas mesmas colunas de fase.
+// Kanban do Resumo: as metas nas colunas de fase.
 //
-// Read-only de propósito. "Em andamento → Concluído" significa duas coisas
-// diferentes (sales.status='delivered' COM efeito em finance_transactions,
-// finance_goals.status='completed'). Reimplementar o modal de confirmação da
-// venda aqui duplicaria a lógica mais perigosa do módulo. Clicar no card leva à
-// sub-aba de origem, onde o movimento é seguro.
+// Read-only de propósito: concluir uma meta tem regras próprias na aba Metas.
+// Clicar no card leva à sub-aba de origem, onde o movimento é seguro.
 
 const PHASE_COLOR: Record<FinancePhaseOrCancelled, string> = {
   planned: 'var(--color-text-muted)',
@@ -33,7 +30,6 @@ const PHASE_KEY = {
 } as const
 
 const KIND_KEY: Record<UnifiedKind, TranslationKey> = {
-  sale: 'finance_myproj_kind_sale',
   goal: 'finance_tab_goals',
 }
 

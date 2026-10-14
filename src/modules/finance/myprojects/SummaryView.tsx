@@ -1,20 +1,18 @@
 import type React from 'react'
 import { useMemo } from 'react'
-import { Star, Store } from 'lucide-react'
+import { Star } from 'lucide-react'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { formatBRL } from '../../../lib/money'
 import type { FinanceGoal, FinanceGoalContribution } from '../../../types'
-import { FIN_POS, cardSurfaceStyle, sectionCaptionStyle, tabularNums } from '../ui'
-import type { FinanceStoreStore } from '../store/useFinanceStore'
+import { cardSurfaceStyle, sectionCaptionStyle, tabularNums } from '../ui'
 import { SummaryBoard } from './SummaryBoard'
 import { KIND_SECTION, buildUnifiedCards, type UnifiedKind } from './unifiedCards'
 import type { ProjectsSection } from './section'
 
 // Resumo de "Projetos": um cartão de entrada por domínio e, abaixo, o kanban
-// unificado por fase.
+// por fase. Desde 14/10/2026 o único domínio é Metas (a Loja saiu do frontend).
 
-export function SummaryView({ store, goals, contributions, onOpenSection }: {
-  store: FinanceStoreStore
+export function SummaryView({ goals, contributions, onOpenSection }: {
   goals: FinanceGoal[]
   contributions: FinanceGoalContribution[]
   onOpenSection: (s: ProjectsSection) => void
@@ -22,30 +20,17 @@ export function SummaryView({ store, goals, contributions, onOpenSection }: {
   const { t } = useLanguage()
 
   const cards = useMemo(
-    () => buildUnifiedCards(
-      store, goals, contributions,
-      {
-        noCustomer: t('finance_store_no_customer'),
-        sale: t('finance_store_sale'),
-        goalTarget: target => t('finance_myproj_goal_target', { target }),
-      },
-      { sale: FIN_POS },
-    ),
-    [store, goals, contributions, t],
+    () => buildUnifiedCards(goals, contributions, {
+      goalTarget: target => t('finance_myproj_goal_target', { target }),
+    }),
+    [goals, contributions, t],
   )
-
-  const loading = store.loading
 
   // Um card por domínio: quantos estão em andamento e quanto somam. O "ativo"
   // exclui concluído e cancelado — é o que ainda exige atenção.
   const tiles: { kind: UnifiedKind; icon: React.ReactNode; label: string }[] = [
-    { kind: 'sale', icon: <Store size={16} />, label: t('finance_tab_store') },
     { kind: 'goal', icon: <Star size={16} />, label: t('finance_tab_goals') },
   ]
-
-  if (loading) {
-    return <div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>
-  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -73,9 +58,8 @@ export function SummaryView({ store, goals, contributions, onOpenSection }: {
 
       <div>
         <h3 style={{ ...sectionCaptionStyle, marginBottom: 4 }}>{t('finance_myproj_board_title')}</h3>
-        {/* O rótulo diz "valor envolvido" e não "total": somar venda + meta num
-            R$ só é uma ordem de grandeza, não um saldo. Sem o rótulo, vira um
-            número que ninguém sabe interpretar. */}
+        {/* O rótulo diz "valor envolvido" e não "total": é o que já foi
+            guardado nas metas, não um saldo. */}
         <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginBottom: 10 }}>
           {t('finance_myproj_board_hint')}
         </div>

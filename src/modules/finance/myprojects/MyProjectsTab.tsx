@@ -1,42 +1,26 @@
 import type React from 'react'
-import { lazy, Suspense } from 'react'
-import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import type { TranslationKey } from '../../../i18n/translations'
-import type {
-  FinanceAccount, FinanceCategory, FinanceGoal, FinanceGoalContribution,
-} from '../../../types'
+import type { FinanceGoal, FinanceGoalContribution } from '../../../types'
 import { segBtnStyle, segTrackStyle } from '../ui'
-import { useFinanceStore } from '../store/useFinanceStore'
 import { SummaryView } from './SummaryView'
 import { PROJECTS_SECTIONS, type ProjectsSection } from './section'
 
-// "Projetos": Loja e Metas numa seção só, mais um Resumo que cruza as duas.
-//
-// Este componente hospeda `useFinanceStore` UMA vez e passa o store adiante.
-// Antes cada aba chamava o seu; com o Resumo lendo os mesmos dados, duas cópias
-// divergiriam na primeira escrita. Metas não tem hook aqui: seus dados já vêm
-// do `useFinanceData` do FinancePanel, de onde o Resumo geral também depende.
-
-const FinanceStoreTab = lazy(() => import('../store/FinanceStoreTab'))
+// "Projetos": Metas e um Resumo que mostra as metas por fase. A Loja saiu do
+// frontend em 14/10/2026; as tabelas ficaram no banco para os módulos novos
+// (ver "Fora do frontend" em docs/arquitetura.md).
 
 const SECTION_KEY: Record<ProjectsSection, TranslationKey> = {
   summary: 'finance_myproj_nav_summary',
-  store: 'finance_myproj_nav_store',
   // Reusa a chave da aba antiga em vez de duplicar o rótulo.
   goals: 'finance_tab_goals',
 }
 
 export default function MyProjectsTab({
-  section, onSectionChange, workspaceId, accounts, categories, month,
-  goals, contributions, goalsSlot,
+  section, onSectionChange, goals, contributions, goalsSlot,
 }: {
   section: ProjectsSection
   onSectionChange: (s: ProjectsSection) => void
-  workspaceId: string | null
-  accounts: FinanceAccount[]
-  categories: FinanceCategory[]
-  month: string
   /** Só para o Resumo: a sub-aba de Metas em si chega pronta em `goalsSlot`. */
   goals: FinanceGoal[]
   contributions: FinanceGoalContribution[]
@@ -50,13 +34,7 @@ export default function MyProjectsTab({
    */
   goalsSlot: React.ReactNode
 }) {
-  const { user } = useAuth()
   const { t } = useLanguage()
-  const store = useFinanceStore(user?.id, workspaceId)
-
-  const fallback = (
-    <div style={{ padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>{t('finance_loading')}</div>
-  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -71,18 +49,7 @@ export default function MyProjectsTab({
       </div>
 
       {section === 'summary' && (
-        <SummaryView
-          store={store}
-          goals={goals}
-          contributions={contributions}
-          onOpenSection={onSectionChange}
-        />
-      )}
-
-      {section === 'store' && (
-        <Suspense fallback={fallback}>
-          <FinanceStoreTab store={store} accounts={accounts} categories={categories} month={month} />
-        </Suspense>
+        <SummaryView goals={goals} contributions={contributions} onOpenSection={onSectionChange} />
       )}
 
       {/* Sem Suspense: o GoalsTab não é lazy, vem montado do FinancePanel. */}

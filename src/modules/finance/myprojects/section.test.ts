@@ -11,21 +11,21 @@ describe('parseFinanceLocation', () => {
   })
 
   it('deep-links to a sub-tab', () => {
-    expect(parseFinanceLocation('myprojects:store')).toEqual({ tab: 'myprojects', section: 'store' })
+    expect(parseFinanceLocation('myprojects:goals')).toEqual({ tab: 'myprojects', section: 'goals' })
+    // A Loja saiu do frontend (14/10/2026): o atalho antigo não navega para lugar nenhum.
+    expect(parseFinanceLocation('myprojects:store')).toEqual({ tab: 'myprojects', section: null })
   })
 
   it('maps every legacy tab id to its sub-tab', () => {
-    // Isto é o que salva quem tinha 'store' gravado no localStorage antes da
-    // unificação: sem o mapa, cairia no Resumo geral sem entender o porquê.
-    expect(parseFinanceLocation('store')).toEqual({ tab: 'myprojects', section: 'store' })
     expect(parseFinanceLocation('goals')).toEqual({ tab: 'myprojects', section: 'goals' })
   })
 
   it('lands the removed sub-tabs on the Resumo', () => {
-    // Obras e Investimentos deixaram de existir. Mandar para o id antigo faria
-    // isProjectsSection recusar e a navegação virar um no-op silencioso.
+    // Obras, Investimentos e a Loja deixaram de existir. Mandar para o id antigo
+    // faria isProjectsSection recusar e a navegação virar um no-op silencioso.
     expect(parseFinanceLocation('projects')).toEqual({ tab: 'myprojects', section: 'summary' })
     expect(parseFinanceLocation('investments')).toEqual({ tab: 'myprojects', section: 'summary' })
+    expect(parseFinanceLocation('store')).toEqual({ tab: 'myprojects', section: 'summary' })
   })
 
   it('never resolves the tab id itself like the legacy Obras id', () => {
