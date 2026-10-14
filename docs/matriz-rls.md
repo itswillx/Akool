@@ -101,7 +101,9 @@ continua conferida, e um JWT de cliente sem `sub` também.
 `finance_store_purchases`, `finance_store_sales`, `finance_store_sale_items`,
 `finance_store_products`, `finance_store_customers`, `finance_suppliers` — todas
 já versionadas (`finance_store_module.sql`/`finance_projects_module.sql`/
-`finance_restore_suppliers.sql`), mesmo padrão em todas as 6:
+`finance_restore_suppliers.sql`), mesmo padrão em todas as 6 (exceto o
+SELECT, o UPDATE e o DELETE de `finance_store_sale_items`, que seguem a venda
+desde o API-028; ver abaixo):
 
 | Operação | Quem |
 |---|---|
@@ -109,12 +111,38 @@ já versionadas (`finance_store_module.sql`/`finance_projects_module.sql`/
 | INSERT | own (`with_check = user_id = auth.uid()`, não aceita workspace-write) |
 | UPDATE/DELETE | own ou workspace |
 
+O item segue a venda (API-028). Em `finance_store_sale_items`:
+- o SELECT vale para o dono do item ou para quem vê a venda: `exists (select 1 from finance_store_sales s where s.id = sale_id)`, avaliado com o RLS da venda;
+- o UPDATE (USING e WITH CHECK) e o DELETE valem só para quem vê a venda.
+
+O termo "membro do workspace do item" saiu das três. Isso fecha dois buracos:
+- **Itens invisíveis numa venda visível.** O item que B pôs na venda da A ficava invisível para a A depois que ela saía do workspace ou era removida. Agora quem vê a venda vê todos os itens, e o líquido das RPCs, que são INVOKER, não muda conforme quem chama.
+- **Itens de outra pessoa quando a venda sai do workspace.** Isso acontece com o UPDATE de `workspace_id` do dono, que o ws_guard deixa, ou com o futuro card "Sair do workspace leva as linhas da Loja". O item de outra pessoa fica com o workspace antigo e some para os membros que já não veem a venda: eles não o leem, não mudam o preço (que entraria na receita do dono) e não o apagam.
+
+O autor do item que perdeu acesso à venda ainda o lê, mas não o altera nem o apaga (pela RPC, P0002). No app nada some de uma venda da tela: o `financeStoreCalc` já ignorava item cuja venda não está visível. Quem é de fora e quem é de outro workspace continuam sem ver os itens (harness, seções 8b e 10).
+
+O INSERT continua só em nome próprio. As cascatas de FK e as funções DEFINER (`leave_workspace`, restore) não passam pelo RLS.
+
+Custo: o `auth.uid()` segue em InitPlan, e o EXISTS vira um SubPlan com hash ou usa o índice da chave da venda.
+
+O levantamento do harness conta os itens num workspace diferente do da venda, que são os que mudam de visibilidade. No staging deu 0.
+
+Desde o API-028 (`20261012120000_api028_store_sales_server`), por cima das policies:
+
+- **Dinheiro >= 0** por CHECK (`finance_store_<t>_money_nonneg`) em produtos (`target_price`), compras (`unit_cost`, `other_costs`), vendas (`shipping_charged`, `shipping_cost`, `fees`) e itens (`unit_price`, `unit_cost_at_sale`). Vale também sem usuário (restore).
+- **`updated_at` do servidor** (`public.update_updated_at`, só em UPDATE) nas 5 tabelas da Loja; o INSERT do restore guarda o do backup.
+- **Venda** (`finance_store_sales_rules` → `private.store_sale_rules`, DEFINER): nasce em `negotiating`, sem datas nem receita; status só nos 10 pares de `_domain/saleTransitions.ts` (fora deles, P0001), com os carimbos (sold guarda ou ganha `sold_on`; só delivered tem `delivered_on`; negociação sem datas; cancelada guarda); negociando ou cancelada com receita: P0001; reabrir uma cancelada confere o estoque global; `sold_on` obrigatório na venda consumida e até amanhã em São Paulo (conferido só quando status ou `sold_on` mudam); `delivered_on` só na venda entregue, finita, até amanhã em São Paulo e não antes do `sold_on` (conferido quando status ou `delivered_on` mudam, e o "não antes do `sold_on`" também quando o `sold_on` muda; 22023); cliente, conta e receita têm de ser visíveis para quem grava e do escopo do DONO da venda (dele ou de um workspace de que ele é membro), com P0002 igual para inexistente e alheio; receita só `income`, sem outro vínculo (venda ou compra) e sem trocar uma receita por outra (P0001).
+- **Item** (`finance_store_sale_items_rules` → `private.store_sale_item_rules`, DEFINER): não muda de venda; não sai do workspace da venda (UPDATE de `workspace_id` para outro que não o da venda: 22023; o SET NULL de apagar o workspace passa, na ordem que for entre venda e item); venda e produto visíveis (P0002) e travados (FOR NO KEY UPDATE); no INSERT herda o workspace da venda quando quem grava é membro (senão fica privado); item único com 1 unidade; produto arquivado fora de venda nova; estoque **global** (comprado sem cotação menos os itens de vendas não canceladas, de qualquer dono, também os que quem grava não vê); nome em branco vem do produto. O item segue a venda: SELECT pelo dono do item ou pela venda visível; UPDATE e DELETE só pela venda visível (parágrafo acima da lista).
+- Os dois gatilhos pulam sem usuário (restore, cron, SQL pelo MCP) e validam só o que mudou: as cascatas de SET NULL (apagar conta, cliente, transação, produto ou workspace) passam mesmo sobre venda antiga fora da regra.
+- **Pelo app**, as vendas vão pelas RPCs SECURITY INVOKER `store_sale_create`, `store_sale_set_status`, `store_sale_update`, `store_sale_items_add`, `store_sale_items_update`, `store_sale_items_remove`, `store_sale_generate_income` e `store_sale_delete` (EXECUTE só de `authenticated`), cada uma numa transação com a receita vinculada. A receita nasce em nome de quem chama, no workspace da venda se ele é membro; a receita de outra pessoa (invisível para quem chama) só barra a chamada que muda o que ela leva (líquido, data ou conta) ou que a apaga (cancelar, reabrir, excluir). Nesses casos dá 42501, e a mensagem diz que quem a lançou a altera ou apaga em Transações. Editar uma nota, ou gravar um item sem mudar o valor, passa com `transaction` nulo. Voltar de enviada para vendida com outra data leva a data da receita junto (`transaction_changed` true). `store_product_figures(uuid[])` (INVOKER) devolve comprado, vendido, reservado, disponível e custo médio sobre as linhas visíveis.
+- Compras e produtos continuam gravados direto pelo app (API-037).
+
 ## Notas rápidas, estudos, backups
 
 | Tabela | Operação | Quem |
 |---|---|---|
 | `quick_notes` | SELECT/INSERT/UPDATE/DELETE | own; `updated_at` é do servidor (gatilho `quick_notes_updated_at`, API-003) e serve de versão: o app grava condicionado a ela |
-| `study_topics` / `study_cards` / `study_logs` | SELECT/INSERT/UPDATE/DELETE | own. Card e diário só em tópico do mesmo dono: os gatilhos `study_cards_rules` e `study_logs_rules` (API-021) dão P0002 "Tópico não encontrado", igual para tópico alheio e inexistente. A forma dos JSON de `study_cards` é conferida pelo gatilho (só a coluna que mudou) e pelas CHECK `study_cards_resources_safe`/`study_cards_json_arrays`, que valem também sem usuário. `started_at`, `completed_at` e `updated_at` são do servidor (sem usuário, um UPDATE que mude só o `updated_at` guarda o valor: é o conserto à mão de versão no futuro). O `sort_order` é escolhido pelo cliente; sem valor no INSERT, o gatilho põe max+1 entre os cards do mesmo dono no tópico. A posição não é única: duas abas ou dois INSERTs simultâneos podem repetir o valor. As operações por item, a importação atômica e o reagendamento também existem como RPCs SECURITY INVOKER (API-024, parágrafo abaixo). Nelas, a posição do card novo é max+1 calculado no servidor, com o tópico travado. |
+| `study_topics` / `study_cards` / `study_logs` | SELECT/INSERT/UPDATE/DELETE | own. Card e diário só em tópico do mesmo dono: os gatilhos `study_cards_rules` e `study_logs_rules` (API-021) dão P0002 "Tópico não encontrado", igual para tópico alheio e inexistente. A forma dos JSON de `study_cards` é conferida pelo gatilho (só a coluna que mudou) e pelas CHECK `study_cards_resources_safe`/`study_cards_json_arrays`, que valem também sem usuário. `started_at`, `completed_at` e `updated_at` são do servidor (sem usuário, um UPDATE que mude só o `updated_at` guarda o valor: é o conserto à mão de versão no futuro); o app (API-029) não manda nenhum dos três e usa o `updated_at` como versão dos campos escalares (`.eq('updated_at', …)` e releitura com zero linhas). O `sort_order` é do servidor: o app cria e anexa cards só por `study_cards_append` e `study_import_topic`, que põem max+1 com o tópico travado; o gatilho ainda guarda o valor de um INSERT direto (o restore do backup usa isso) e, sem valor, põe max+1 entre os cards do mesmo dono no tópico. A posição antiga pode repetir: a ordem do roteiro desempata por `created_at` e `id`. Pontos, recursos e respostas do quiz o app grava item a item pelas RPCs SECURITY INVOKER do API-024 (parágrafo abaixo), sem regravar a coluna inteira; o UPDATE direto da lista inteira continua aceito pelo gatilho (aba aberta antes do deploy, até recarregar). |
 | `site_backups` / `site_backup_settings` | SELECT | admin apenas |
 | `site_backups` / `site_backup_settings` | INSERT/UPDATE/DELETE | **nenhuma policy** | só `service_role` (edge function `site-backup`) escreve |
 | `profile_secrets` | qualquer operação | **RLS habilitado, zero policies** | intencional: só `service_role` acessa (chaves de API de IA); ver advisory `rls_enabled_no_policy` — não é um gap, é o desenho |

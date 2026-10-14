@@ -153,6 +153,17 @@ Evidência (harness `supabase/checks/api002-roles-probe.sql`, rodado no staging 
   - sem usuário, um UPDATE que mude só o `updated_at` (cards e tópicos) guarda o valor que veio. É o conserto à mão de versão no futuro: `update public.study_cards set updated_at = least(updated_at, now()) where updated_at > now();`, e o mesmo em `study_topics`. Com usuário, ou com qualquer outra coluna mudando (inclusive `sort_order`), a versão continua do servidor. Prova: `supabase/checks/api021-study.sql`, bloco 1;
   - as CHECK `study_cards_resources_safe` (url http(s), `private.card_links_are_safe`) e `study_cards_json_arrays` valem também sem usuário;
   - prova: `supabase/checks/api021-study.sql` (bloco 2, restore no staging com backup sem a chave `blocks`).
+- O API-028 (`api028_store_sales_server`) segue a regra na Loja:
+  - os gatilhos `private.store_sale_rules` e `private.store_sale_item_rules` pulam sem usuário: o restore guarda vendas e itens como vieram (status, datas, receita, item acima do estoque), e o `updated_at` só é carimbado em UPDATE, então o INSERT do restore mantém o do backup;
+  - com usuário, validam só o que mudou:
+    - as regras "sempre" (`sold_on` obrigatório na venda consumida, até amanhã em São Paulo, negociação sem data) só disparam quando status ou `sold_on` mudam;
+    - as da data de entrega (só na entregue, até amanhã, não antes da venda) só disparam quando status ou `delivered_on` mudam. A de não ser antes da venda dispara também quando o `sold_on` muda;
+    - as cascatas de SET NULL disparam os gatilhos com o `auth.uid()` de quem apagou e não podem travar numa venda antiga fora da regra;
+    - o UPDATE de `workspace_id` do card "Sair do workspace leva as linhas da Loja" passa numa ordem: primeiro as vendas de quem sai, depois só os itens dele nelas (`where user_id = quem sai`). Com o `auth.uid()` de quem sai, o ws_guard recusa realocar a linha de outra pessoa (42501);
+    - o item de outra pessoa na venda de quem sai fica com o workspace antigo, mas segue a venda: só quem a vê o lê, altera e apaga, e o autor dele ainda o lê;
+    - o item de quem sai que está na venda de outra pessoa fica no workspace da venda (o gatilho do item recusa tirá-lo, 22023), e quem vê a venda continua vendo o item;
+  - os CHECKs de dinheiro >= 0 valem também sem usuário: um backup com valor negativo deixa de restaurar;
+  - prova: `supabase/checks/api028-store-sales.sql` (bloco 1, seções 10 e 11; bloco 2, restore no staging com uma venda antiga fora da regra).
 
 ## 2. Guardas no banco
 
@@ -196,6 +207,8 @@ Casos especiais:
   - criar um gatilho DEFINER, ativo só em sessão da API, que detecte a lista encolhendo.
 
   Remover item ausente dá P0002, o 404 da §4. O app (API-029) trata como já removido em outra aba.
+
+  Nas RPCs do tópico (`study_cards_append`, `study_reschedule`), o P0002 é o tópico excluído (em outra aba ou pela API): o app o tira da tela com cards e diário, e o tópico aberto vira o aviso "excluído em outra aba". O P0001 do `study_reschedule` (tópico sem data-alvo) faz o app reler o tópico e explicar que falta a meta. O app também marca esses ids como removidos no registro de escritas, como na exclusão feita por ele mesmo. Assim, o refetch que leu antes da exclusão não traz de volta o tópico, os cards nem o diário, nem os cards e o diário desse tópico que o app ainda não tinha visto. O card que some numa releitura (P0002 de um item, ou a gravação de campo sem linha) segue a mesma regra.
 
 ### 2.3 Conteúdo de outras pessoas (regra de propriedade)
 
@@ -242,6 +255,20 @@ Casos especiais:
   O card não cria gatilho nem função em `private`: a trava do quiz ficou só na RPC, por decisão do usuário. A forma dos JSON continua no gatilho DEFINER `private.study_card_rules`, que já está no inventário. Como são INVOKER, as RESTRICTIVE do API-022 valem dentro delas. Anexar, importar e reagendar exigem ler e atualizar `study_topics`. Toggle, resposta e reset só tocam `study_cards` (prova no bloco 2 de `supabase/checks/api024-study-rpcs.sql`).
 
   Datas do API-024: o `p_today` de `study_reschedule` e de `study_import_topic` é conferido por comparação (`not between` o hoje de São Paulo ± 1), então `'infinity'` e `'-infinity'` dão 22023 com hint akool, nunca o 22008 sem hint da subtração de datas infinitas. A data-alvo infinita, gravada pelo UPDATE direto de `study_topics`, também dá 22023 no reagendar. Na importação, a `target_date` do payload só aceita AAAA-MM-DD.
+
+  O app (API-029) manda `p_today` só no reagendar e na importação com data-alvo: sem meta ele não serve, e o servidor o conferiria à toa. O aparelho não tem como saber que o próprio relógio está errado, porque o dia de São Paulo que ele calcula sai do mesmo relógio. Então, quando o servidor recusa o dia (22023 "Data de hoje …", hint akool), o app refaz a chamada uma vez sem `p_today`, e vale o hoje de São Paulo do servidor. Um cliente da API v1 pode fazer o mesmo.
+- Do lote 06 (API-028), entram no inventário os dois gatilhos DEFINER da Loja, como predicado puro com trava:
+  - `private.store_sale_rules` (BEFORE INSERT/UPDATE em `finance_store_sales`): lê cliente, conta, transação, itens e produtos de qualquer dono com o predicado explícito do RLS (`private.store_visible`: dono ou membro do workspace) e o escopo do dono da venda (`private.store_ref_ok`), para a recusa genérica (P0002) e para o estoque global ao reabrir; grava só os carimbos de data da própria linha;
+  - `private.store_sale_item_rules` (BEFORE INSERT/UPDATE em `finance_store_sale_items`): trava venda e produto com o mesmo predicado e confere o estoque global (`private.store_product_available`, todas as linhas do produto); grava só `workspace_id` e `product_name` da própria linha; no UPDATE, lê o `workspace_id` da venda e se o workspace antigo ainda existe, para manter o item no workspace da venda.
+
+  São DEFINER porque o estoque é global: um INVOKER só somaria as linhas visíveis, e B (membro) que vende o produto do workspace numa venda privada deixaria a mesma unidade "disponível" para A. Os ajudantes `private.store_visible`, `private.store_ref_ok` e `private.store_product_available` são INVOKER, sem EXECUTE para clientes, e só rodam dentro dos gatilhos.
+- Ficam fora do inventário, por serem INVOKER e não chamarem nada de `private`, as 9 funções da Loja: `store_product_figures` e as RPCs `store_sale_create`, `store_sale_set_status`, `store_sale_update`, `store_sale_items_add`, `store_sale_items_update`, `store_sale_items_remove`, `store_sale_generate_income` e `store_sale_delete`. O `sec012-grants.sql` continua com 40. O líquido das RPCs soma todos os itens da venda sem DEFINER novo:
+  - o item segue a venda: as policies de `finance_store_sale_items` deixam ler o item a quem é dono dele ou vê a venda, e alterá-lo e apagá-lo só a quem vê a venda (`docs/matriz-rls.md`);
+  - as RPCs só chegam aos itens depois de travar a venda com o RLS de quem chama.
+
+  Como são INVOKER, as RESTRICTIVE do API-022 valem dentro delas: lançar a receita exige ler e escrever `finance_transactions` e ler `finance_accounts` e `finance_categories`; cancelar, reabrir e excluir apagam a receita (Apêndice B).
+
+  Datas do API-028: o `p_today` de `store_sale_set_status` é conferido por comparação, a até 1 dia do hoje de São Paulo (fora, inclusive ±infinity, dá 22023 com hint akool). `sold_on` futuro (depois de amanhã em São Paulo) ou infinito é recusado pelo gatilho com 22023. `delivered_on` fora da entregue, infinito, depois de amanhã em São Paulo ou antes do `sold_on` também é recusado pelo gatilho com 22023.
 - `supabase/checks/api007-grants.sql` confere que nenhuma função de `private` é executável por PUBLIC, `authenticated` ou `akool_api` fora de uma allowlist.
 
 ### 2.5 Portão de validação humana (API-007)
@@ -299,7 +326,7 @@ supabase/functions/
   _domain/              lógica de negócio pura compartilhada com o app (src/lib reexporta)
     blocknote/ study/ fixtures/ i18n.pt-BR.ts pageTree.ts projectTypes.ts isoDate.ts cardLimits.ts cardLabels.ts cardLinks.ts text.ts
     autoSchedule.ts backlogMarkdownParser.ts importPlan.ts cardMarkdown.ts projectStats.ts financeCalc.ts money.ts financeCsv.ts
-    statementImport.ts financeGraph.ts financePhase.ts unifiedCards.ts financeStoreCalc.ts saleTransitions.ts loanCalc.ts docsGraph.ts excalidraw.ts
+    statementImport.ts financeGraph.ts financePhase.ts unifiedCards.ts financeStoreCalc.ts saleTransitions.ts storeTypes.ts loanCalc.ts docsGraph.ts excalidraw.ts
 ```
 
 **`_domain/blocknote/` (API-020):** validador e normalizador das notas (BlockNote 0.50), puros, sem `@blocknote/core`.
@@ -535,19 +562,39 @@ supabase/functions/
   - `createdPerWeek(cards, weeks, today, dayOf)`: `dayOf` dá o dia de calendário do `created_at` no fuso de quem vê. O app passa `createdDayLocal`, que é o `localDateKey` do instante; o handler passa `(created_at at time zone $tz)::date`, do SQL;
   - a semana sai de `diffDays/7`, sem a hora a menos do horário de verão;
   - `weeks` tem de ser ≥ 1, porque com 0 a função lança; o schema da ação limita.
-- **`backlogMarkdownParser.ts`:** `parseBacklogMarkdown(source, { newId })`. Sem `newId`, os ids saem de `crypto.randomUUID`. `warnings` continua o texto da CLI.
+- **`backlogMarkdownParser.ts`:** `parseBacklogMarkdown(source, { newId })`. Sem `newId`, os ids saem de `crypto.randomUUID`, e `warnings` continua o texto da CLI. API-033:
+  - leitura linear: `tableRow`, `listMeta` e `checklistItem` por índice, com a mesma semântica das regex de antes, conferida por um teste diferencial;
+  - Problema e Contexto multilinha, respeitando cerca de código;
+  - CRLF normalizado;
+  - `dependsOn` (sempre presente) a partir de `Depende de`.
+
+  A bateria de tempo mede a razão t(n)/t(n/4) em pares a 512 KiB, como a do API-023.
 - **`importPlan.ts`:**
   - `planTopicColumns`;
-  - `planCardRows`: as linhas na ordem do arquivo, com o `sort_order` max+1 por coluna, os cards pulados por "ID —" e as `issues`, que impedem gravar;
-  - `importIssueText` e `importLabels`;
-  - `backlogIssueText(issue, t)`, com o texto da tela de importação. O dry_run do API-055 usa esse.
+  - `planCardRows({ …, existing, newId })`: as linhas na ordem do arquivo, com o `sort_order` max+1 por coluna e os cards pulados por "ID —". Cada linha nova tem `id` (de `newId`) e `depends_on`. `existing` vem do mais antigo para o mais novo, e o 1º de cada ID externo vale;
+  - `oldestFirst(cards)`: a cópia nessa ordem (created_at, id, texto comparado com < e >, sem `Date.parse` nem `localeCompare`), usada pela prévia e pela gravação;
+  - as `issues` do plano impedem gravar: sem coluna, limites de subtarefas, `dependency_cycle` (com o caminho) e `depends_on_too_many`. Os `warnings` (`dependency_not_found`, `dependency_not_applied`) não impedem;
+  - `insertBatches(rows, size)`: lotes por nível de dependência, na ordem do arquivo dentro do nível. Sem dependências, os mesmos pedaços de antes. Lança com id repetido ou ciclo;
+  - `importIssueText(issue, t)` (chaves `projects_import_error_*`, com o limite em `{max}`) e `importLabels`;
+  - `backlogIssueText(issue, t)` e `importWarningText(warning, t)`, com o texto da tela de importação. O dry_run do API-055 usa esses.
 
-  `ImportCardRow` ainda não é contrato: o API-033 vai acrescentar o id das linhas.
+  `ImportCardRow` é contrato do API-055. No `ctx.tx`, o handler pode gravar com `insertBatches` ou inserir tudo com `depends_on` vazio e fazer um único UPDATE depois, porque o plano já recusou ciclo.
 - **`cardMarkdown.ts`:** `formatCardAsMarkdown(card, ctx, t)`.
-- **`i18n.pt-BR.ts`:** além dos rótulos do API-023, as 20 chaves do Markdown do card e as 8 `projects_import_issue_*`, com o mesmo texto do app (o `projectDomain.test.ts` confere). `DomainTFor<K>` é o `t` de quem só usa as chaves `K`: o `tPtBR` serve, e o `t` do app também.
+- **`i18n.pt-BR.ts`:** além dos rótulos do API-023, as 20 chaves do Markdown do card, as 10 `projects_import_issue_*`, as 2 `projects_import_warning_*` e as 5 `projects_import_error_*`, com o mesmo texto do app (o `projectDomain.test.ts` confere). `DomainTFor<K>` é o `t` de quem só usa as chaves `K`: o `tPtBR` serve, e o `t` do app também.
 - **Sem relógio em `_domain`:** `today` é obrigatório em todas as funções. Os padrões ficam nos wrappers de `src/lib` (`autoSchedule`, `projectStats` e `projectCardFilters`), com o dia do aparelho. No Deno o fuso é UTC, então o handler pega o dia no fuso da pessoa pelo SQL: `select (now() at time zone $1)::date` no `ctx.tx`. Um fuso inválido dá 22023, que vira `validationFailed` do `X-Akool-Timezone` (sondado no staging em 11/10). O `todayInTimeZone` com `Intl` foi adiado.
 - **Testes que dependem do fuso:** o CI roda em UTC e o dev em São Paulo, e nenhum dos dois tem horário de verão. Por isso os testes fixam o fuso no próprio teste, com `vi.stubEnv('TZ', …)` e `vi.unstubAllEnvs()` (o Node relê o TZ, e o pool do vitest é forks), e cada um tem uma pré-condição que falha se o fuso não pegar. O `createdPerWeek` de `_domain` e o `distributeDueDates` (`src/lib/studySchedule.test.ts`) fixam America/New_York no `beforeAll`, onde 09/03/2025 tem 23 h. Os wrappers do app (`createdDayLocal` e o "hoje" do Gerar cronograma) rodam cada caso em America/Sao_Paulo, America/Manaus e Asia/Tokyo (`it.each`, com o `stubEnv` dentro do caso e o `unstubAllEnvs` no `afterEach`). Os instantes são montados em hora local dos dois lados da meia-noite (23:30 e 00:30), e a pré-condição confere o `getTimezoneOffset()` de cada fuso. O dia UTC ou um offset fixo (o UTC−3 de Brasília) só acertam os dois lados num fuso a menos de meia hora do seu, então algum dos três os pega. A trava REL-007 do `repo-hygiene` também barra `isoFromUTC(Date.now())` como "hoje".
 - **Linha do banco → domínio:** na linha de `project_cards`, `priority` vem em texto e `labels`, `checklist` e `links` em JSON. Antes de chamar `autoSchedule`, `projectStats` e `cardMarkdown`, o handler estreita esses campos e recusa prioridade fora das quatro (`isProjectPriority`). Uma prioridade desconhecida ordenaria primeiro na agenda, sem aviso, e criaria uma chave nova no `countByPriority`.
+
+**`_domain` da Loja (API-028):**
+- `storeTypes.ts`: status, funil e tipo de produto, mais os `*Like` que os cálculos leem;
+- `financeStoreCalc.ts`: estoque derivado, custo médio, dinheiro da venda, capital parado, resultado do mês, histórico e estatísticas do cliente. O `customerHistory` recebe o dia de criação de quem chama, sem relógio;
+- `saleTransitions.ts`: os 10 pares do pipeline (`SALE_TRANSITIONS`), `canTransition` e `confirmActionFor`.
+
+O app reexporta por `src/lib/financeStoreCalc.ts` (o dia de criação no fuso do aparelho) e por `src/modules/finance/store/saleTransitions.ts`.
+
+O SQL tem a mesma conta: `store_product_figures`, o líquido das RPCs e os pares do gatilho. `_domain/fixtures/storeParity.json` prende os dois lados:
+- `storeParity.test.ts` confere o JS, o JSON do harness (entre `parity:begin` e `parity:end`), a lista de pares, os CHECKs da migration e a forma do líquido nas 5 RPCs (itens + frete cobrado − taxa, sem o frete pago);
+- o harness confere o SQL: `store_product_figures` contra o JSON, e o líquido das RPCs no fluxo da seção 8, numa venda com frete pago. O mutante que desconta o frete pago derruba 6 linhas.
 
 **Por que `_api` e `_domain`:**
 
@@ -786,7 +833,7 @@ A chave vem no cabeçalho `Idempotency-Key` (REST) ou no campo `idempotency_key`
 
 - Acima do limite: 429 com `Retry-After`.
 - Se o limitador falhar: segue (fail-open) com log em leitura e escrita; bloqueia (fail-closed) em Excluir.
-- Tetos por chamada: lote de transações 100; extrato 500 linhas; backlog 200 cards; estudo 100 cards. O de estudo vale em `study_cards_append` e `study_import_topic` (API-024: de 1 a 100 cards e até 4 MiB; `STUDY_IMPORT_CARDS_MAX` e `STUDY_IMPORT_MAX_BYTES` em `src/lib/studyLimits.ts`, conferidos contra a migration). A importação é tudo ou nada: o parser corta antes (API-029).
+- Tetos por chamada: lote de transações 100; extrato 500 linhas; backlog 200 cards; estudo 100 cards. O de estudo vale em `study_cards_append` e `study_import_topic` (API-024: de 1 a 100 cards e até 4 MiB; `STUDY_IMPORT_CARDS_MAX` e `STUDY_IMPORT_MAX_BYTES` em `src/lib/studyLimits.ts`, conferidos contra a migration). A importação é tudo ou nada: o parser corta antes (API-029: `fitImportCards` em `src/lib/studyMarkdownParser.ts`, pura e linear, mede o payload inteiro como o servidor, `{topic, cards}` em texto de jsonb, e diz no `dropped` o que ficou de fora; o API-034 a porta para `_domain`).
 
 ### 9.4 Lixeira (API-025)
 
@@ -851,8 +898,10 @@ As RPCs de lote de Estudos (API-024) prefixam a mensagem com `cards/N: ` (N a pa
 | API-020 e API-023 | validação, normalização e Markdown de BlockNote |
 | API-021 e API-024 | regras de Estudos, RPCs por item e importação atômica |
 | API-027 | agenda, importação e Markdown de cards |
-| API-028 e API-037 | vendas e compras da Loja |
+| API-028 | vendas da Loja: máquina de estados, estoque global, referências do dono e receita atômica (gatilhos + 8 RPCs) |
+| API-029 | a tela de Estudos sobre as RPCs do API-024: listas item a item, campos escalares com versão e conflito por campo, posição, datas e versão do servidor, importação e reagendamento numa chamada, teto de 100 cards e 4 MiB no parser |
 | API-030 | escrituração e saldo de empréstimos |
+| API-037 | compras e produtos da Loja |
 | API-045 | `updated_at` de tarefas |
 
 Regra: se o app também precisa da lógica, ela vira SQL (gatilho, ou RPC SECURITY INVOKER concedida a `authenticated` e `akool_api`) ou um módulo em `_domain` que o app reexporta.
@@ -1015,17 +1064,35 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 - BacklogCard v1 (`supabase/functions/_domain/backlogMarkdownParser.ts`, reexportado por `src/lib/backlogMarkdownParser.ts`, API-027):
   - `## Tópico: X`;
   - `### CARD API-0NN — Título`;
-  - tabela Campo|Valor com ID, Prioridade, Esforço, Labels (separadas por vírgula) e Arquivos (em crases).
-- O parser lê só a primeira linha de `**Problema:**` e de `**Contexto:**`, porque `CONTEXT_RE` para no primeiro fim de linha. Por isso:
-  - Problema cabe numa linha;
-  - Contexto também, no formato `Depende de: API-00X, API-00Y. Aceite: … Arquitetura: docs/api-arquitetura.md.`;
+  - tabela Campo|Valor (ou lista `- **Campo:** valor`) com ID, Prioridade, Esforço, Labels (separadas por vírgula), Arquivos (em crases) e Depende de;
+  - `**Problema:**` e `**Contexto:**`, depois da tabela;
+  - `**Subtarefas Kanban:**`.
+- Leitura (API-033):
+  - CRLF e CR viram LF antes de tudo;
+  - tudo é linear, sem regex com retrocesso, porque a tela reparseia a cada tecla e a API roda na edge;
+  - Problema e Contexto vão do rótulo até o próximo marcador: `**Subtarefas`, `**Problema:**`, `**Contexto:**`, linha que começa com `---`, `### CARD`, `# ` ou `## `. Um `### Critérios` fica dentro;
+  - dentro de cerca de código (```` ``` ```` ou `~~~`, inclusive a aberta na linha do rótulo), os marcadores não contam. A cerca que não fecha vai até o fim do card, e nela só os rótulos do card (`**Subtarefas`, `**Problema:**`, `**Contexto:**`) encerram a seção;
+  - o texto pode começar na linha do rótulo ou na de baixo. O rótulo fica numa linha própria na descrição só quando o texto começa na linha de baixo com um bloco (lista, lista numerada, citação, título, cerca, tabela), para o bloco renderizar, ou quando a linha do rótulo abre uma cerca (`**Contexto:** ```bash`). Na linha do rótulo, `> 2 s`, `2. fase`, `- nada a declarar` ou `# 1 da lista` é parágrafo: continua depois do rótulo, separado por um espaço, como no parser de antes do API-033. Com o rótulo em linha própria, isso viraria citação (lendo "2 s") ou lista numerada a partir de 1;
+  - os metadados são lidos fora das faixas de Problema e Contexto, da lista de subtarefas e das cercas que fecham. Uma tabela ou um `- Prioridade: P0` no Contexto não passa por cima dos do card. Por isso a tabela de metadados vem antes do Problema: o que vem depois dele, até o próximo marcador, é Problema;
   - em `**Subtarefas Kanban:**`, cada item é um `- [ ]` de uma linha, sem bullets aninhados, porque uma linha que não começa com `-` encerra a lista;
   - o que só o usuário faz entra como subtarefa com o prefixo `Você:`.
-- As dependências ficam no Contexto e na primeira subtarefa. O importador atual não grava `depends_on`; o API-033 corrige isso para backlogs futuros.
-- Antes de importar, rodar `npm run import:cards -- docs/imports/backlog-api-v1.md --dry-run` e conferir, card a card, o número de subtarefas, a presença do Contexto e a ausência de avisos.
+- Depende de (API-033): `| **Depende de** | API-001, API-002 |` ou `- **Depende de:** API-001, API-002`.
+  - Os IDs saem de `/\b[A-Z]{2,5}-\d{3}\b/gi`, em maiúsculas, separados por vírgula, ponto e vírgula, espaço ou "e". `—`, `-`, `nenhum`, `nenhuma` e vazio são sem dependência.
+  - O que sobra num trecho e não é ID vira `invalid_dependency` (o ID do mesmo trecho entra), e o próprio card vira `self_dependency`.
+  - Só esse nome de campo vale, e só com IDs. O `- **Dependências:**` do Markdown do card, que tem títulos, não é lido. O "Depende de: …" no texto do Contexto (o formato antigo) também não: os 56 cards da API v1 só ganham `depends_on` com um backfill à parte, que escreve em produção e precisa do OK do usuário.
+  - Resolução (`planCardRows`): primeiro o card novo do mesmo arquivo. Depois, o do quadro pelo "ID —" ou "ID -", o mais antigo, como o `cq_resolve_card`. Senão, o aviso `dependency_not_found`, sem a aresta. A ordem sai do `oldestFirst` (`_domain/importPlan.ts`): `created_at` e, no empate, `id`, comparando o texto com < e >, como o `order by created_at, id` do Postgres. O `Date.parse` perderia os microssegundos, e todos os cards de uma importação têm o mesmo `created_at`; o `localeCompare` segue o idioma, não os bytes.
+  - Ciclo entre os cards novos (com o caminho) e mais de 100 dependências bloqueiam a importação inteira, como os limites de subtarefas. O ciclo que passa por um card pulado não conta.
+  - O card que já está no quadro é pulado e não muda. O aviso `dependency_not_applied` cita as dependências que faltam nele. Atualizar o `depends_on` de card existente fica para o API-055.
+  - A gravação é por níveis (`insertBatches`), porque o gatilho do API-013 recusa a dependência que ainda não existe, inclusive a que vem depois no mesmo INSERT. Se um lote falha, os anteriores ficam com as dependências completas, e a nova tentativa com "pular duplicados" grava o resto.
+- A prévia da tela (`ImportCardsModal`) roda o mesmo `planCardRows` contra os cards do quadro em memória. Ela mostra ciclo, limites e dependências não encontradas antes de gravar, e um problema que bloqueia desliga o botão. Depois de importar, os avisos são os da gravação, e com aviso o modal não fecha sozinho. A prévia põe os cards em memória, que vêm na ordem do quadro (`sort_order`), no mesmo `oldestFirst` da gravação. Assim, com dois cards do mesmo ID externo, as duas escolhem o mesmo card para pular, para resolver a dependência e para o aviso `dependency_not_applied`.
+- Antes de importar, rodar `npm run import:cards -- docs/imports/backlog-api-v1.md --dry-run` e conferir, card a card, o número de subtarefas, a presença do Contexto e a ausência de avisos. O dry-run lista as dependências, as que ficam fora do arquivo (procuradas no quadro só na importação) e os problemas que bloqueiam; com algum, sai com 1.
 - O cabeçalho do arquivo explica os lotes e o enfileiramento por `lote-NN`.
-- O golden `supabase/functions/_domain/fixtures/backlogs.golden.json` guarda o resultado do parser em cada backlog de `docs/imports`. Por card, ele tem ID, prioridade, esforço, tópico, rótulos, número de arquivos, subtarefas feitas/total e o sha256 do card, que pega título, descrição e o texto das subtarefas. Quem muda um backlog de `docs/imports` (ou o parser, de propósito) regrava com `npx vitest run -u supabase/functions/_domain/backlogMarkdownParser.test.ts` e confere o diff do golden no PR.
-- Os avisos do parser saem de dois jeitos: `warnings`, com o texto da CLI, e `issues`, com o código. A tela e a API traduzem as `issues` com `backlogIssueText` (`_domain/importPlan.ts`), e a API usa o `tPtBR`.
+- O golden `supabase/functions/_domain/fixtures/backlogs.golden.json` guarda o resultado do parser em cada backlog de `docs/imports`. Por card, ele tem ID, prioridade, esforço, tópico, rótulos, número de arquivos, subtarefas feitas/total e o sha256 do card sem o `dependsOn`, que pega título, descrição e o texto das subtarefas.
+  - O `dependsOn` entra no fim da linha só quando existe, e assim os backlogs de antes do campo saem iguais.
+  - Quem muda um backlog de `docs/imports` (ou o parser, de propósito) regrava com `npx vitest run supabase/functions/_domain/backlogMarkdownParser.test.ts -u` e confere o diff do golden no PR.
+  - O `-u` vai depois do arquivo: no vitest 4 ele aceita um valor, e `-u <arquivo>` engole o arquivo e roda a suíte inteira.
+- Os avisos do parser saem de dois jeitos: `warnings`, com o texto da CLI, e `issues`, com o código. A tela e a API traduzem as `issues` com `backlogIssueText` e os avisos do plano com `importWarningText` (`_domain/importPlan.ts`), e a API usa o `tPtBR`. Os problemas do plano que impedem a importação saem com `importIssueText(issue, t)`, nas chaves `projects_import_error_*` (`{id}`, `{detail}` e o limite em `{max}`). A tela passa o seu `t`, inclusive para os `errors` do `importParsedCards` (opção `t`); a CLI e a API passam o `tPtBR`.
+
 ## Apêndice A. Catálogo de permissões
 
 27 subseções. O padrão de todas é Nenhum. A fonte canônica passa a ser `supabase/functions/_api/catalog.ts` (API-001), replicada em `private.api_scope_catalog`.
@@ -1052,7 +1119,7 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 | `financas.categorias` | Finanças › Categorias | Excluir | finance_categories, com bootstrap das categorias padrão | Excluir categoria apaga os orçamentos de todos os membros do workspace, e a resposta avisa. |
 | `financas.orcamentos_metas` | Finanças › Orçamentos e metas | Excluir | finance_budgets (com status do mês), finance_goals e finance_goal_contributions (aporte atômico com conclusão automática) | Compartilhar meta é de compartilhamento.pessoas. Orçamento de workspace exige compartilhamento.pessoas:escrever. |
 | `financas.recorrentes` | Finanças › Recorrentes | Excluir | finance_recurring e finance_recurring_entries (a materialização é do servidor, por pg_cron), marcar paga e pular | marcar_paga cria transação e exige também financas.transacoes:escrever. Em recorrente de workspace, a transação leva o `workspace_id` e exige também compartilhamento.pessoas:escrever. Criar recorrente pela API materializa na mesma transação (`finance_materialize_recurring` ou o núcleo `private.finance_materialize_core`); senão o primeiro lançamento só nasce às 00:05 de São Paulo (API-016). |
-| `financas.loja` | Finanças › Loja | Excluir | finance_store_products, finance_store_purchases, finance_store_sales, finance_store_sale_items, finance_store_customers, finance_suppliers, bucket store-files e RPCs store_* (vendas, compras, produtos) | Clientes e fornecedores são dados pessoais de terceiros. Criar, alterar ou apagar receita ou despesa vinculada exige financas.transacoes:escrever; workspace exige compartilhamento.pessoas. |
+| `financas.loja` | Finanças › Loja | Excluir | finance_store_products, finance_store_purchases, finance_store_sales, finance_store_sale_items, finance_store_customers, finance_suppliers, bucket store-files, `store_product_figures` e as RPCs de venda do API-028 (`store_sale_create`, `store_sale_set_status`, `store_sale_update`, `store_sale_items_add`, `store_sale_items_update`, `store_sale_items_remove`, `store_sale_generate_income` e `store_sale_delete`: até 100 itens por chamada, dinheiro em centavos inteiros de 0 a 1e12, quantidade de 1 a 1e6); as de compras e produtos são do API-037. | Clientes e fornecedores são dados pessoais de terceiros. Criar, alterar ou apagar receita ou despesa vinculada exige financas.transacoes:escrever; workspace exige compartilhamento.pessoas. As regras de venda e de estoque valem também para a escrita direta nas tabelas (gatilhos do API-028). Excluir venda é Excluir; tirar item é Escrever (lista de exceções do §2.2). |
 | `financas.emprestimos` | Finanças › Empréstimos | Excluir | finance_loan_borrowers, finance_loans, finance_loan_payments, finance_loan_collaterals, bucket loan-files, RPCs de escrituração do credor e saldo calculado | Ações entre as partes (solicitar, aprovar, rejeitar, informar, confirmar ou rejeitar pagamento) e vincular tomador exigem compartilhamento.pessoas:escrever. O documento do tomador sai mascarado. Hoje não há tela no repo (cards P3). |
 | `compartilhamento.pessoas` | Compartilhamento › Pessoas e conteúdo compartilhado | Excluir | search_users_for_share, page_shares, project_shares, finance_goal_shares, shared_with_user_id/workspace_id em linhas financeiras, finance_workspaces, members e invites (obter, criar, renomear, convidar, aceitar, recusar, sair, remover membro), perfis de outras pessoas (com e-mail), vincular e desvincular tomador; ler (incluir_compartilhados) e escrever em conteúdo de outras pessoas | Transversal e sempre somada à subseção do item. Concede acesso de outra pessoa aos seus dados, devolve e-mails e abre conteúdo não confiável: mantenha Nenhum, salvo necessidade. A regra de propriedade vale no banco. co_owner de página só pela UI. Excluir = remover compartilhamento, sair do workspace e remover membro. |
 | `admin.usuarios` | Administração › Usuários (só admin) | Ler | admin_list_profiles projetado (id, e-mail, nome, papel, ativo, criado_em, cotas, avatar), busca e paginação no servidor | Só para admin: token criado com AAL2, validade de até 30 dias e is_admin() conferido a cada chamada. Sem last_sign_in nem last_login_date. |
@@ -1077,13 +1144,13 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
 - Tabelas de Finanças e de Estudos não estão no realtime, então escritas pela API só aparecem na tela depois de recarregar. Formulários abertos da Loja e de Finanças ainda gravam a linha inteira, e o último a gravar vence.
 - Os cards de lógica no servidor (003, 006, 012, 013, 016, 018, 021, 024, 028, 029, 037) mudam o comportamento do app. Eles exigem levantamento só leitura antes dos CHECKs e validação no staging, e há decisões pendentes: parcelas puladas, despesas ao excluir produto, dados fora da forma, formato de photo_url.
 - Ordem da fila: cq_insert_queued ignora a ordem da lista e cq_start conta só in_progress. Se alguém enfileirar vários lotes de uma vez, ou enfileirar o próximo com cards em Aguardando você, dependências podem rodar antes. Mitigação: enfileirar só por label lote-NN e a primeira subtarefa de cada card confere as dependências.
-- O parser de backlog guarda só a primeira linha do Problema e do Contexto e encerra a checklist em bullet aninhado. O renderizador do .md precisa seguir docs/api-arquitetura.md §18, e o dry-run do import:cards deve ser conferido card a card antes de importar.
+- O parser de backlog encerra a checklist em bullet aninhado. Fora de cerca de código, uma linha que começa com `---`, `# ` ou `## ` encerra o Problema e o Contexto. O renderizador do .md precisa seguir docs/api-arquitetura.md §18, e o dry-run do import:cards deve ser conferido card a card antes de importar.
 - O manifesto de cobertura (API-008) depende da lista de 357 operações da avaliação, versionada em `docs/api-inventario.json`.
 - Tokens migrados perdem projetos.validacao e o setup-flow: npm run cards -- validate passa a dar 403 até o usuário ativar Validação no token.
 - Diferenças de ambiente: rel001_backup_stale_alert pode não estar em produção (backup_stale), o branch atual (ux/landing-publica) não tem as policies de admin com is_admin(), e não foi verificado se as edge functions de IA removidas no SEC-015 ainda estão publicadas no painel. Todo card deve partir de infra/staging-baseline.
 - Cronograma longo: são 22 lotes, e os 11 primeiros (fundação e pré-requisitos) precisam ser concluídos antes de qualquer domínio chegar à produção. Os pré-requisitos já corrigem bugs do app nesse período, mas o valor visível da API para o usuário só aparece a partir do lote 12.
 - Empréstimos não têm tela no repo e src/lib/loanCalc.ts não existe. A regra de saldo precisa ser confirmada pelo usuário (cards P3).
-- A identificação por ID externo ('ABC-123 — Título') não é única e resolve para o card mais antigo. Importações repetidas sem deduplicação poderiam mirar o card errado; o API-055 deduplica.
+- A identificação por ID externo ('ABC-123 — Título') não é única e resolve para o card mais antigo. O `Depende de` da importação (API-033) usa a mesma regra, com o quadro lido por created_at e id. Importações repetidas sem deduplicação poderiam mirar o card errado; o API-055 deduplica.
 - **CPU do Markdown (API-023).**
   - **Por que um parser próprio:** o marked e o micromark (o motor do BlockNote) são quadráticos com entrada adversária, com mais de 20 s com 16 a 64 KiB. Por isso o parser é próprio e linear, com limite de 512 KiB de Markdown por chamada.
   - **Medido (Apple M-series, Node 22, mínimo de 3 execuções):**
@@ -1113,3 +1180,23 @@ O API-008 parte de `docs/api-inventario.json` (357 operações, cada uma com o c
   - **O que o teste prende (revisão 2):** com o teto de 3 s, a regravação sobre as notas fundas. Prende também a razão abaixo de 10 entre a releitura funda e a rasa do mesmo tamanho, e os tetos da reconciliação nas bordas. A memória não muda o resultado: num diferencial com semente fixa (39 mil entradas, no rascunho do lote), o parser saiu igual ao de antes, e a memória errada derruba 26 testes antigos.
   - **Risco que fica:** a edge é mais lenta que o Mac e tem 2 s de CPU, e o tempo real lá só vai ser medido no API-044. O render de nota com muitas quebras duras custa de 2,5 a 3 µs por linha. A nota válida de 2 MiB com 700 mil quebras na raiz leva ~2 s só no render; o plan, os tetos já cortam. O `blocksToText` não tem teto de saída: o código de 200 mil linhas no 64º nível (594 KiB de JSON) vira 24 Mi caracteres de texto, e numa nota de 2 MiB seriam ~85 Mi. A margem da razão é pequena: o linear chega a 7,8 com o arquivo sozinho (macOS ocupando ~2 núcleos) (cache: 512 KiB não cabem onde 128 KiB cabem), e quem segura o falso vermelho com carga é o retry. Uma regressão quadrática forte leva minutos para falhar: o timeout de 60 s não interrompe código síncrono, e o retry repete as 3 tentativas. A regex de volta no Converter.inline levou 18,6 min.
   - **Fora do card:** a colagem do NoteEditor ainda passa pelo micromark (1,5 s com 512 KiB realistas, 16 s com 64 KiB adversários), e o copiar do editor ainda grava o Markdown com perdas do BlockNote. Os dois cards propostos no plano trocam isso pelo `render.ts` e pelo `markdownToNote`.
+- **CPU do parser de backlog (API-033).**
+  - **Antes:** as regex eram quadráticas com uma linha longa. Com 32 KiB, levavam 5,1 s na linha de tabela sem `|` no fim, 2,1 s no Contexto com espaços, 0,6 s na subtarefa terminada em U+2028 e 0,3 s no `-` seguido de espaços. Na avaliação, com 64 KiB: 20 s, 8,2 s e 1,3 s.
+  - **Agora:** o parser lê tudo em tempo linear e fica entre 1 e 35 ms por caso a 512 KiB (M2, Node 22).
+  - **Tópicos:** a deduplicação dos `## Tópico:` usa um Set. Com o `includes` num array, o custo era quadrático: 1,5 s a 512 KiB com 37 mil tópicos distintos, contra 6 ms agora. A bateria tem o caso `muitosTopicos`.
+  - **O que o teste prende:** a bateria mede a razão em pares, como a do API-023. Um diferencial com 60 mil linhas aleatórias confere a mesma semântica das regex antigas.
+  - **Fora do card:** o backfill do `depends_on` dos 56 cards da API v1, que têm "Depende de" só no Contexto. Ele escreve em produção e precisa do OK do usuário.
+- **Loja (API-028).**
+  - **API-022:** as RPCs de venda são INVOKER e apagam uma linha de `finance_transactions` ao cancelar, reabrir e excluir. Com "DELETE exige Excluir", o token precisaria de `financas.transacoes` com Excluir, mas a §7 pede Escrever. A exceção para a receita vinculada a uma venda é decisão do API-022. Apontar a conta e a categoria da receita exige ler `financas.contas` e `financas.categorias`.
+  - **API-025:** o `api_undo_call` reinsere como o usuário, e as regras de INSERT recusam venda fora de negociação ou com data ou receita; o item passa de novo pelo estoque. Desfazer a exclusão de uma venda consumida não é suportado. Desfazer uma chamada que apagou a receita a reinsere desvinculada, e a venda continua cancelada ou reaberta. O API-025 decide, por exemplo com um GUC ligado só por ele, como no API-021.
+  - **API-048:** `store_product_figures` é a base dos números (sobre as linhas visíveis, como a tela); o líquido e o lucro da venda ficam nos testes de `_domain` e no harness.
+  - **API-052:** a versão otimista na venda (`p_expected_updated_at`) fica para lá. A cascata SET NULL de uma receita apagada em Transações também muda o `updated_at` da venda, e as RPCs de item não mexem nele.
+  - **Janela entre o apply e o merge:** o front antigo continua compatível, mas um `createSale` seguido de `addSaleItems` acima do estoque deixa uma venda vazia no quadro. O valor negativo digitado em venda passa a ser recusado (23514). Em compras e produtos, gravados direto pelo app até o API-037, a recusa vale também depois do merge. O front do API-028 desliga o Salvar com valor negativo, desfaz a despesa lançada quando a compra é recusada e traduz o erro. A compra com a despesa numa transação só fica para o API-037.
+  - **Card "Sair do workspace leva as linhas da Loja":**
+    - só o `leave_workspace` de hoje torna privadas as transações de quem sai, inclusive a receita que ele lançou na venda de outra pessoa do workspace;
+    - a dona passa a ver a venda sem a receita. Editar a nota passa, mas mudar o dinheiro, cancelar ou excluir dá 42501 até quem lançou apagar a receita em Transações;
+    - o `remove_workspace_member` nem chega a esse ponto: é recusado com 42501 ("Somente o autor pode realocar o lancamento") para quem tem qualquer linha financeira no workspace (transação, conta, categoria, orçamento, meta ou recorrente). Ele anula o `workspace_id` dessas linhas com o `auth.uid()` da dona, e o ws_guard só deixa o autor realocar. Há um card próprio, abaixo; o harness prende o 42501 de hoje na seção 8b;
+    - o card decide entre manter essas receitas no workspace ou desvinculá-las no mesmo passo;
+    - o card faz o UPDATE de `workspace_id` da Loja na ordem vendas → só os itens de quem sai nelas. O item de outra pessoa na venda de quem sai fica com o workspace antigo e segue a venda: os membros deixam de vê-lo, e o autor só o lê.
+  - **Card "remove_workspace_member falha para membro com linhas financeiras":** problema anterior ao lote (baseline). A dona não consegue remover um membro que tenha qualquer linha financeira no workspace, e no app "Remover membro" no WorkspaceModal dá erro. Fica fora do lote 06; o texto do card está no relatório desta correção.
+  - **Compras pelo app (até o API-037):** a despesa vinculada tem valor > 0 (CHECK `amount > 0` de `finance_transactions`). Com o total zero, "Gerar despesa" desliga e desmarca nos três modais; `createPurchase` e `markPurchased` não lançam despesa de total zero; a compra com despesa não vai a zero (`updatePurchase` recusa antes de gravar, com `finance_store_error_expense_not_positive`); a trava vale só para a edição que leva o total a zero: a compra antiga que já está com total zero e despesa (gravada antes da trava ou por escrita direta) ainda muda de fase, notas e data, e a despesa recebe só a data, nunca o valor zero que o banco recusaria. A recusa da despesa conta como falha traduzida: a compra nova não grava sem ela, e na edição a compra fica gravada e salvar de novo regrava a despesa. "Marcar como comprado" no kanban grava pelo `markPurchased`: a despesa nasce da compra que abriu o modal, e status e vínculo vão num update só; recusada a compra, a despesa recém-lançada é apagada.

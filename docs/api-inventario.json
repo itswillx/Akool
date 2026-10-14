@@ -2458,19 +2458,6 @@
       "target": "API-052"
     },
     {
-      "id": "finance.store.purchases.generate_expense",
-      "kind": "write",
-      "description": "After the fact, create the linked expense in finance_transactions for a non-quoting purchase that has an account and no tx yet.",
-      "current_impl": "useFinanceStore.generatePurchaseExpense :263-279 (insert finance_transactions, then update purchase.transaction_id)",
-      "server_enforced": false,
-      "client_side_logic": "Guards (client-only): no existing tx, account set, status != quoting. Amount = purchaseTotal.",
-      "risk": "money",
-      "sources": [
-        "Finance: Store"
-      ],
-      "target": "API-052"
-    },
-    {
       "id": "finance.store.purchases.list",
       "kind": "read",
       "description": "Purchase funnel board (quoting/purchased/received), sortable by date or total, with product and supplier names.",
@@ -2484,10 +2471,23 @@
       "target": "API-048"
     },
     {
+      "id": "finance.store.purchases.mark_purchased",
+      "kind": "write",
+      "description": "quoting -> purchased from the kanban confirmation, optionally creating the linked expense in finance_transactions in the same action.",
+      "current_impl": "useFinanceStore.markPurchased (insert finance_transactions from the target purchase, then ONE update of finance_store_purchases { status: purchased, transaction_id }; on refusal deletes the just-created expense)",
+      "server_enforced": false,
+      "client_side_logic": "Guards (client-only): account set, no existing tx, purchaseTotal > 0 (finance_transactions CHECK amount > 0). Refused expense: nothing written. Refused purchase: expense deleted, modal stays open.",
+      "risk": "money",
+      "sources": [
+        "Finance: Store"
+      ],
+      "target": "API-052"
+    },
+    {
       "id": "finance.store.purchases.set_status",
       "kind": "write",
       "description": "Move a purchase card across the funnel. quoting -> purchased opens a confirmation that can generate the expense in the same step. Other moves are direct.",
-      "current_impl": "PurchasesBoard.tsx:118-125 and ExpenseConfirmModal :36-52 -> updatePurchase(status) then generatePurchaseExpense",
+      "current_impl": "PurchasesBoard.tsx requestStatus and ExpenseConfirmModal -> useFinanceStore.markPurchased (quoting -> purchased, expense and link in one action); other moves -> updatePurchase(status), whose real ok goes back to the kanban (false reverts the card).",
       "server_enforced": false,
       "client_side_logic": "Only quoting->purchased asks for confirmation. quoting->received skips the confirmation and the expense offer. Moving to quoting deletes the tx (updatePurchase).",
       "risk": "money",
