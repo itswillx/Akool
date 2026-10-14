@@ -102,7 +102,7 @@ export default function UserSettingsModal({ open, onClose, initialTab }: Props) 
           {tab === 'audit' && <Suspense fallback={<PanelFallback />}><AuditLogPanel /></Suspense>}
           {!adminPanel && (
             <div style={{ maxWidth: SETTINGS_FORM_MAX_WIDTH, margin: '0 auto' }}>
-              {tab === 'api' && <ApiTokensSection />}
+              {tab === 'api' && <ApiTokensSection onOpenSecurity={() => setTab('security')} />}
               {tab === 'security' && <MfaSection />}
               {tab === 'profile' && <ProfileTab />}
               {tab === 'password' && <PasswordTab />}

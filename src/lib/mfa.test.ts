@@ -2,8 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Session } from '@supabase/supabase-js'
 import {
   assuranceFromSession, formatTotpSecret, isInvalidTotpError, isOtpauthUri, isPasskeyErrorKind, isTotpCode, needsMfaChallenge,
-  PASSKEY_ERROR_KEYS, passkeyCreateOptions, passkeyDevice, passkeyErrorKind, passkeyFriendlyName, passkeyGetOptions,
-  supportsPasskeys, totpFriendlyName, verifiedFactorId, verifyWithAnyFactor,
+  PASSKEY_ERROR_KEYS, passkeyDevice, passkeyErrorKind, supportsPasskeys, totpFriendlyName, verifyWithAnyFactor,
 } from './mfa'
 
 function jwt(payload: Record<string, unknown>): string {
@@ -11,8 +10,8 @@ function jwt(payload: Record<string, unknown>): string {
   return `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.assinatura`
 }
 
-function session(aal: string, factors: { status: string }[] = []): Pick<Session, 'access_token' | 'user'> {
-  return { access_token: jwt({ sub: 'u1', aal }), user: { id: 'u1', factors } as unknown as Session['user'] }
+function session(aal: string, factors: { status: string }[] = [], amr?: unknown): Pick<Session, 'access_token' | 'user'> {
+  return { access_token: jwt({ sub: 'u1', aal, ...(amr === undefined ? {} : { amr }) }), user: { id: 'u1', factors } as unknown as Session['user'] }
 }
 
 describe('MFA: nível de autenticação (SEC-004)', () => {
@@ -23,13 +22,13 @@ describe('MFA: nível de autenticação (SEC-004)', () => {
 
   it('sem fator verificado, AAL1 é o máximo e o app abre direto', () => {
     const a = assuranceFromSession(session('aal1', [{ status: 'unverified' }]))
-    expect(a).toEqual({ currentLevel: 'aal1', nextLevel: 'aal1' })
+    expect(a).toEqual({ currentLevel: 'aal1', nextLevel: 'aal1', passkey: false })
     expect(needsMfaChallenge(a)).toBe(false)
   })
 
   it('com fator verificado e sessão AAL1, pede o código', () => {
     const a = assuranceFromSession(session('aal1', [{ status: 'verified' }]))
-    expect(a).toEqual({ currentLevel: 'aal1', nextLevel: 'aal2' })
+    expect(a).toEqual({ currentLevel: 'aal1', nextLevel: 'aal2', passkey: false })
     expect(needsMfaChallenge(a)).toBe(true)
   })
 
@@ -39,8 +38,21 @@ describe('MFA: nível de autenticação (SEC-004)', () => {
 
   it('JWT ilegível não trava o app nem inventa nível', () => {
     const a = assuranceFromSession({ access_token: 'nao-e-jwt', user: { id: 'u1', factors: [] } as unknown as Session['user'] })
-    expect(a).toEqual({ currentLevel: null, nextLevel: null })
+    expect(a).toEqual({ currentLevel: null, nextLevel: null, passkey: false })
     expect(needsMfaChallenge(a)).toBe(false)
+  })
+
+  it('sessão aberta com passkey de login dispensa o código (o GoTrue a deixa em AAL1)', () => {
+    const a = assuranceFromSession(session('aal1', [{ status: 'verified' }], [{ method: 'passkey', timestamp: 1 }]))
+    expect(a).toEqual({ currentLevel: 'aal1', nextLevel: 'aal2', passkey: true })
+    expect(needsMfaChallenge(a)).toBe(false)
+  })
+
+  it('só o método passkey no amr conta como passkey', () => {
+    expect(assuranceFromSession(session('aal1', [{ status: 'verified' }], [{ method: 'password' }]))?.passkey).toBe(false)
+    expect(assuranceFromSession(session('aal1', [{ status: 'verified' }], 'passkey'))?.passkey).toBe(false)
+    expect(assuranceFromSession(session('aal1', [{ status: 'verified' }], [null, { method: 'otp' }]))?.passkey).toBe(false)
+    expect(needsMfaChallenge(assuranceFromSession(session('aal1', [{ status: 'verified' }], [{ method: 'password' }])))).toBe(true)
   })
 
   it('aceita só códigos TOTP de 6 dígitos', () => {
@@ -115,7 +127,7 @@ describe('MFA: login com mais de um aparelho', () => {
   })
 })
 
-describe('MFA: passkey (entrar com o celular)', () => {
+describe('MFA: passkey de login (entrar com o celular)', () => {
   it('celular e tablet usam a passkey do próprio aparelho; o computador, a do celular via QR', () => {
     expect(passkeyDevice(true, false)).toBe('this')
     expect(passkeyDevice(false, true)).toBe('this')
@@ -130,34 +142,6 @@ describe('MFA: passkey (entrar com o celular)', () => {
     expect(supportsPasskeys(undefined)).toBe(false)
   })
 
-  it('acha o fator verificado do tipo pedido', () => {
-    const factors = [
-      { id: 't1', factor_type: 'totp' as const, status: 'verified' as const },
-      { id: 'pk0', factor_type: 'webauthn' as const, status: 'unverified' as const },
-      { id: 'pk1', factor_type: 'webauthn' as const, status: 'verified' as const },
-    ]
-    expect(verifiedFactorId(factors, 'webauthn')).toBe('pk1')
-    expect(verifiedFactorId(factors.slice(0, 2), 'webauthn')).toBeNull()
-    expect(verifiedFactorId(undefined, 'totp')).toBeNull()
-  })
-
-  it('nomeia a passkey com segundos e prefixo próprio (diferente do app autenticador)', () => {
-    const now = new Date('2026-10-04T17:01:32.123Z')
-    expect(passkeyFriendlyName(now)).toBe('Passkey 2026-10-04 17:01:32')
-    expect(passkeyFriendlyName(now)).not.toBe(totpFriendlyName(now))
-  })
-
-  it('troca os padrões de chave física: passkey no aparelho ou QR para o celular', () => {
-    expect(passkeyCreateOptions('this')).toEqual({
-      hints: ['client-device'],
-      authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
-      attestation: 'none',
-    })
-    expect(passkeyCreateOptions('phone')).toMatchObject({ hints: ['hybrid'], authenticatorSelection: { authenticatorAttachment: 'cross-platform' } })
-    expect(passkeyGetOptions('phone')).toEqual({ hints: ['hybrid'], userVerification: 'required' })
-    expect(passkeyGetOptions('this')).toEqual({ hints: ['client-device'], userVerification: 'required' })
-  })
-
   it('traduz os erros do navegador e do Supabase em poucos casos', () => {
     const domError = (name: string) => Object.assign(new Error('x'), { name })
     // Cancelar: o auth-js copia o nome do DOMException e guarda o original em cause.
@@ -168,16 +152,19 @@ describe('MFA: passkey (entrar com o celular)', () => {
     expect(passkeyErrorKind({ code: 'webauthn_credential_exists', message: 'x' })).toBe('exists')
     expect(passkeyErrorKind({ code: 'ERROR_INVALID_RP_ID', message: 'x' })).toBe('wrong_domain')
     expect(passkeyErrorKind(domError('SecurityError'))).toBe('wrong_domain')
-    expect(passkeyErrorKind({ code: 'mfa_webauthn_verify_not_enabled', message: 'MFA verification is disabled for WebAuthn' })).toBe('unavailable')
+    expect(passkeyErrorKind({ code: 'passkey_disabled', message: 'Passkey authentication is disabled' })).toBe('unavailable')
     expect(passkeyErrorKind({ message: 'Browser does not support WebAuthn' })).toBe('unavailable')
-    expect(passkeyErrorKind({ code: 'mfa_challenge_expired', message: 'x' })).toBe('failed')
-    expect(passkeyErrorKind({ message: 'Failed to validate WebAuthn MFA response' })).toBe('failed')
+    expect(passkeyErrorKind({ message: 'Passkey support is experimental; enable it in the client' })).toBe('unavailable')
+    expect(passkeyErrorKind({ code: 'webauthn_credential_not_found', message: 'x' })).toBe('not_found')
+    expect(passkeyErrorKind({ code: 'webauthn_challenge_expired', message: 'x' })).toBe('failed')
+    expect(passkeyErrorKind({ code: 'webauthn_verification_failed', message: 'x' })).toBe('failed')
+    expect(passkeyErrorKind({ message: 'Failed to validate WebAuthn response' })).toBe('failed')
     expect(passkeyErrorKind({ code: 'insufficient_aal', message: 'AAL2 required' })).toBeNull()
     expect(passkeyErrorKind(null)).toBeNull()
   })
 
   it('cada tipo de erro tem mensagem', () => {
-    expect(Object.keys(PASSKEY_ERROR_KEYS).sort()).toEqual(['cancelled', 'exists', 'failed', 'unavailable', 'wrong_domain'])
+    expect(Object.keys(PASSKEY_ERROR_KEYS).sort()).toEqual(['cancelled', 'exists', 'failed', 'not_found', 'unavailable', 'wrong_domain'])
     expect(isPasskeyErrorKind('cancelled')).toBe(true)
     expect(isPasskeyErrorKind('Failed to fetch')).toBe(false)
     expect(isPasskeyErrorKind('toString')).toBe(false)

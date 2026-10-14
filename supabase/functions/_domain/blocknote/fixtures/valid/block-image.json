@@ -1,0 +1,16 @@
+[
+  {
+    "id": "fafa265c-68a9-4294-867e-b9ff7e268388",
+    "type": "image",
+    "props": {
+      "textAlignment": "left",
+      "backgroundColor": "default",
+      "name": "1.webp",
+      "url": "00000000-0000-4000-a000-000000000002/00000000-0000-4000-b000-000000000001/1.webp",
+      "caption": "legenda",
+      "showPreview": true,
+      "previewWidth": 320
+    },
+    "children": []
+  }
+]

@@ -6,7 +6,6 @@
   "total": 357,
   "por_destino": {
     "API-008": 1,
-    "API-016": 2,
     "API-019": 24,
     "API-034": 21,
     "API-036": 10,
@@ -32,7 +31,7 @@
     "API-057": 8,
     "API-059": 5,
     "API-060": 26,
-    "never": 66
+    "never": 68
   },
   "operacoes": [
     {
@@ -1379,14 +1378,15 @@
       "id": "finance.budgets.auto_from_recurring",
       "kind": "write",
       "description": "Auto-create a budget for the viewed month for each active fixed-amount expense recurring with a category, if none exists for (scope, category, month).",
-      "current_impl": "useAutoRecurringBudgets.ts:21-39 insert finance_budgets (candidates from financeCalc.ts:291-313); wired at FinancePanel.tsx:107",
-      "server_enforced": false,
-      "client_side_logic": "Runs for every month the user navigates to in the browser; only for own recurring; never edits existing budgets; with two recurrings in the same category only the first one's amount is used (seen set, financeCalc.ts:301-310). API-created recurring never produces budgets unless the browser is opened.",
+      "current_impl": "API-016: private.finance_materialize_core (supabase/migrations/20261008120000_api016_finance_recurring_server.sql), from the pg_cron job finance-recurring-materialize and public.finance_materialize_recurring on finance load (current and next month) and, with p_month, for the month viewed on screen (src/modules/finance/useViewedMonthBudgets.ts; at most 12 months from the current São Paulo month, never before the recurring's created_at month, never outside an installment plan's installments, never creating entries). Inside the current/next window the budget follows the bill months (the São Paulo created_at month only bounds months before the window); an installment plan with no entries yet counts its first installment in the window's first month. The app decides 'outside the window' by the month materialized in state (useFinanceData.materializedYM) and re-materializes without p_month when the month turns with Finance open. In a workspace the oldest recurring among all members wins, also in the per-user RPC. useAutoRecurringBudgets.ts was removed.",
+      "server_enforced": true,
+      "client_side_logic": "None. Before API-016: ran for every month the user navigated to in the browser; only for own recurring; never edited existing budgets; with two recurrings in the same category only the first one's amount was used.",
       "risk": "money",
       "sources": [
         "Finance core"
       ],
-      "target": "API-016"
+      "target": "never",
+      "never_reason": "cron e rotinas internas do servidor"
     },
     {
       "id": "finance.budgets.create",
@@ -2094,14 +2094,15 @@
       "id": "finance.recurring.entries.materialize",
       "kind": "write",
       "description": "Create pending entries for the current and next month for each active own recurring (respecting total_installments).",
-      "current_impl": "useFinanceData.ts:18-61 ensureRecurringEntries (upsert onConflict recurring_id,due_date ignoreDuplicates) called from load() :419",
-      "server_enforced": false,
-      "client_side_logic": "ONLY in the browser on finance load, browser-local timezone, offsets 0..1 month, no backfill of months the app was not opened (the backfill helper financeCalc.ts:251-276 missingRecurringDueDates is unused). No cron/trigger exists (schema-snapshot cron = site-backup-auto, cron-history-prune).",
+      "current_impl": "API-016: private.finance_materialize_core (supabase/migrations/20261008120000_api016_finance_recurring_server.sql), from the pg_cron job finance-recurring-materialize (00:05 America/Sao_Paulo) and public.finance_materialize_recurring on finance load and after saving a recurring. ensureRecurringEntries was removed.",
+      "server_enforced": true,
+      "client_side_logic": "None. Before API-016: only in the browser on finance load, browser-local timezone, offsets 0..1 month.",
       "risk": "money (bills silently missing)",
       "sources": [
         "Finance core"
       ],
-      "target": "API-016"
+      "target": "never",
+      "never_reason": "cron e rotinas internas do servidor"
     },
     {
       "id": "finance.recurring.entries.skip",
@@ -2457,19 +2458,6 @@
       "target": "API-052"
     },
     {
-      "id": "finance.store.purchases.generate_expense",
-      "kind": "write",
-      "description": "After the fact, create the linked expense in finance_transactions for a non-quoting purchase that has an account and no tx yet.",
-      "current_impl": "useFinanceStore.generatePurchaseExpense :263-279 (insert finance_transactions, then update purchase.transaction_id)",
-      "server_enforced": false,
-      "client_side_logic": "Guards (client-only): no existing tx, account set, status != quoting. Amount = purchaseTotal.",
-      "risk": "money",
-      "sources": [
-        "Finance: Store"
-      ],
-      "target": "API-052"
-    },
-    {
       "id": "finance.store.purchases.list",
       "kind": "read",
       "description": "Purchase funnel board (quoting/purchased/received), sortable by date or total, with product and supplier names.",
@@ -2483,10 +2471,23 @@
       "target": "API-048"
     },
     {
+      "id": "finance.store.purchases.mark_purchased",
+      "kind": "write",
+      "description": "quoting -> purchased from the kanban confirmation, optionally creating the linked expense in finance_transactions in the same action.",
+      "current_impl": "useFinanceStore.markPurchased (insert finance_transactions from the target purchase, then ONE update of finance_store_purchases { status: purchased, transaction_id }; on refusal deletes the just-created expense)",
+      "server_enforced": false,
+      "client_side_logic": "Guards (client-only): account set, no existing tx, purchaseTotal > 0 (finance_transactions CHECK amount > 0). Refused expense: nothing written. Refused purchase: expense deleted, modal stays open.",
+      "risk": "money",
+      "sources": [
+        "Finance: Store"
+      ],
+      "target": "API-052"
+    },
+    {
       "id": "finance.store.purchases.set_status",
       "kind": "write",
       "description": "Move a purchase card across the funnel. quoting -> purchased opens a confirmation that can generate the expense in the same step. Other moves are direct.",
-      "current_impl": "PurchasesBoard.tsx:118-125 and ExpenseConfirmModal :36-52 -> updatePurchase(status) then generatePurchaseExpense",
+      "current_impl": "PurchasesBoard.tsx requestStatus and ExpenseConfirmModal -> useFinanceStore.markPurchased (quoting -> purchased, expense and link in one action); other moves -> updatePurchase(status), whose real ok goes back to the kanban (false reverts the card).",
       "server_enforced": false,
       "client_side_logic": "Only quoting->purchased asks for confirmation. quoting->received skips the confirmation and the expense offer. Moving to quoting deletes the tx (updatePurchase).",
       "risk": "money",
@@ -3342,7 +3343,7 @@
       "id": "projects.boards.stats",
       "kind": "read",
       "description": "Overview view: totals, overdue/due buckets, counts by column/priority/assignee, cards created per week.",
-      "current_impl": "src/modules/projects/views/OverviewView.tsx using src/lib/projectStats.ts:34-130 over loaded cards",
+      "current_impl": "src/modules/projects/views/OverviewView.tsx using src/lib/projectStats.ts:23-40 (wrappers: device day as today, createdDayLocal) -> supabase/functions/_domain/projectStats.ts:40-141 (today required; createdPerWeek takes the creation day via dayOf) over loaded cards",
       "server_enforced": false,
       "client_side_logic": "All aggregation computed client-side from the card list.",
       "risk": "none",
@@ -3420,7 +3421,7 @@
       "id": "projects.cards.auto_schedule",
       "kind": "write",
       "description": "'Gerar cronograma': fill missing dates (or replan all open cards to a target deadline) per column in priority order, chaining depends_on.",
-      "current_impl": "src/lib/autoSchedule.ts:66-146 buildAutoSchedule + rpc schedule_project_cards (useBoardActions.ts:386-409; data/projects.ts:79-84)",
+      "current_impl": "supabase/functions/_domain/autoSchedule.ts:104-185 buildAutoSchedule (today required) via the src/lib/autoSchedule.ts:15-22 wrapper (device day) + rpc schedule_project_cards (useBoardActions.ts:227-251; data/projects.ts:171-176)",
       "server_enforced": false,
       "client_side_logic": "Whole algorithm is client-side; RPC just writes the patches; returns overflowDays.",
       "risk": "overwrites dates in replan mode",
@@ -3524,7 +3525,7 @@
       "id": "projects.cards.export_markdown",
       "kind": "read",
       "description": "Copy a card as Markdown (title, meta, description, checklist, links, attachment names).",
-      "current_impl": "src/lib/cardMarkdown.ts:44-101 used in CardModal.tsx:399-414 and views/ListView.tsx:30-35,82",
+      "current_impl": "supabase/functions/_domain/cardMarkdown.ts:54-111 (labels via t: the app passes its own, the API passes tPtBR from _domain/i18n.pt-BR.ts), re-exported by src/lib/cardMarkdown.ts; used in card/CardModal.tsx:312-327 and views/ListView.tsx:30-37,82",
       "server_enforced": false,
       "client_side_logic": "Formatting client-side with i18n labels; CLI has its own formatter src/lib/cardQueue.ts:180-200.",
       "risk": "none",
@@ -3577,7 +3578,7 @@
       "id": "projects.cards.links.manage",
       "kind": "write",
       "description": "Add/remove external web links {url,title}.",
-      "current_impl": "CardSections.tsx:289-360; normalizeLinkUrl src/lib/cardLinks.ts:14-37",
+      "current_impl": "card/CardSections.tsx:299-370 (CardLinksSection); normalizeLinkUrl supabase/functions/_domain/cardLinks.ts:15-38 (re-exported by src/lib/cardLinks.ts)",
       "server_enforced": true,
       "client_side_logic": "URL normalization (adds https://) client-side; DB CHECK enforces http(s) only.",
       "risk": "none",
@@ -3682,7 +3683,7 @@
       "id": "projects.cards.search",
       "kind": "read",
       "description": "Filter cards by text search, priorities, due preset (overdue/today/this week/no date/has date), labels, assignee, column, completion.",
-      "current_impl": "src/modules/projects/CardFilterBar.tsx; src/lib/projectCardFilters.ts:76-118 (persisted per board in localStorage)",
+      "current_impl": "src/modules/projects/CardFilterBar.tsx; src/lib/projectCardFilters.ts:78-104 (persisted per board in localStorage; overdue rule in supabase/functions/_domain/isoDate.ts, labels in _domain/cardLabels.ts)",
       "server_enforced": false,
       "client_side_logic": "Entirely client-side over loaded cards; API has no text/due/assignee filtering.",
       "risk": "none",
@@ -3812,7 +3813,7 @@
       "id": "projects.import.backlog_markdown",
       "kind": "write",
       "description": "Import a backlog .md ('### CARD ABC-123 — Title', metadata table/list, '**Subtarefas Kanban:**' checklist, '## Tópico:' sections) into cards, optionally creating one column per topic and skipping duplicates by external ID.",
-      "current_impl": "src/modules/projects/ImportCardsModal.tsx:130-175; parser src/lib/backlogMarkdownParser.ts:224-267; src/lib/importProjectCards.ts:29-173 (project_columns.insert, project_cards.insert in batches of 20); CLI scripts/import-backlog-cards.ts (email/password or service role + --user-id)",
+      "current_impl": "src/modules/projects/ImportCardsModal.tsx:130-175; parser supabase/functions/_domain/backlogMarkdownParser.ts:235-278 (newId injectable); pure plan supabase/functions/_domain/importPlan.ts:80-191 (planTopicColumns, planCardRows, importIssueText, backlogIssueText); IO src/lib/importProjectCards.ts:19-100 (project_columns.insert, project_cards.insert in batches of 20); CLI scripts/import-backlog-cards.ts (email/password or service role + --user-id)",
       "server_enforced": false,
       "client_side_logic": "Parsing, priority mapping P0-P3, labels (topic + 'esforço:x'), description assembly, topic->column planning (normalized name match), duplicate detection, sort_order, batching — all client-side; non-atomic (partial imports possible).",
       "risk": "bulk write",

@@ -1,0 +1,18 @@
+{
+  "content": [
+    {
+      "type": "table",
+      "content": {
+        "type": "tableContent",
+        "rows": [
+          {
+            "cells": []
+          }
+        ]
+      }
+    }
+  ],
+  "path": "/0/content/rows/0",
+  "keyword": "type",
+  "breaks": "create"
+}

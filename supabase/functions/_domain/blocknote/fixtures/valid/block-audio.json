@@ -1,0 +1,14 @@
+[
+  {
+    "id": "d826bc85-6ecd-4e73-a411-3fc6340751e4",
+    "type": "audio",
+    "props": {
+      "backgroundColor": "default",
+      "name": "audio.mp3",
+      "url": "https://exemplo.com/audio.mp3",
+      "caption": "",
+      "showPreview": true
+    },
+    "children": []
+  }
+]

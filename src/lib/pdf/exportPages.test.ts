@@ -7,7 +7,7 @@ import type { Page } from '../../types'
 
 const state = vi.hoisted(() => {
   const rows: Record<string, Record<string, unknown>[]> = {}
-  return { excalidrawLoaded: false, queries: [] as { table: string; ids: string[] }[], rows }
+  return { excalidrawLoaded: false, queries: [] as { table: string; ids: string[] }[], rows, texts: [] as string[], saved: 0 }
 })
 
 vi.mock('@excalidraw/excalidraw', () => {
@@ -18,8 +18,15 @@ vi.mock('@excalidraw/excalidraw', () => {
 vi.mock('jspdf', () => ({
   jsPDF: class {
     splitTextToSize(text: string) { return [text] }
-    addImage() {} addPage() {} line() {} rect() {} save() {}
-    setDrawColor() {} setFillColor() {} setFont() {} setFontSize() {} setTextColor() {} text() {}
+    addImage() {} addPage() {} line() {} rect() {}
+    save() { state.saved++ }
+    setDrawColor() {} setFillColor() {} setFont() {} setFontSize() {} setTextColor() {}
+    // API-020: o texto 'BOOM' simula o jsPDF lançando no meio de uma página.
+    text(lines: string | string[]) {
+      const joined = ([] as string[]).concat(lines).join('\n')
+      if (joined.includes('BOOM')) throw new Error('Invalid argument passed to jsPDF.hpf')
+      state.texts.push(joined)
+    }
   },
 }))
 
@@ -51,6 +58,8 @@ const page = (id: string, type: Page['type']) => ({ id, type, title: id, updated
 beforeEach(() => {
   state.queries = []
   state.rows = {}
+  state.texts = []
+  state.saved = 0
 })
 
 describe('groupByPage', () => {
@@ -102,6 +111,22 @@ describe('exportPagesToPdf', () => {
     // o que importa aqui é que o Excalidraw só foi pedido nesse caso.
     await exportPagesToPdf([page('d1', 'drawing')], 'y.pdf', getT('pt-BR')).catch(() => {})
     expect(state.excalidrawLoaded).toBe(true)
+  })
+})
+
+describe('exportPagesToPdf: try por página (API-020)', () => {
+  it('uma página que derruba o jsPDF vira aviso, e as outras saem', async () => {
+    state.rows = { note_contents: [
+      { page_id: 'ruim', content: [{ type: 'paragraph', content: 'BOOM' }, { type: 'paragraph', content: 'depois' }] },
+      { page_id: 'boa', content: [{ type: 'paragraph', content: [{ type: 'link', href: 'https://x', content: 'texto do link' }] }] },
+    ] }
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await exportPagesToPdf([page('ruim', 'note'), page('boa', 'note')], 'z.pdf', getT('pt-BR'))
+    error.mockRestore()
+    expect(state.saved).toBe(1)
+    expect(state.texts).toContain(pdfSafe(getT('pt-BR')('pdf_page_unavailable')))
+    expect(state.texts).not.toContain('depois')
+    expect(state.texts).toEqual(expect.arrayContaining(['boa', 'texto do link']))
   })
 })
 

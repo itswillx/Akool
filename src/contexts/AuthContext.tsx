@@ -3,7 +3,7 @@ import { LOCAL_KEYS, SESSION_KEYS } from '../lib/localKeys'
 import type { ReactNode } from 'react'
 import type { User, AuthChangeEvent } from '@supabase/supabase-js'
 import { supabase, createEphemeralAuthClient, recoveryLinkDetected } from '../lib/supabase'
-import { assuranceFromSession, needsMfaChallenge, passkeyErrorKind, passkeyGetOptions, verifiedFactorId, verifyWithAnyFactor, type PasskeyDevice } from '../lib/mfa'
+import { assuranceFromSession, needsMfaChallenge, passkeyErrorKind, verifyWithAnyFactor } from '../lib/mfa'
 import { localDateKey } from '../lib/localDate'
 import { clearLocalUserData } from '../lib/localData'
 import { getT, toLang } from '../i18n/translations'
@@ -50,11 +50,10 @@ interface AuthContextType {
   mfaPending: boolean
   // Erro 'invalid_code' | 'no_factor' ou a mensagem crua do Supabase.
   verifyMfa: (code: string) => Promise<{ error: string | null }>
-  // A conta tem passkey de MFA: a tela do código oferece entrar com o celular.
-  hasPasskey: boolean
-  // Erro 'no_factor', um PasskeyErrorKind ('cancelled', 'wrong_domain'…) ou a
-  // mensagem crua do Supabase.
-  verifyMfaPasskey: (device: PasskeyDevice) => Promise<{ error: string | null }>
+  // "Entrar com o celular" na tela do código: passkey de login, que abre uma
+  // sessão nova e dispensa o código. Erro: um PasskeyErrorKind ('cancelled',
+  // 'not_found'…) ou a mensagem crua do Supabase.
+  signInWithPasskey: () => Promise<{ error: string | null }>
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signUp: (email: string, password: string, inviteCode: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
@@ -122,9 +121,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => recoveryLinkDetected || sessionStorage.getItem(RECOVERY_FLAG) === '1'
   )
   const [mfaPending, setMfaPending] = useState(false)
-  // Da sessão de cada evento, como o mfaPending: o objeto `user` fica congelado
-  // nos eventos da mesma conta e teria os fatores do momento do login.
-  const [passkeyFactorId, setPasskeyFactorId] = useState<string | null>(null)
 
   const loadProfile = useCallback(async (userId: string) => {
     // SEC-013: role, is_active, last_login_date e invite_slots_remaining não são
@@ -158,7 +154,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setMfaPending(needsMfaChallenge(assuranceFromSession(session)))
-      setPasskeyFactorId(verifiedFactorId(session?.user?.factors, 'webauthn'))
       setUser(session?.user ?? null)
       currentUserIdRef.current = session?.user?.id ?? null
       if (session?.user) {
@@ -181,7 +176,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Síncrono (lê o JWT e os fatores da própria sessão): chamar a API do
       // supabase-js aqui dentro pode travar no lock da sessão.
       setMfaPending(needsMfaChallenge(assuranceFromSession(session)))
-      setPasskeyFactorId(verifiedFactorId(session?.user?.factors, 'webauthn'))
 
       const nextUser = session?.user ?? null
       // With autoRefreshToken (the default), supabase-js listens to
@@ -353,25 +347,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null }
   }, [])
 
-  // Sem listFactors antes: cada ida à rede afasta a chamada ao navegador do
-  // clique, e o Safari antigo deixa de aceitar a passkey. O desafio vale para
-  // qualquer passkey da conta, então basta um fator.
-  const verifyMfaPasskey = useCallback(async (device: PasskeyDevice): Promise<{ error: string | null }> => {
-    if (!passkeyFactorId) return { error: 'no_factor' }
-    const { error } = await supabase.auth.mfa.webauthn.authenticate({ factorId: passkeyFactorId }, passkeyGetOptions(device))
+  // A passkey de login abre uma sessão nova (amr `passkey`). O SIGNED_IN dela
+  // passa pelo listener; o mfaPending cai aqui também, sem esperar o evento.
+  const signInWithPasskey = useCallback(async (): Promise<{ error: string | null }> => {
+    const { data, error } = await supabase.auth.signInWithPasskey()
     if (error) return { error: passkeyErrorKind(error) ?? error.message }
-    const { data: { session: upgraded } } = await supabase.auth.getSession()
-    setMfaPending(needsMfaChallenge(assuranceFromSession(upgraded)))
+    setMfaPending(needsMfaChallenge(assuranceFromSession(data?.session ?? null)))
     return { error: null }
-  }, [passkeyFactorId])
+  }, [])
 
-  const hasPasskey = passkeyFactorId !== null
   const isAdmin = profile?.role === 'admin'
 
   const value = useMemo<AuthContextType>(() => ({
-    user, profile, isAdmin, loading, justSignedIn, recoveryMode, mfaPending, verifyMfa, hasPasskey, verifyMfaPasskey,
+    user, profile, isAdmin, loading, justSignedIn, recoveryMode, mfaPending, verifyMfa, signInWithPasskey,
     signIn, signUp, signOut, changePassword, sendPasswordReset, completePasswordReset, cancelPasswordReset, updateProfile, refreshProfile,
-  }), [user, profile, isAdmin, loading, justSignedIn, recoveryMode, mfaPending, verifyMfa, hasPasskey, verifyMfaPasskey, signIn, signUp, signOut, changePassword, sendPasswordReset, completePasswordReset, cancelPasswordReset, updateProfile, refreshProfile])
+  }), [user, profile, isAdmin, loading, justSignedIn, recoveryMode, mfaPending, verifyMfa, signInWithPasskey, signIn, signUp, signOut, changePassword, sendPasswordReset, completePasswordReset, cancelPasswordReset, updateProfile, refreshProfile])
 
   return (
     <AuthContext.Provider value={value}>

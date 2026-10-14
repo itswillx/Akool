@@ -338,7 +338,7 @@ Esforço: 9 S, 38 M, 16 L.
 
 **Problema:** Não existe um lugar único que descreva o que a API faz nem uma lista do que o sistema faz: a cards-api é um switch de 17 ações sem schema, e sem um registro com invariantes e um manifesto das operações do sistema não dá para gerar MCP, REST e OpenAPI do mesmo jeito nem provar que a API cobre todas as funcionalidades.
 
-**Contexto:** Lote 03. Depende de: API-001, API-005. Aceite: registry.test.ts falha com nome MCP de 49 caracteres, com leitura sem readOnlyHint e com requires de subseção inexistente; coverage.ts lista as 367 operações e o teste mostra quantas estão pendentes por card. Arquitetura: docs/api-arquitetura.md.
+**Contexto:** Lote 03. Depende de: API-001, API-005. Aceite: registry.test.ts falha com nome MCP de 49 caracteres, com leitura sem readOnlyHint e com requires de subseção inexistente; coverage.ts lista as 357 operações e o teste mostra quantas estão pendentes por card. Arquitetura: docs/api-arquitetura.md.
 
 **Subtarefas Kanban:**
 
@@ -351,7 +351,7 @@ Esforço: 9 S, 38 M, 16 L.
 - [ ] Invariantes gerais: ordem determinística; descrição até 300 caracteres, sem frases dirigidas ao modelo
 - [ ] Teste: toda ação tem exemplo de entrada válido no schema e exemplo de saída válido no outputSchema
 - [ ] Ações meta.token.obter e meta.acoes.listar, com definição e handler puro
-- [ ] _api/coverage.ts com as 367 operações da avaliação, cada uma → action id, never:<motivo> ou pending:API-0NN; se o understand.json não estiver disponível, reconstruir por domínio a partir de docs/api-arquitetura.md §14
+- [ ] _api/coverage.ts com as 357 operações da avaliação, cada uma → action id, never:<motivo> ou pending:API-0NN; se o understand.json não estiver disponível, reconstruir por domínio a partir de docs/api-arquitetura.md §14
 - [ ] coverage.test.ts falha com action id inexistente e imprime o total pendente por card
 - [ ] Fechamento: npm test, npm run lint:ci, npx tsc -b e npm run build
 - [ ] Você: Anexar ao card a lista de operações da avaliação (understand.json), se o agente pedir
@@ -2327,7 +2327,7 @@ Esforço: 9 S, 38 M, 16 L.
 
 - [ ] Conferir que API-026, API-031, API-034, API-041, API-044, API-045, API-049 e API-052 estão em Concluído; se não, release e avisar o usuário
 - [ ] Conferir que API-053 a API-057 e API-059 a API-062 estão em Concluído; se não, release e avisar o usuário
-- [ ] _api/coverage.ts sem nenhum pending: cada uma das 367 operações virou ação ou never com motivo
+- [ ] _api/coverage.ts sem nenhum pending: cada uma das 357 operações virou ação ou never com motivo
 - [ ] Matriz E2E completa no staging cobrindo 100% das ações do registro
 - [ ] Drift de produção zerado: migrations, papéis e functions publicadas iguais ao repo, com a cards-api fora
 - [ ] get_advisors de segurança e performance em produção, sem alerta novo
@@ -2337,5 +2337,101 @@ Esforço: 9 S, 38 M, 16 L.
 - [ ] Fechamento: npm test, npm run lint:ci, npx tsc -b e npm run build
 - [ ] Você: Executar o checklist de produção com o Claude Code
 - [ ] Você: Revogar os tokens de teste ao final
+
+---
+
+## Tópico: Finanças
+
+---
+
+### CARD API-064 — Sair do workspace leva as linhas da Loja e fornecedores
+
+| Campo          | Valor |
+| -------------- | ----- |
+| **ID**         | API-064 |
+| **Prioridade** | P1 |
+| **Esforço**    | M |
+| **Labels**     | api-v1, finanças, loja, workspace, supabase, privacidade |
+| **Arquivos**   | `supabase/migrations/` (nova), `public.leave_workspace`, `public.remove_workspace_member`, `supabase/checks/api028-store-sales.sql`, `docs/matriz-rls.md` |
+| **Depende de** | API-028 |
+
+**Problema:** Quem sai do workspace (leave_workspace) ou é removido (remove_workspace_member) deixa no workspace as linhas da Loja e os fornecedores: produtos, compras, vendas, itens, clientes e fornecedores continuam visíveis e editáveis para os outros membros. Clientes são dados de terceiros. Hoje só as transações de quem sai viram privadas, inclusive a receita que ele lançou na venda de outra pessoa do workspace; a dona passa a ver a venda sem a receita, e mudar o dinheiro, cancelar ou excluir dá 42501 até quem lançou apagar a receita em Transações.
+
+**Contexto:**
+- Levantado na avaliação do API-028 (lote 06, 12/10/2026). Detalhes em docs/api-arquitetura.md, §1.5 e Apêndice B (Loja).
+- O UPDATE de `workspace_id` da Loja vai na ordem: primeiro as vendas de quem sai, depois só os itens dele nelas (`where user_id = quem sai`). Com o `auth.uid()` de quem sai, o ws_guard recusa realocar a linha de outra pessoa (42501).
+- O item de outra pessoa na venda de quem sai fica com o workspace antigo e segue a venda (policies do API-028): os membros deixam de vê-lo, e o autor só o lê.
+- O item de quem sai que está na venda de outra pessoa fica no workspace da venda (o gatilho do item recusa tirá-lo, 22023).
+- Decidir: manter no workspace a receita que quem sai lançou na venda de outra pessoa, ou desvinculá-la no mesmo passo (junto com o API-065).
+- Aceite: depois de sair, nenhum membro restante lê cliente, fornecedor, produto, compra ou venda de quem saiu; as vendas da dona continuam com os itens e a receita conforme a decisão; o harness do API-028 cobre os dois caminhos (sair e ser removido).
+
+**Subtarefas Kanban:**
+
+- [ ] Conferir que API-028 está em Concluído; se não, release e avisar o usuário
+- [ ] Decidir o destino da receita lançada na venda de outra pessoa (com o API-065)
+- [ ] Migration: leave_workspace e remove_workspace_member levam as 6 tabelas da Loja e fornecedores, na ordem vendas → itens de quem sai
+- [ ] Harness: sair e ser removido, com venda de outra pessoa e item de outra pessoa na venda de quem sai
+- [ ] Ensaio ROLLBACK no staging e docs/matriz-rls.md
+- [ ] Produção: apply_migration com o mesmo nome só após confirmação do usuário; depois npm run drift -- --write
+- [ ] Fechamento: npm test, npm run lint:ci, npx tsc -b e npm run build
+- [ ] Você: Aprovar a migration em produção
+
+---
+
+### CARD API-065 — remove_workspace_member falha para membro com linhas financeiras
+
+| Campo          | Valor |
+| -------------- | ----- |
+| **ID**         | API-065 |
+| **Prioridade** | P2 |
+| **Esforço**    | M |
+| **Labels**     | api-v1, finanças, workspace, supabase, rls |
+| **Arquivos**   | `supabase/migrations/` (nova), `public.remove_workspace_member`, `public.finance_guard_workspace`, `supabase/checks/api028-store-sales.sql` |
+
+**Problema:** A dona não consegue remover um membro que tenha qualquer linha financeira no workspace. O `remove_workspace_member` (SECURITY DEFINER, baseline) anula, com o `auth.uid()` da dona, o `workspace_id` das linhas financeiras do membro removido: transações, orçamentos, contas, categorias, metas e recorrentes. O `finance_guard_workspace` (API-006) recusa trocar o workspace de uma linha de outra pessoa ("Somente o autor pode realocar o lancamento", 42501). Isso vale inclusive para a receita que o membro lançou numa venda da Loja da dona. No app, "Remover membro" no WorkspaceModal dá erro. Reproduzido no staging (lote 06, 2ª revisão, achado #9).
+
+**Contexto:**
+- Proposta da revisão: no `remove_workspace_member`, primeiro apagar a filiação, depois anular o `workspace_id` das linhas.
+- No `finance_guard_workspace`, liberar só a transição em que valem todas as condições: `new.workspace_id is null`; `old.workspace_id is not null`; `new.user_id = old.user_id`; o autor (`old.user_id`) já não é membro de `old.workspace_id`; `auth.uid()` é a dona de `old.workspace_id`.
+- Sem GUC: nenhum cliente usa a exceção para mexer em linha de membro ativo.
+- Decidir, junto com o API-064, o que acontece com a receita que o membro lançou na venda da dona: tirar do workspace ou manter.
+- Aceite: o caso "D tenta remover F, que lançou a receita da venda de D no W3" da seção 8b do harness do API-028, que hoje espera o 42501, passa a esperar a remoção (F fora do W3, receita conforme a decisão).
+- Aceite: um membro ativo continua sem conseguir realocar linha de outra pessoa.
+
+**Subtarefas Kanban:**
+
+- [ ] Migration nova com o `remove_workspace_member` na ordem nova e a exceção estreita no `finance_guard_workspace`
+- [ ] Decidir o destino da receita lançada na venda da dona (com o API-064)
+- [ ] Inverter o caso da seção 8b do harness do API-028 e cobrir as 6 tabelas
+- [ ] Teste do WorkspaceModal removendo membro com lançamentos
+- [ ] Ensaiar no staging (DO desfeito) e registrar em docs/matriz-rls.md
+- [ ] Produção: apply_migration com o mesmo nome só após confirmação do usuário; depois npm run drift -- --write
+- [ ] Você: Aprovar a migration em produção
+
+---
+
+### CARD API-066 — Capital parado de Finanças conta cotação
+
+| Campo          | Valor |
+| -------------- | ----- |
+| **ID**         | API-066 |
+| **Prioridade** | P2 |
+| **Esforço**    | S |
+| **Labels**     | api-v1, finanças, loja, frontend |
+| **Arquivos**   | `src/modules/finance/useAllocationSummary.ts`, `src/lib/financeStoreCalc.ts`, `supabase/functions/_domain/financeStoreCalc.ts` |
+
+**Problema:** O capital parado da Visão geral de Finanças (useAllocationSummary.ts:33) lê as compras sem `status`, então a compra em cotação conta como dinheiro gasto em estoque. A Loja já ignora cotação no estoque e no custo médio (financeStoreCalc); só a Visão geral diverge, e o número muda quando há compra em cotação.
+
+**Contexto:**
+- Levantado na avaliação do API-028 (lote 06, 12/10/2026).
+- Conserto: pôr `status` no select de `finance_store_purchases` do useAllocationSummary, para o `stockCapital` aplicar a mesma regra da Loja.
+- Aceite: com uma compra em cotação, o capital parado da Visão geral é igual ao valor do estoque na Loja; teste do hook com cotação e comprada.
+
+**Subtarefas Kanban:**
+
+- [ ] Pôr `status` no select de compras do useAllocationSummary
+- [ ] Teste do hook: compra em cotação não conta no capital parado
+- [ ] Fechamento: npm test, npm run lint:ci, npx tsc -b e npm run build
+- [ ] Você: Conferir a Visão geral no staging com uma compra em cotação
 
 ---

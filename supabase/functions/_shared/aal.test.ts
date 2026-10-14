@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { aalFromJwt, countVerifiedFactors, mfaRequired, needsSecondFactor } from "./aal.ts";
+import { aalFromJwt, countVerifiedFactors, mfaRequired, needsSecondFactor, passkeySignInFromJwt } from "./aal.ts";
 
-// SEC-004 (etapa B): a decisão do segundo fator nas functions de admin.
+// SEC-004 (etapa B): a decisão do segundo fator nas functions de admin. A
+// sessão aberta com passkey de login (amr `passkey`) vale no lugar do código.
 
 const jwt = (payload: Record<string, unknown>) => {
   const b64 = (s: string) => Buffer.from(s).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -22,6 +23,19 @@ describe("aalFromJwt", () => {
   });
 });
 
+describe("passkeySignInFromJwt", () => {
+  it("reconhece o amr da passkey de login", () => {
+    expect(passkeySignInFromJwt(jwt({ aal: "aal1", amr: [{ method: "passkey", timestamp: 1 }] }))).toBe(true);
+  });
+  it("senha, código, amr estranho ou token inválido: não é passkey", () => {
+    expect(passkeySignInFromJwt(jwt({ aal: "aal2", amr: [{ method: "totp" }, { method: "password" }] }))).toBe(false);
+    expect(passkeySignInFromJwt(jwt({ aal: "aal1", amr: "passkey" }))).toBe(false);
+    expect(passkeySignInFromJwt(jwt({ aal: "aal1", amr: [null, "passkey"] }))).toBe(false);
+    expect(passkeySignInFromJwt("abc")).toBe(false);
+    expect(passkeySignInFromJwt(null)).toBe(false);
+  });
+});
+
 describe("needsSecondFactor", () => {
   it("AAL1 com fator verificado exige o código", () => {
     expect(needsSecondFactor("aal1", 1)).toBe(true);
@@ -29,6 +43,9 @@ describe("needsSecondFactor", () => {
   });
   it("AAL2 não exige", () => {
     expect(needsSecondFactor("aal2", 1)).toBe(false);
+  });
+  it("sessão aberta com passkey de login não exige", () => {
+    expect(needsSecondFactor("aal1", 1, true)).toBe(false);
   });
   it("sem fator verificado não exige (o admin não fica trancado antes de ativar o MFA)", () => {
     expect(needsSecondFactor("aal1", 0)).toBe(false);
@@ -49,6 +66,9 @@ describe("mfaRequired", () => {
   });
   it("AAL1 com fator verificado: recusa", async () => {
     expect(await mfaRequired(client([{ status: "verified" }]), "u1", jwt({ aal: "aal1" }))).toBe(true);
+  });
+  it("passkey de login com fator verificado: deixa passar", async () => {
+    expect(await mfaRequired(client([{ status: "verified" }]), "u1", jwt({ aal: "aal1", amr: [{ method: "passkey" }] }))).toBe(false);
   });
   it("AAL2, sem fator, ou resposta vazia: deixa passar", async () => {
     expect(await mfaRequired(client([{ status: "verified" }]), "u1", jwt({ aal: "aal2" }))).toBe(false);

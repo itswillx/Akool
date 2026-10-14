@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useId, useState } from 'react'
 import { localeOf, type TranslationKey } from '../i18n/translations'
 import { Fingerprint, Plus, ShieldCheck, ShieldOff } from 'lucide-react'
-import type { Factor } from '@supabase/supabase-js'
+import type { Factor, PasskeyListItem } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import {
-  hasCoarsePointer, isInvalidTotpError, isTotpCode, PASSKEY_ERROR_KEYS, passkeyCreateOptions, passkeyDevice, passkeyErrorKind,
-  passkeyFriendlyName, supportsPasskeys, TOTP_ISSUER, totpFriendlyName, type MfaError,
+  hasCoarsePointer, isInvalidTotpError, isTotpCode, PASSKEY_ERROR_KEYS, passkeyDevice, passkeyErrorKind, supportsPasskeys,
+  TOTP_ISSUER, totpFriendlyName, type MfaError,
 } from '../lib/mfa'
 import { useLanguage } from '../i18n/LanguageContext'
 import { MFA_PASSKEY_ENABLED } from '../lib/env'
@@ -17,9 +17,9 @@ import { FeedbackBanner } from './settings/settingsUi'
 // SEC-004: ativação da verificação em duas etapas (TOTP). O login passa a
 // pedir o código (MfaChallengePage) para quem tiver um fator verificado.
 // Cada aparelho é um fator: com o MFA ativo dá para adicionar outro (celular
-// novo, segundo app) e remover os antigos. A passkey é um fator a mais, para
-// entrar com o celular em vez do código; só existe junto do app autenticador,
-// para o código continuar valendo.
+// novo, segundo app) e remover os antigos. A passkey de login ("Entrar com o
+// celular" na tela do código) dispensa o código; só é oferecida a quem tem o app
+// autenticador, porque é na tela do código que ela aparece.
 
 type ListFactorsResult = Awaited<ReturnType<typeof supabase.auth.mfa.listFactors>>
 
@@ -70,7 +70,7 @@ export default function MfaSection() {
   const { t, lang } = useLanguage()
   const isMobile = useIsMobile()
   const [factors, setFactors] = useState<Factor[]>([])
-  const [passkeys, setPasskeys] = useState<Factor[]>([])
+  const [passkeys, setPasskeys] = useState<PasskeyListItem[]>([])
   // Até a lista chegar, nada de "Desativada" nem do botão de ativar piscando
   // para quem já tem MFA.
   const [loaded, setLoaded] = useState(false)
@@ -84,7 +84,6 @@ export default function MfaSection() {
   const [coarsePointer] = useState(hasCoarsePointer)
   const rowIdBase = useId()
   const passkeyTitleId = useId()
-  const lockHintId = useId()
   const device = passkeyDevice(isMobile, coarsePointer)
 
   // Quem já tem MFA só mexe nos aparelhos com a sessão em AAL2 (código digitado).
@@ -98,18 +97,23 @@ export default function MfaSection() {
       setMessage({ kind: 'error', text: errorText(error) })
       return
     }
-    // `totp` e `webauthn` trazem só os fatores já verificados.
+    // `totp` traz só os fatores já verificados.
     setFactors(data?.totp ?? [])
-    setPasskeys(data?.webauthn ?? [])
   }, [errorText])
 
   const reload = useCallback(async () => { applyFactors(await supabase.auth.mfa.listFactors()) }, [applyFactors])
+  const reloadPasskeys = useCallback(async () => {
+    const { data } = await supabase.auth.passkey.list()
+    setPasskeys(data ?? [])
+  }, [])
 
   useEffect(() => {
     let cancelled = false
     void supabase.auth.mfa.listFactors().then(result => { if (!cancelled) applyFactors(result) })
+    // Passkeys de login só com a flag ligada e navegador compatível.
+    if (webauthn) void supabase.auth.passkey.list().then(({ data }) => { if (!cancelled) setPasskeys(data ?? []) })
     return () => { cancelled = true }
-  }, [applyFactors])
+  }, [applyFactors, webauthn])
 
   const startEnrollment = async () => {
     setBusy(true)
@@ -171,18 +175,9 @@ export default function MfaSection() {
     setBusy(true)
     setPasskeyPending(true)
     setMessage(null)
-    // Nada de rede antes do register(): o navegador só abre a passkey perto do clique.
-    const { error } = await supabase.auth.mfa.webauthn.register(
-      { friendlyName: passkeyFriendlyName(new Date()) },
-      passkeyCreateOptions(device),
-    )
-    if (error) {
-      // A tentativa deixa um fator webauthn `unverified`, que conta no limite de fatores.
-      const { data: current } = await supabase.auth.mfa.listFactors()
-      for (const stale of (current?.all ?? []).filter(f => f.factor_type === 'webauthn' && f.status === 'unverified')) {
-        await supabase.auth.mfa.unenroll({ factorId: stale.id })
-      }
-    }
+    // Nada de rede antes: o navegador só abre a passkey perto do clique. O
+    // Supabase dá à passkey o nome do provedor (Senhas do iCloud, Google…).
+    const { error } = await supabase.auth.registerPasskey()
     setBusy(false)
     setPasskeyPending(false)
     if (error) {
@@ -191,7 +186,21 @@ export default function MfaSection() {
       return
     }
     setMessage({ kind: 'ok', text: t('mfa_passkey_added_ok') })
-    await reload()
+    await reloadPasskeys()
+  }
+
+  const removePasskey = async (passkeyId: string) => {
+    setConfirmRemove(null)
+    setBusy(true)
+    setMessage(null)
+    const { error } = await supabase.auth.passkey.delete({ passkeyId })
+    setBusy(false)
+    if (error) {
+      setMessage({ kind: 'error', text: errorText(error) })
+      return
+    }
+    setMessage({ kind: 'ok', text: t('mfa_passkey_removed_ok') })
+    await reloadPasskeys()
   }
 
   const removeFactor = async (factorId: string, okKey: TranslationKey) => {
@@ -208,10 +217,8 @@ export default function MfaSection() {
     await reload()
   }
 
-  const enabled = factors.length + passkeys.length > 0
+  const enabled = factors.length > 0
   const several = factors.length > 1
-  // O último app autenticador só sai depois das passkeys: o código sempre fica.
-  const lastTotpLocked = factors.length === 1 && passkeys.length > 0
   const statusColor = enabled ? 'var(--color-success)' : 'var(--color-text-muted)'
   const locale = localeOf(lang)
   const dateTime = (iso: string) => new Date(iso).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
@@ -241,19 +248,18 @@ export default function MfaSection() {
               ? t('mfa_device_row', { n: i + 1, date: dateTime(f.created_at) })
               : t('mfa_factor_added', { date: new Date(f.created_at).toLocaleDateString(locale) })}
             labelId={labelId}
-            describedBy={lastTotpLocked ? `${labelId} ${lockHintId}` : labelId}
+            describedBy={labelId}
             armed={armed}
             buttonText={several
               ? (armed ? t('mfa_remove_device_confirm') : t('mfa_remove_device'))
               : (armed ? t('mfa_remove_confirm') : t('mfa_remove'))}
             busy={busy}
-            blocked={!!enrollment || lastTotpLocked}
+            blocked={!!enrollment}
             onClick={() => armRemove(f.id, several ? 'mfa_device_removed_ok' : 'mfa_removed_ok')}
             onBlur={() => disarm(f.id)}
           />
         )
       })}
-      {lastTotpLocked && <span id={lockHintId} style={HINT_STYLE}>{t('mfa_last_totp_locked')}</span>}
 
       {loaded && !enabled && !enrollment && (
         <button
@@ -308,8 +314,9 @@ export default function MfaSection() {
         </div>
       )}
 
-      {/* Passkeys: as linhas aparecem sempre que houver (para poder remover); o
-          botão de adicionar só com app autenticador e navegador compatível. */}
+      {/* Passkeys de login: as linhas aparecem sempre que houver (para poder
+          remover); o botão de adicionar só com app autenticador, a flag e
+          navegador compatível. */}
       {loaded && (passkeys.length > 0 || (webauthn && factors.length > 0)) && (
         <div role="group" aria-labelledby={passkeyTitleId} style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 6, borderTop: '1px solid var(--color-border)' }}>
           <div id={passkeyTitleId} style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text)', paddingTop: 8 }}>{t('mfa_passkey_title')}</div>
@@ -320,16 +327,18 @@ export default function MfaSection() {
             return (
               <FactorRow
                 key={f.id}
-                label={passkeys.length > 1
-                  ? t('mfa_passkey_row_n', { n: i + 1, date: dateTime(f.created_at) })
-                  : t('mfa_passkey_row', { date: dateTime(f.created_at) })}
+                label={f.friendly_name
+                  ? t('mfa_passkey_row_named', { name: f.friendly_name, date: dateTime(f.created_at) })
+                  : passkeys.length > 1
+                    ? t('mfa_passkey_row_n', { n: i + 1, date: dateTime(f.created_at) })
+                    : t('mfa_passkey_row', { date: dateTime(f.created_at) })}
                 labelId={labelId}
                 describedBy={labelId}
                 armed={armed}
                 buttonText={armed ? t('mfa_remove_device_confirm') : t('mfa_remove_device')}
                 busy={busy}
                 blocked={!!enrollment}
-                onClick={() => armRemove(f.id, 'mfa_passkey_removed_ok')}
+                onClick={() => (armed ? void removePasskey(f.id) : setConfirmRemove(f.id))}
                 onBlur={() => disarm(f.id)}
               />
             )

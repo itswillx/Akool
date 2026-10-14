@@ -35,6 +35,10 @@ export function SalesView({ store, categories, onNew, onEdit }: {
   const [filter, setFilter] = useState<FinanceStoreSaleStatus | 'all'>('all')
   const [confirming, setConfirming] = useState<{ sale: FinanceStoreSale; action: ConfirmAction } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // API-028: a venda cuja última transição o servidor recusou. No celular a
+  // lista é o único caminho e o aviso do topo da aba pode estar fora da tela:
+  // o motivo aparece na própria linha.
+  const [failedId, setFailedId] = useState<string | null>(null)
 
   const selectMode = (next: SalesMode) => {
     setMode(next)
@@ -45,15 +49,21 @@ export function SalesView({ store, categories, onNew, onEdit }: {
 
   const runDirect = async (sale: FinanceStoreSale, status: FinanceStoreSaleStatus) => {
     setBusyId(sale.id)
-    try { await store.setSaleStatus(sale.id, status) } finally { setBusyId(null) }
+    // Um aviso antigo não pode aparecer como o motivo desta recusa.
+    store.clearError()
+    setFailedId(null)
+    try {
+      const ok = await store.setSaleStatus(sale.id, status)
+      if (!ok) setFailedId(sale.id)
+    } finally { setBusyId(null) }
   }
 
   // Avançar e voltar consultam a mesma tabela que o kanban: uma transição só
   // pede confirmação quando mexe em finance_transactions.
   const request = (sale: FinanceStoreSale, to: FinanceStoreSaleStatus) => {
     const action = confirmActionFor(sale.status, to, !!sale.transaction_id)
-    if (action) setConfirming({ sale, action })
-    else runDirect(sale, to)
+    if (action) { store.clearError(); setFailedId(null); setConfirming({ sale, action }) }
+    else void runDirect(sale, to)
   }
 
   const modeToggle = (
@@ -159,7 +169,7 @@ export function SalesView({ store, categories, onNew, onEdit }: {
                 <span style={{ flex: 1 }} />
                 {canIncome && (
                   <button style={{ ...ghostBtnStyle, padding: '5px 10px', fontSize: 12 }} disabled={busy}
-                    onClick={e => { e.stopPropagation(); setConfirming({ sale, action: 'income' }) }}>
+                    onClick={e => { e.stopPropagation(); store.clearError(); setFailedId(null); setConfirming({ sale, action: 'income' }) }}>
                     {t('finance_store_generate_income')}
                   </button>
                 )}
@@ -178,11 +188,14 @@ export function SalesView({ store, categories, onNew, onEdit }: {
                 )}
                 {(sale.status === 'negotiating' || sale.status === 'sold' || sale.status === 'shipped') && (
                   <button style={{ ...ghostBtnStyle, padding: '5px 10px', fontSize: 12, color: 'var(--color-error)' }} disabled={busy}
-                    onClick={e => { e.stopPropagation(); setConfirming({ sale, action: 'cancelled' }) }}>
+                    onClick={e => { e.stopPropagation(); store.clearError(); setFailedId(null); setConfirming({ sale, action: 'cancelled' }) }}>
                     {t('finance_store_cancel_sale')}
                   </button>
                 )}
               </div>
+              {failedId === sale.id && store.error && (
+                <div role="alert" style={{ fontSize: 12, color: 'var(--color-error)', lineHeight: 1.45 }}>{store.error}</div>
+              )}
             </div>
           )
         })}
@@ -190,7 +203,8 @@ export function SalesView({ store, categories, onNew, onEdit }: {
 
       {confirming && (
         <StatusConfirmModal store={store} sale={confirming.sale} action={confirming.action}
-          categories={categories} onClose={() => setConfirming(null)} />
+          categories={categories} onClose={() => setConfirming(null)}
+          onResolved={ok => { if (!ok) setFailedId(confirming.sale.id) }} />
       )}
     </div>
   )

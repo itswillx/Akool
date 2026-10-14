@@ -1,63 +1,84 @@
-import { useState } from 'react'
-import { CalendarClock, Check, ChevronDown, ChevronUp, Link2, Pencil, Plus, RotateCcw, StickyNote, Trash2, X } from 'lucide-react'
-import type { StudyCard, StudyCheckpoint, StudyQuizAnswer } from '../../types'
+import { useId, useState } from 'react'
+import { CalendarClock, ChevronDown, ChevronUp, Link2, Pencil, Plus, StickyNote, Trash2, X } from 'lucide-react'
+import type { StudyCard, StudyCheckpoint } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { MarkdownText } from '@/shared/ui/MarkdownText'
 import { cardProgress } from '../../lib/studyProgress'
-import { isQuizAnswered, isQuizCorrect, isQuizPassed, quizScore } from '../../lib/studyQuiz'
 import { isCardOverdue } from '../../lib/studySchedule'
-import type { StudyCardPatch } from './useStudyTopics'
+import { STUDY_CHECKPOINT_NOTE_MAX, STUDY_CHECKPOINT_TEXT_MAX, STUDY_RESOURCE_TITLE_MAX, STUDY_URL_MAX } from '../../lib/studyLimits'
+import type { StudyCardOps, StudyCardPatch } from './useStudyTopics'
+import type { StudyFieldOutcome } from './studyMutations'
 import { ProgressBar, SectionLabel } from './StudyBits'
-import { formatDateISO } from './studyUi'
+import StudyCardQuiz from './StudyCardQuiz'
+import {
+  createDraftIds, createSaveGate, createSentField, formatDateISO, isUrlTooLong, normalizeUrl, resourceDraftAfterSave,
+  resourceFromInput, useFieldDraft, type ResourceDraft,
+} from './studyUi'
 
 // One study card: inline-editable title/description, tappable checkpoints,
-// resource link chips and per-card progress. All edits go through
-// onUpdate(patch) so the hook keeps optimistic state + persistence in one
-// place. With `embedded` the outer chrome (border/background/padding) is
-// dropped so the card can live inside a roadmap step body.
+// resource link chips and per-card progress. Scalar fields go through
+// onUpdate(patch, base), with `base` = the field when the edit started, so
+// the hook can tell a change made in another tab (API-029). List items go
+// through `ops`, one RPC per item: a point added in another tab survives a
+// toggle here. Each op resolves to false when the server refused, and the
+// "add" fields only clear after a save (API-021): what was saved leaves the
+// start of the field, and whatever was typed meanwhile stays. A field edited
+// over the saved text during the save (select all + paste "Capítulo 10" over
+// "Capítulo 1") stays as the person left it (createSentField). The new
+// item's id is stable per draft (createDraftIds): resending after a failure
+// does not duplicate it. With `embedded` the outer chrome
+// (border/background/padding) is dropped so the card fits a roadmap step body.
 
 interface StudyCardItemProps {
   card: StudyCard
-  onUpdate: (patch: StudyCardPatch) => void
-  onToggleCheckpoint: (checkpointId: string) => void
+  // The promise tells the title draft how the save ended (kept on failure).
+  onUpdate: (patch: StudyCardPatch, base?: StudyCardPatch) => Promise<StudyFieldOutcome> | void
+  ops: StudyCardOps
   onRequestDelete: () => void
   // Checkpoint removal is confirmed by the caller (ConfirmDeleteModal in
   // StudySection), same flow as card/log deletion.
   onRequestRemoveCheckpoint: (checkpoint: StudyCheckpoint) => void
+  // Server without the API-024 RPCs: the lists are read-only.
+  listsDisabled?: boolean
   isMobile?: boolean
   embedded?: boolean
 }
 
-function normalizeUrl(raw: string): string | null {
-  const url = raw.trim()
-  if (!url) return null
-  if (/^https?:\/\//i.test(url)) return url
-  if (/^[\w-]+(\.[\w-]+)+/.test(url)) return `https://${url}`
-  return null
-}
-
-export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRequestDelete, onRequestRemoveCheckpoint, isMobile = false, embedded = false }: StudyCardItemProps) {
+export default function StudyCardItem({
+  card, onUpdate, ops, onRequestDelete, onRequestRemoveCheckpoint, listsDisabled = false, isMobile = false, embedded = false,
+}: StudyCardItemProps) {
   const { t, lang } = useLanguage()
-  const [editingDescription, setEditingDescription] = useState(false)
+  // null = closed; otherwise the description when the edit started.
+  const [descriptionBase, setDescriptionBase] = useState<string | null>(null)
   const [editingDue, setEditingDue] = useState(false)
   const [editingCheckpointId, setEditingCheckpointId] = useState<string | null>(null)
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [pointsExpanded, setPointsExpanded] = useState(true)
   const [newPoint, setNewPoint] = useState('')
-  const [addingResource, setAddingResource] = useState(false)
-  // Collapsed by default: 5-15 questions per card would dominate the layout.
-  const [quizExpanded, setQuizExpanded] = useState(false)
-  const [resourceTitle, setResourceTitle] = useState('')
-  const [resourceUrl, setResourceUrl] = useState('')
+  // Formulário de novo recurso: null quando fechado. Sem maxLength na URL: a
+  // colada maior que o teto ganha aviso (isUrlTooLong) em vez de ser cortada.
+  const [resourceDraft, setResourceDraft] = useState<ResourceDraft | null>(null)
+  const [saveThenClear] = useState(createSaveGate)
+  const [draftIds] = useState(() => createDraftIds())
+  const [fields] = useState(() => ({ point: createSentField(), title: createSentField(), url: createSentField() }))
+  const urlErrorId = useId()
+  const title = useFieldDraft(card.title, (draft, base) => {
+    const value = draft.trim()
+    if (value !== base) return onUpdate({ title: value }, { title: base })
+  })
 
   const progress = cardProgress(card)
   const overdue = isCardOverdue(card)
+  const startEdit = (id: string) => { if (!listsDisabled) setEditingCheckpointId(id) }
+  const startNote = (id: string) => { if (!listsDisabled) setEditingNoteId(id) }
 
   const addCheckpoint = () => {
     const text = newPoint.trim()
-    if (!text) return
-    setNewPoint('')
-    onUpdate({ checkpoints: [...card.checkpoints, { id: crypto.randomUUID(), text, completed: false }] })
+    if (!text || listsDisabled) return
+    const key = `point:${text}`
+    const sent = fields.point.track(newPoint)
+    void saveThenClear(key, () => ops.addCheckpoint(text, draftIds.idFor(key)),
+      () => { setNewPoint(sent.after); draftIds.release(key) }).finally(sent.end)
   }
 
   const updateCheckpointText = (id: string, text: string) => {
@@ -70,55 +91,29 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
       onRequestRemoveCheckpoint(current)
       return
     }
-    onUpdate({ checkpoints: card.checkpoints.map(p => (p.id === id ? { ...p, text: trimmed } : p)) })
+    void ops.editCheckpoint(id, { text: trimmed })
   }
 
-  // Empty note removes the field (undefined is dropped by JSON serialization,
-  // so the JSONB row stays clean).
+  // Empty note removes the field (study_checkpoint_edit drops the key).
   const updateCheckpointNote = (id: string, raw: string) => {
     const note = raw.trim()
     const current = card.checkpoints.find(p => p.id === id)
     if (!current || (current.note ?? '') === note) return
-    onUpdate({ checkpoints: card.checkpoints.map(p => (p.id === id ? { ...p, note: note || undefined } : p)) })
+    void ops.editCheckpoint(id, { note })
   }
 
   const addResource = () => {
-    const url = normalizeUrl(resourceUrl)
-    if (!url) return
-    const title = resourceTitle.trim() || url.replace(/^https?:\/\//i, '')
-    onUpdate({ resources: [...card.resources, { id: crypto.randomUUID(), title, url }] })
-    setResourceTitle('')
-    setResourceUrl('')
-    setAddingResource(false)
+    const sent = resourceDraft
+    const resource = sent && resourceFromInput(sent.title, sent.url)
+    if (!sent || !resource || listsDisabled) return
+    const key = `resource:${resource.title}\n${resource.url}`
+    const marks = { title: fields.title.track(sent.title), url: fields.url.track(sent.url) }
+    void saveThenClear(key, () => ops.addResource({ id: draftIds.idFor(key), ...resource }),
+      () => { setResourceDraft(prev => resourceDraftAfterSave(prev, marks)); draftIds.release(key) })
+      .finally(() => { marks.title.end(); marks.url.end() })
   }
-
-  const removeResource = (id: string) => {
-    onUpdate({ resources: card.resources.filter(r => r.id !== id) })
-  }
-
-  // Answers lock after the first pick (retry = clear), so the score can't
-  // be gamed by flipping until it turns green.
-  const answerBoolean = (id: string, answer: StudyQuizAnswer) => {
-    const question = card.quiz.find(q => q.id === id)
-    if (!question || question.userAnswer !== null) return
-    onUpdate({ quiz: card.quiz.map(q => (q.id === id && q.kind !== 'choice' ? { ...q, userAnswer: answer } : q)) })
-  }
-
-  const answerChoice = (id: string, optionIndex: number) => {
-    const question = card.quiz.find(q => q.id === id)
-    if (!question || question.userAnswer !== null) return
-    onUpdate({ quiz: card.quiz.map(q => (q.id === id && q.kind === 'choice' ? { ...q, userAnswer: optionIndex } : q)) })
-  }
-
-  const resetQuiz = () => {
-    onUpdate({ quiz: card.quiz.map(q => ({ ...q, userAnswer: null })) })
-  }
-
-  const resetWrongQuiz = () => {
-    onUpdate({ quiz: card.quiz.map(q => (isQuizCorrect(q) ? q : { ...q, userAnswer: null })) })
-  }
-
-  const { answered: quizAnswered, right: quizRight } = quizScore(card.quiz)
+  const resourceUrlOk = resourceDraft ? normalizeUrl(resourceDraft.url) !== null : false
+  const resourceUrlTooLong = resourceDraft ? isUrlTooLong(resourceDraft.url) : false
 
   return (
     <div style={embedded
@@ -126,13 +121,8 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
       : { border: '1px solid var(--color-border)', borderRadius: 12, backgroundColor: 'var(--color-surface)', padding: isMobile ? 12 : 16, marginTop: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <input
-          key={`title-${card.id}`}
-          defaultValue={card.title}
+          {...title}
           placeholder={t('study_card_title_placeholder')}
-          onBlur={e => {
-            const value = e.target.value.trim()
-            if (value !== card.title) onUpdate({ title: value })
-          }}
           style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 14.5, fontWeight: 700, color: 'var(--color-text)', fontFamily: 'inherit', padding: 0 }}
         />
         {editingDue ? (
@@ -141,13 +131,13 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
               type="date"
               autoFocus
               defaultValue={card.due_date ?? ''}
-              onChange={e => onUpdate({ due_date: e.target.value || null })}
+              onChange={e => { void onUpdate({ due_date: e.target.value || null }) }}
               onBlur={() => setEditingDue(false)}
               style={{ width: 132, boxSizing: 'border-box', padding: '4px 7px', borderRadius: 7, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12, fontFamily: 'inherit', colorScheme: 'light dark' }}
             />
             <button
               onMouseDown={e => e.preventDefault()}
-              onClick={() => { onUpdate({ due_date: null }); setEditingDue(false) }}
+              onClick={() => { void onUpdate({ due_date: null }); setEditingDue(false) }}
               title={t('study_card_due_clear')}
               type="button"
               style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}
@@ -197,16 +187,16 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
         <ProgressBar pct={progress.pct} height={4} />
       </div>
 
-      {editingDescription ? (
+      {descriptionBase !== null ? (
         <textarea
-          defaultValue={card.description}
+          defaultValue={descriptionBase}
           autoFocus
           rows={4}
           placeholder={t('study_card_description_placeholder')}
           onBlur={e => {
             const value = e.target.value.trim()
-            if (value !== card.description) onUpdate({ description: value })
-            setEditingDescription(false)
+            if (value !== descriptionBase) void onUpdate({ description: value }, { description: descriptionBase })
+            setDescriptionBase(null)
           }}
           style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', marginBottom: 12 }}
         />
@@ -216,7 +206,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
             <div style={{ fontSize: 13, color: 'var(--color-text)', lineHeight: 1.5 }}>
               <MarkdownText text={card.description} />
               <button
-                onClick={() => setEditingDescription(true)}
+                onClick={() => setDescriptionBase(card.description)}
                 type="button"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 11.5, fontWeight: 600, padding: 0 }}
               >
@@ -226,7 +216,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
             </div>
           ) : (
             <button
-              onClick={() => setEditingDescription(true)}
+              onClick={() => setDescriptionBase(card.description)}
               type="button"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 12, fontWeight: 500, padding: 0 }}
             >
@@ -260,7 +250,8 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
             <input
               type="checkbox"
               checked={point.completed}
-              onChange={() => onToggleCheckpoint(point.id)}
+              disabled={listsDisabled}
+              onChange={() => { void ops.toggleCheckpoint(point.id) }}
               style={{ marginTop: 3, width: 15, height: 15, accentColor: 'var(--color-accent)', cursor: 'pointer', flexShrink: 0 }}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -270,7 +261,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                 <textarea
                   autoFocus
                   rows={1}
-                  defaultValue={point.text}
+                  defaultValue={point.text} maxLength={STUDY_CHECKPOINT_TEXT_MAX}
                   ref={el => {
                     if (el) {
                       el.style.height = 'auto'
@@ -304,8 +295,8 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                 <div
                   role="button"
                   tabIndex={0}
-                  onClick={() => setEditingCheckpointId(point.id)}
-                  onKeyDown={e => { if (e.key === 'Enter') setEditingCheckpointId(point.id) }}
+                  onClick={() => startEdit(point.id)}
+                  onKeyDown={e => { if (e.key === 'Enter') startEdit(point.id) }}
                   style={{
                     fontSize: 13, lineHeight: 1.45, cursor: 'text',
                     overflowWrap: 'anywhere', whiteSpace: 'pre-wrap',
@@ -320,7 +311,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                 <textarea
                   autoFocus
                   rows={1}
-                  defaultValue={point.note ?? ''}
+                  defaultValue={point.note ?? ''} maxLength={STUDY_CHECKPOINT_NOTE_MAX}
                   placeholder={t('study_checkpoint_note_placeholder')}
                   ref={el => {
                     if (el) {
@@ -353,8 +344,8 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                 <div
                   role="button"
                   tabIndex={0}
-                  onClick={() => setEditingNoteId(point.id)}
-                  onKeyDown={e => { if (e.key === 'Enter') setEditingNoteId(point.id) }}
+                  onClick={() => startNote(point.id)}
+                  onKeyDown={e => { if (e.key === 'Enter') startNote(point.id) }}
                   style={{
                     fontSize: 12, lineHeight: 1.45, cursor: 'text', marginTop: 2, fontStyle: 'italic',
                     overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', color: 'var(--color-text-muted)',
@@ -364,9 +355,9 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                 </div>
               ) : null}
             </div>
-            {!point.note && editingNoteId !== point.id && (
+            {!point.note && editingNoteId !== point.id && !listsDisabled && (
               <button
-                onClick={() => setEditingNoteId(point.id)}
+                onClick={() => startNote(point.id)}
                 title={t('study_checkpoint_note_add')}
                 type="button"
                 style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, marginTop: 2, flexShrink: 0 }}
@@ -376,6 +367,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
             )}
             <button aria-label={t('common_remove')}
               onClick={() => onRequestRemoveCheckpoint(point)}
+              disabled={listsDisabled}
               type="button"
               style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', padding: 2, marginTop: 2, flexShrink: 0 }}
             >
@@ -386,9 +378,7 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '5px 2px' }}>
           <Plus size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
           <input
-            value={newPoint}
-            onChange={e => setNewPoint(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCheckpoint() } }}
+            value={newPoint} maxLength={STUDY_CHECKPOINT_TEXT_MAX} disabled={listsDisabled} {...fields.point.watch(newPoint, setNewPoint, addCheckpoint)}
             onBlur={() => { if (newPoint.trim()) addCheckpoint() }}
             placeholder={t('study_add_checkpoint_placeholder')}
             style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', padding: 0 }}
@@ -424,16 +414,17 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
                 type="button"
                 aria-label={t('a11y_remove_resource')}
                 title={t('a11y_remove_resource')}
-                onClick={() => removeResource(resource.id)}
+                onClick={() => { void ops.removeResource(resource.id) }}
+                disabled={listsDisabled}
                 style={{ display: 'flex', padding: 0, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
               >
                 <X size={11} />
               </button>
             </span>
           ))}
-          {!addingResource && (
+          {!resourceDraft && !listsDisabled && (
             <button
-              onClick={() => setAddingResource(true)}
+              onClick={() => setResourceDraft({ title: '', url: '' })}
               type="button"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: 12, fontWeight: 500, border: '1px dashed var(--color-border)', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
             >
@@ -442,198 +433,52 @@ export default function StudyCardItem({ card, onUpdate, onToggleCheckpoint, onRe
             </button>
           )}
         </div>
-        {addingResource && (
+        {resourceDraft && (
           <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
             <input
-              value={resourceTitle}
-              onChange={e => setResourceTitle(e.target.value)}
+              value={resourceDraft.title} maxLength={STUDY_RESOURCE_TITLE_MAX}
+              {...fields.title.watch(resourceDraft.title, title => setResourceDraft(prev => prev && { ...prev, title }))}
               placeholder={t('study_resource_title_placeholder')}
               style={{ flex: '1 1 130px', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, fontFamily: 'inherit' }}
             />
             <input
-              value={resourceUrl}
-              onChange={e => setResourceUrl(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addResource() } }}
+              value={resourceDraft.url} {...fields.url.watch(resourceDraft.url, url => setResourceDraft(prev => prev && { ...prev, url }), addResource)}
               placeholder={t('study_resource_url_placeholder')}
-              style={{ flex: '2 1 180px', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, fontFamily: 'inherit' }}
+              aria-invalid={resourceUrlTooLong || undefined}
+              aria-describedby={resourceUrlTooLong ? urlErrorId : undefined}
+              style={{ flex: '2 1 180px', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: `1px solid ${resourceUrlTooLong ? 'var(--color-error)' : 'var(--color-border)'}`, background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 12.5, fontFamily: 'inherit' }}
             />
             <button
               onClick={addResource}
               type="button"
-              disabled={!normalizeUrl(resourceUrl)}
-              style={{ padding: '7px 13px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: normalizeUrl(resourceUrl) ? 'pointer' : 'default', opacity: normalizeUrl(resourceUrl) ? 1 : 0.5 }}
+              disabled={!resourceUrlOk}
+              style={{ padding: '7px 13px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: resourceUrlOk ? 'pointer' : 'default', opacity: resourceUrlOk ? 1 : 0.5 }}
             >
               {t('study_add_resource')}
             </button>
             <button
-              onClick={() => { setAddingResource(false); setResourceTitle(''); setResourceUrl('') }}
+              onClick={() => setResourceDraft(null)}
               type="button"
               style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'none', color: 'var(--color-text-muted)', fontSize: 12.5, cursor: 'pointer' }}
             >
               {t('study_cancel')}
             </button>
+            {resourceUrlTooLong && (
+              <div id={urlErrorId} role="alert" style={{ flexBasis: '100%', fontSize: 11.5, color: 'var(--color-error-text)' }}>
+                {t('study_resource_url_too_long', { max: STUDY_URL_MAX })}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {card.quiz.length > 0 && (
-        <div style={{ marginTop: 12 }}>
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setQuizExpanded(prev => !prev)}
-            onKeyDown={e => { if (e.key === 'Enter') setQuizExpanded(prev => !prev) }}
-            style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', cursor: 'pointer' }}
-          >
-            <SectionLabel>{t('study_quiz')}</SectionLabel>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', whiteSpace: 'nowrap', marginBottom: 8 }}>
-              <span>
-                {quizAnswered > 0 && (
-                  <span style={{ color: quizRight === quizAnswered ? '#22c55e' : 'var(--color-text)' }}>
-                    {t('study_quiz_score', { right: quizRight, answered: quizAnswered })}
-                  </span>
-                )}
-                {quizAnswered > 0 && ' • '}
-                {t('study_quiz_answered', { answered: quizAnswered, total: card.quiz.length })}
-              </span>
-              {quizExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            </span>
-          </div>
-          {quizExpanded && quizAnswered > 0 && !isQuizPassed(card.quiz) && (
-            <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginBottom: 6 }}>
-              {t('study_quiz_pass_hint')}
-            </div>
-          )}
-          {quizExpanded && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {card.quiz.map((question, index) => {
-              const answered = isQuizAnswered(question)
-              const gotIt = isQuizCorrect(question)
-              const feedback = (wrongText: string) => (
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: gotIt ? '#22c55e' : '#ef4444' }}>
-                  {gotIt ? t('study_quiz_feedback_right') : wrongText}
-                </span>
-              )
-              const explanation = answered && question.explanation && (
-                <div style={{ marginTop: 5, padding: '6px 9px', borderRadius: 8, backgroundColor: 'var(--color-hover)', fontSize: 12, lineHeight: 1.45, color: 'var(--color-text-muted)', overflowWrap: 'anywhere' }}>
-                  <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{t('study_quiz_explanation')}: </span>
-                  {question.explanation}
-                </div>
-              )
-              return (
-                <div key={question.id} style={{ padding: '5px 2px', opacity: answered ? 0.7 : 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', marginTop: 1, flexShrink: 0, minWidth: 18, textAlign: 'right' }}>
-                      {index + 1}.
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--color-text)', overflowWrap: 'anywhere' }}>
-                        {question.statement}
-                      </div>
-                      {question.kind === 'choice' ? (
-                        <>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, marginTop: 5 }}>
-                            {question.options.map((option, optionIndex) => {
-                              const chosen = question.userAnswer === optionIndex
-                              const highlightCorrect = answered && !gotIt && question.answer === optionIndex
-                              return (
-                                <button
-                                  key={optionIndex}
-                                  type="button"
-                                  disabled={answered}
-                                  onClick={() => answerChoice(question.id, optionIndex)}
-                                  style={{
-                                    display: 'inline-flex', alignItems: 'flex-start', gap: 6, padding: '4px 11px', borderRadius: 10,
-                                    fontSize: 12, fontWeight: 600, textAlign: 'left', cursor: answered ? 'default' : 'pointer',
-                                    border: chosen
-                                      ? `1px solid ${gotIt ? '#22c55e' : '#ef4444'}`
-                                      : highlightCorrect ? '1px solid #22c55e' : '1px solid var(--color-border)',
-                                    backgroundColor: chosen ? (gotIt ? '#22c55e1c' : '#ef44441c') : 'transparent',
-                                    color: chosen
-                                      ? (gotIt ? '#22c55e' : '#ef4444')
-                                      : highlightCorrect ? '#22c55e' : answered ? 'var(--color-text-muted)' : 'var(--color-text)',
-                                    opacity: answered && !chosen && !highlightCorrect ? 0.55 : 1,
-                                  }}
-                                >
-                                  <span style={{ flexShrink: 0 }}>{String.fromCharCode(65 + optionIndex)})</span>
-                                  <span style={{ overflowWrap: 'anywhere' }}>{option}</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                          {answered && (
-                            <div style={{ marginTop: 5 }}>
-                              {feedback(t('study_quiz_feedback_wrong_choice', {
-                                answer: `${String.fromCharCode(65 + question.answer)}) ${question.options[question.answer]}`,
-                              }))}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-                          {(['certo', 'errado'] as const).map(option => {
-                            const chosen = question.userAnswer === option
-                            const highlightCorrect = answered && !gotIt && question.answer === option
-                            return (
-                              <button
-                                key={option}
-                                type="button"
-                                disabled={answered}
-                                onClick={() => answerBoolean(question.id, option)}
-                                style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 11px', borderRadius: 999,
-                                  fontSize: 11.5, fontWeight: 600, cursor: answered ? 'default' : 'pointer',
-                                  border: chosen
-                                    ? `1px solid ${gotIt ? '#22c55e' : '#ef4444'}`
-                                    : highlightCorrect ? '1px solid #22c55e' : '1px solid var(--color-border)',
-                                  backgroundColor: chosen ? (gotIt ? '#22c55e1c' : '#ef44441c') : 'transparent',
-                                  color: chosen
-                                    ? (gotIt ? '#22c55e' : '#ef4444')
-                                    : highlightCorrect ? '#22c55e' : answered ? 'var(--color-text-muted)' : 'var(--color-text)',
-                                  opacity: answered && !chosen && !highlightCorrect ? 0.55 : 1,
-                                }}
-                              >
-                                {option === 'certo' ? <Check size={11} /> : <X size={11} />}
-                                {option === 'certo' ? t('study_quiz_true') : t('study_quiz_false')}
-                              </button>
-                            )
-                          })}
-                          {answered && feedback(t('study_quiz_feedback_wrong', {
-                            answer: question.answer === 'certo' ? t('study_quiz_true') : t('study_quiz_false'),
-                          }))}
-                        </div>
-                      )}
-                      {explanation}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          )}
-          {quizExpanded && quizAnswered > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 6 }}>
-              <button
-                onClick={resetQuiz}
-                type="button"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 11.5, fontWeight: 600, padding: 0 }}
-              >
-                <RotateCcw size={11} />
-                {t('study_quiz_retry')}
-              </button>
-              {quizAnswered === card.quiz.length && quizRight < quizAnswered && (
-                <button
-                  onClick={resetWrongQuiz}
-                  type="button"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11.5, fontWeight: 600, padding: 0 }}
-                >
-                  <RotateCcw size={11} />
-                  {t('study_quiz_retry_wrong')}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        <StudyCardQuiz
+          quiz={card.quiz}
+          disabled={listsDisabled}
+          onAnswer={(questionId, answer) => { void ops.answerQuiz(questionId, answer) }}
+          onReset={onlyWrong => { void ops.resetQuiz(onlyWrong) }}
+        />
       )}
     </div>
   )

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "f9f62ede-e8e8-4931-a412-b9a908f60737",
+    "type": "checkListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "checked": true
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "feito",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "06c1219b-fdec-4876-a9aa-19605dff9a9c",
+    "type": "checkListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left",
+      "checked": false
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "a fazer",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

@@ -10,7 +10,8 @@ import { expectNoAxeViolations } from '../test/axe'
 // para entrar com o celular.
 
 type Err = { code?: string; message: string } | null
-interface FakeFactor { id: string; status: 'verified' | 'unverified'; factor_type: 'totp' | 'webauthn'; created_at: string }
+interface FakeFactor { id: string; status: 'verified' | 'unverified'; factor_type: 'totp'; created_at: string }
+interface FakePasskey { id: string; friendly_name?: string; created_at: string }
 
 // Chave de baixa entropia de propósito (o gitleaks roda no pre-commit e no CI).
 const SECRET = 'AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH'
@@ -20,15 +21,16 @@ const QR_URL = 'data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg"
 const server = vi.hoisted(() => {
   // Local tipado: `null as unknown` dentro do vi.hoisted cai no no-unnecessary-type-assertion.
   const state: {
-    factors: { id: string; status: 'verified' | 'unverified'; factor_type: 'totp' | 'webauthn'; created_at: string }[]
+    factors: { id: string; status: 'verified' | 'unverified'; factor_type: 'totp'; created_at: string }[]
+    passkeys: { id: string; friendly_name?: string; created_at: string }[]
     uri: string
     enrollError: Err
     registerError: unknown
-    registerCreatesFactor: boolean
-    listCallsAtRegister: number
+    deleteError: Err
+    callsAtRegister: number
     verifyError: Err
     unenrollError: Err
-  } = { factors: [], uri: '', enrollError: null, registerError: null, registerCreatesFactor: true, listCallsAtRegister: -1, verifyError: null, unenrollError: null }
+  } = { factors: [], passkeys: [], uri: '', enrollError: null, registerError: null, deleteError: null, callsAtRegister: -1, verifyError: null, unenrollError: null }
   return state
 })
 const mfa = vi.hoisted(() => ({
@@ -36,9 +38,16 @@ const mfa = vi.hoisted(() => ({
   enroll: vi.fn<(args: unknown) => Promise<unknown>>(),
   unenroll: vi.fn<(args: { factorId: string }) => Promise<unknown>>(),
   challengeAndVerify: vi.fn<(args: { factorId: string; code: string }) => Promise<unknown>>(),
-  webauthn: { register: vi.fn<(params: { friendlyName: string }, overrides?: unknown) => Promise<unknown>>() },
 }))
-vi.mock('../lib/supabase', () => ({ supabase: { auth: { mfa } } }))
+// Passkey de login: registerPasskey() e o namespace passkey (list/delete).
+const passkeyApi = vi.hoisted(() => ({
+  register: vi.fn<() => Promise<unknown>>(),
+  list: vi.fn<() => Promise<unknown>>(),
+  delete: vi.fn<(args: { passkeyId: string }) => Promise<unknown>>(),
+}))
+vi.mock('../lib/supabase', () => ({
+  supabase: { auth: { mfa, registerPasskey: passkeyApi.register, passkey: { list: passkeyApi.list, delete: passkeyApi.delete } } },
+}))
 
 const device = vi.hoisted(() => ({ mobile: false }))
 vi.mock('@/shared/hooks/useIsMobile', () => ({ useIsMobile: () => device.mobile }))
@@ -58,7 +67,7 @@ vi.mock('../lib/mfa', async importOriginal => ({
   supportsPasskeys: () => env.webauthn,
 }))
 
-// A passkey fica atrás de VITE_MFA_PASSKEY (o Supabase hospedado ainda não liga o WebAuthn de MFA).
+// A passkey fica atrás de VITE_MFA_PASSKEY (ligada depois de configurar o Supabase).
 const flags = vi.hoisted(() => ({ passkey: true }))
 vi.mock('../lib/env', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/env')>(),
@@ -66,17 +75,15 @@ vi.mock('../lib/env', async importOriginal => ({
 }))
 
 import MfaSection from './MfaSection'
-import { passkeyCreateOptions } from '../lib/mfa'
 
 const verified = (id: string, createdAt = '2026-10-03T12:00:00Z'): FakeFactor =>
   ({ id, status: 'verified', factor_type: 'totp', created_at: createdAt })
 
-const passkey = (id: string, createdAt = '2026-10-04T12:00:00Z'): FakeFactor =>
-  ({ id, status: 'verified', factor_type: 'webauthn', created_at: createdAt })
+const passkey = (id: string, friendlyName?: string, createdAt = '2026-10-04T12:00:00Z'): FakePasskey =>
+  ({ id, ...(friendlyName ? { friendly_name: friendlyName } : {}), created_at: createdAt })
 
 function listResult(factors: FakeFactor[]) {
-  const verifiedOf = (type: FakeFactor['factor_type']) => factors.filter(f => f.factor_type === type && f.status === 'verified')
-  return { data: { all: [...factors], totp: verifiedOf('totp'), phone: [], webauthn: verifiedOf('webauthn') }, error: null }
+  return { data: { all: [...factors], totp: factors.filter(f => f.status === 'verified'), phone: [], webauthn: [] }, error: null }
 }
 
 beforeEach(() => {
@@ -87,9 +94,10 @@ beforeEach(() => {
   server.enrollError = null
   server.verifyError = null
   server.unenrollError = null
+  server.passkeys = []
   server.registerError = null
-  server.registerCreatesFactor = true
-  server.listCallsAtRegister = -1
+  server.deleteError = null
+  server.callsAtRegister = -1
   env.webauthn = false
   flags.passkey = true
   clipboard.copy.mockResolvedValue(true)
@@ -104,12 +112,18 @@ beforeEach(() => {
     server.factors = server.factors.map(f => (f.id === factorId ? { ...f, status: 'verified' } : f))
     return Promise.resolve({ data: {}, error: null })
   })
-  mfa.webauthn.register.mockImplementation(() => {
-    server.listCallsAtRegister = mfa.listFactors.mock.calls.length
-    if (server.registerCreatesFactor) server.factors.push({ id: 'pk-new', status: 'unverified', factor_type: 'webauthn', created_at: '2026-10-04T17:00:00Z' })
+  passkeyApi.list.mockImplementation(() => Promise.resolve({ data: [...server.passkeys], error: null }))
+  passkeyApi.register.mockImplementation(() => {
+    server.callsAtRegister = mfa.listFactors.mock.calls.length + passkeyApi.list.mock.calls.length
     if (server.registerError) return Promise.resolve({ data: null, error: server.registerError })
-    server.factors = server.factors.map(f => (f.id === 'pk-new' ? { ...f, status: 'verified' } : f))
-    return Promise.resolve({ data: {}, error: null })
+    const created = { id: 'pk-new', friendly_name: 'iCloud Keychain', created_at: '2026-10-04T17:00:00Z' }
+    server.passkeys.push(created)
+    return Promise.resolve({ data: created, error: null })
+  })
+  passkeyApi.delete.mockImplementation(({ passkeyId }) => {
+    if (server.deleteError) return Promise.resolve({ data: null, error: server.deleteError })
+    server.passkeys = server.passkeys.filter(p => p.id !== passkeyId)
+    return Promise.resolve({ data: null, error: null })
   })
   mfa.unenroll.mockImplementation(({ factorId }) => {
     if (server.unenrollError) return Promise.resolve({ data: null, error: server.unenrollError })
@@ -336,7 +350,7 @@ describe('MfaSection: erros', () => {
   })
 })
 
-describe('MfaSection: passkey para entrar com o celular', () => {
+describe('MfaSection: passkey de login (entrar com o celular)', () => {
   it('sem app autenticador, não oferece passkey', async () => {
     env.webauthn = true
     render(<MfaSection />)
@@ -344,110 +358,111 @@ describe('MfaSection: passkey para entrar com o celular', () => {
     expect(screen.queryByText('mfa_passkey_title')).toBeNull()
   })
 
-  it('com VITE_MFA_PASSKEY desligada, não oferece passkey', async () => {
+  it('com VITE_MFA_PASSKEY desligada, não oferece nem consulta passkeys', async () => {
     env.webauthn = true
     flags.passkey = false
     server.factors = [verified('f1')]
     render(<MfaSection />)
     await screen.findByRole('button', { name: 'mfa_add_device' })
     expect(screen.queryByText('mfa_passkey_title')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'mfa_passkey_add' })).toBeNull()
+    expect(passkeyApi.list).not.toHaveBeenCalled()
   })
 
-  it('em navegador sem WebAuthn, não oferece cadastrar', async () => {
+  it('em navegador sem WebAuthn, não oferece nem consulta passkeys', async () => {
     server.factors = [verified('f1')]
     render(<MfaSection />)
     await screen.findByRole('button', { name: 'mfa_add_device' })
-    expect(screen.queryByText('mfa_passkey_title')).toBeNull()
     expect(screen.queryByRole('button', { name: 'mfa_passkey_add' })).toBeNull()
+    expect(passkeyApi.list).not.toHaveBeenCalled()
   })
 
-  it('no computador, cadastra a passkey no celular pelo QR, sem ida à rede antes', async () => {
+  it('cadastra a passkey de login sem ida à rede antes e mostra o nome do provedor', async () => {
     env.webauthn = true
     server.factors = [verified('f1')]
     const user = userEvent.setup()
     render(<MfaSection />)
     expect(await screen.findByRole('group', { name: 'mfa_passkey_title' })).toBeTruthy()
     expect(screen.getByText('mfa_passkey_add_hint')).toBeTruthy()
+    const add = screen.getByRole('button', { name: 'mfa_passkey_add' })
+    const callsBefore = mfa.listFactors.mock.calls.length + passkeyApi.list.mock.calls.length
 
-    await user.click(screen.getByRole('button', { name: 'mfa_passkey_add' }))
-    expect(mfa.webauthn.register).toHaveBeenCalledWith(
-      { friendlyName: expect.stringMatching(/^Passkey \d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/) as string },
-      passkeyCreateOptions('phone'),
-    )
-    // Só a carga inicial da lista: nada entre o clique e o register().
-    expect(server.listCallsAtRegister).toBe(1)
+    await user.click(add)
+    expect(passkeyApi.register).toHaveBeenCalledTimes(1)
+    // Nada entre o clique e o registerPasskey().
+    expect(server.callsAtRegister).toBe(callsBefore)
     expect((await screen.findByRole('status')).textContent).toBe('mfa_passkey_added_ok')
-    expect(await screen.findByText(/^mfa_passkey_row /)).toBeTruthy()
+    expect(await screen.findByText(/^mfa_passkey_row_named iCloud Keychain /)).toBeTruthy()
   })
 
-  it('no celular, cadastra a passkey do próprio aparelho', async () => {
+  it('no celular, a dica fala da passkey salva no aparelho', async () => {
     env.webauthn = true
     device.mobile = true
     server.factors = [verified('f1')]
-    const user = userEvent.setup()
     render(<MfaSection />)
     expect(await screen.findByText('mfa_passkey_add_hint_mobile')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'mfa_passkey_add' }))
-    expect(mfa.webauthn.register).toHaveBeenCalledWith(expect.anything(), passkeyCreateOptions('this'))
   })
 
-  it.each<[string, unknown, boolean, string]>([
-    ['cancelada', Object.assign(new Error('x'), { name: 'NotAllowedError', code: 'ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY' }), true, 'mfa_passkey_cancelled'],
-    ['já cadastrada', { code: 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED', message: 'x' }, true, 'mfa_passkey_exists'],
-    ['fora do site oficial', { code: 'ERROR_INVALID_RP_ID', message: 'x' }, true, 'mfa_passkey_wrong_domain'],
-    ['desligada no Supabase', { code: 'mfa_webauthn_enroll_not_enabled', message: 'MFA enroll is disabled for WebAuthn' }, false, 'mfa_passkey_unavailable'],
-    ['sessão sem AAL2', { code: 'insufficient_aal', message: 'AAL2 required to enroll a new factor' }, false, 'mfa_need_aal2'],
-  ])('passkey %s: mensagem própria e o fator pendente sai', async (_case, error, createsFactor, message) => {
+  it.each<[string, unknown, string]>([
+    ['cancelada', Object.assign(new Error('x'), { name: 'NotAllowedError', code: 'ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY' }), 'mfa_passkey_cancelled'],
+    ['já cadastrada', { code: 'webauthn_credential_exists', message: 'x' }, 'mfa_passkey_exists'],
+    ['fora do site oficial', { code: 'ERROR_INVALID_RP_ID', message: 'x' }, 'mfa_passkey_wrong_domain'],
+    ['desligada no Supabase', { code: 'passkey_disabled', message: 'Passkey authentication is disabled' }, 'mfa_passkey_unavailable'],
+    ['sessão sem AAL2', { code: 'insufficient_aal', message: 'AAL2 session is required to manage passkeys when MFA is enabled' }, 'mfa_need_aal2'],
+  ])('passkey %s: mensagem própria', async (_case, error, message) => {
     env.webauthn = true
     server.factors = [verified('f1')]
     server.registerError = error
-    server.registerCreatesFactor = createsFactor
     const user = userEvent.setup()
     render(<MfaSection />)
     await user.click(await screen.findByRole('button', { name: 'mfa_passkey_add' }))
     expect((await screen.findByRole('alert')).textContent).toBe(message)
-    expect(server.factors.map(f => f.id)).toEqual(['f1'])
-    if (createsFactor) expect(mfa.unenroll).toHaveBeenCalledWith({ factorId: 'pk-new' })
+    expect(server.passkeys).toEqual([])
   })
 
-  it('remove a passkey e destrava o Desativar do último app', async () => {
+  it('remove a passkey sem mexer no app autenticador', async () => {
     env.webauthn = true
-    server.factors = [verified('f1'), passkey('pk1')]
+    server.factors = [verified('f1')]
+    server.passkeys = [passkey('pk1', 'Google Password Manager')]
     const user = userEvent.setup()
     render(<MfaSection />)
 
-    const totpButton = await screen.findByRole('button', { name: 'mfa_remove' })
-    const lockHint = screen.getByText('mfa_last_totp_locked')
-    expect((totpButton as HTMLButtonElement).disabled).toBe(true)
-    expect(totpButton.getAttribute('aria-describedby')?.split(' ')).toContain(lockHint.id)
+    expect(await screen.findByText(/^mfa_passkey_row_named Google Password Manager /)).toBeTruthy()
+    // O app autenticador continua com "Desativar" livre: a passkey de login não trava nada.
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'mfa_remove' }).disabled).toBe(false)
 
     await user.click(screen.getByRole('button', { name: 'mfa_remove_device' }))
     await user.click(screen.getByRole('button', { name: 'mfa_remove_device_confirm' }))
-    expect(mfa.unenroll).toHaveBeenCalledWith({ factorId: 'pk1' })
+    expect(passkeyApi.delete).toHaveBeenCalledWith({ passkeyId: 'pk1' })
     expect((await screen.findByRole('status')).textContent).toBe('mfa_passkey_removed_ok')
-    expect(screen.queryByText('mfa_last_totp_locked')).toBeNull()
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'mfa_remove' }).disabled).toBe(false)
+    expect(screen.queryByText(/^mfa_passkey_row_named /)).toBeNull()
+    expect(mfa.unenroll).not.toHaveBeenCalled()
   })
 
-  it('com duas passkeys, numera as linhas', async () => {
+  it('falha ao remover a passkey (sessão sem AAL2) mostra a mensagem e mantém a linha', async () => {
     env.webauthn = true
-    server.factors = [verified('f1'), passkey('pk1'), passkey('pk2', '2026-10-05T12:00:00Z')]
+    server.factors = [verified('f1')]
+    server.passkeys = [passkey('pk1', 'iCloud Keychain')]
+    server.deleteError = { code: 'insufficient_aal', message: 'AAL2 session is required to manage passkeys when MFA is enabled' }
+    const user = userEvent.setup()
+    render(<MfaSection />)
+    await user.click(await screen.findByRole('button', { name: 'mfa_remove_device' }))
+    await user.click(screen.getByRole('button', { name: 'mfa_remove_device_confirm' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('mfa_need_aal2')
+    expect(screen.getByText(/^mfa_passkey_row_named iCloud Keychain /)).toBeTruthy()
+  })
+
+  it('com duas passkeys sem nome, numera as linhas', async () => {
+    env.webauthn = true
+    server.factors = [verified('f1')]
+    server.passkeys = [passkey('pk1'), passkey('pk2', undefined, '2026-10-05T12:00:00Z')]
     render(<MfaSection />)
     expect(await screen.findAllByText(/^mfa_passkey_row_n /)).toHaveLength(2)
   })
 
-  it('sem WebAuthn, a passkey já cadastrada ainda pode ser removida', async () => {
-    server.factors = [verified('f1'), passkey('pk1')]
-    render(<MfaSection />)
-    expect(await screen.findByText(/^mfa_passkey_row /)).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'mfa_remove_device' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'mfa_passkey_add' })).toBeNull()
-  })
-
   it('bloco da passkey sem violações de acessibilidade', async () => {
     env.webauthn = true
-    server.factors = [verified('f1'), passkey('pk1')]
+    server.factors = [verified('f1')]
+    server.passkeys = [passkey('pk1', 'iCloud Keychain')]
     const { container } = render(<MfaSection />)
     await screen.findByRole('group', { name: 'mfa_passkey_title' })
     await expectNoAxeViolations(container)

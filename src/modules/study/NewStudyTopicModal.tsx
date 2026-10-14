@@ -19,7 +19,8 @@ interface NewStudyTopicModalProps {
   open: boolean
   onClose: () => void
   onCreateManual: (form: CreateTopicForm) => Promise<boolean>
-  onImport: (parsed: StudyParseResult, form: CreateTopicForm) => Promise<boolean>
+  // API-029: a recusa traz a mensagem (o card N da importação, servidor desatualizado).
+  onImport: (parsed: StudyParseResult, form: CreateTopicForm) => Promise<{ ok: boolean; message?: string }>
   isMobile?: boolean
 }
 
@@ -113,10 +114,10 @@ export default function NewStudyTopicModal({ open, onClose, onCreateManual, onIm
     if (!parsed || !canImport || saving) return
     setSaving(true)
     setErrorMsg(null)
-    const ok = await onImport(parsed, form)
+    const result = await onImport(parsed, form)
     setSaving(false)
-    if (ok) reset()
-    else setErrorMsg(t('study_error_generic'))
+    if (result.ok) reset()
+    else setErrorMsg(result.message ?? t('study_error_generic'))
   }
 
   const primaryBtn = (label: string, onClick: () => void | Promise<void>, disabled: boolean) => (

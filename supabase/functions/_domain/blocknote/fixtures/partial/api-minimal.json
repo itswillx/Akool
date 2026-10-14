@@ -1,0 +1,86 @@
+[
+  {
+    "type": "heading",
+    "props": {
+      "level": 2
+    },
+    "content": "Resumo"
+  },
+  {
+    "content": "sem type vira parágrafo"
+  },
+  {
+    "type": "paragraph",
+    "content": [
+      "texto solto ",
+      {
+        "type": "text",
+        "text": "e estilo",
+        "styles": {
+          "bold": true,
+          "italic": false,
+          "textColor": ""
+        }
+      },
+      {
+        "type": "link",
+        "href": "https://exemplo.com",
+        "content": "link"
+      }
+    ]
+  },
+  {
+    "type": "bulletListItem",
+    "content": "a\nb",
+    "children": [
+      {
+        "type": "bulletListItem",
+        "content": ""
+      }
+    ]
+  },
+  {
+    "type": "table",
+    "content": {
+      "type": "tableContent",
+      "rows": [
+        {
+          "cells": [
+            "a",
+            null
+          ]
+        },
+        {
+          "cells": [
+            [],
+            {
+              "type": "tableCell",
+              "content": "d"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "divider",
+    "content": ""
+  },
+  {
+    "type": "codeBlock",
+    "content": [
+      {
+        "type": "text",
+        "text": "\nx",
+        "styles": {
+          "bold": true
+        }
+      },
+      {
+        "type": "link",
+        "href": "https://exemplo.com",
+        "content": "a\nb"
+      }
+    ]
+  }
+]

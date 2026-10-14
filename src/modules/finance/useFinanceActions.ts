@@ -2,6 +2,8 @@
 import { useAuth } from '../../contexts/AuthContext'
 import { useToast } from '../../contexts/ToastContext'
 import { useLanguage } from '../../i18n/LanguageContext'
+import { deviceToday, markRecurringEntryPaid, materializeRecurring, skipRecurringEntry, type RecurringEntryResult } from '../../lib/data/financeRecurring'
+import { requireRows } from '../../lib/optimistic'
 import { supabase } from '../../lib/supabase'
 import type { FinanceAccount, FinanceBudget, FinanceCategory, FinanceGoal, FinanceGoalContribution, FinanceGoalShare, FinanceRecurring, FinanceRecurringEntry, FinanceTransaction } from '../../types'
 import { fetchFullHistoryTx, type useFinanceData } from './useFinanceData'
@@ -16,7 +18,7 @@ export function useFinanceActions({ data, modals }: {
   const { user } = useAuth()
   const { t } = useLanguage()
   const { showToast } = useToast()
-  const { goals, contributions, partnerProfiles, recurringEntries, reload, ensureMonthLoaded, ensureMonthsLoaded, setAccounts, setCategories, setBudgets, setGoals, setContributions, setGoalShares, setPartnerProfiles, setRecurring, setRecurringEntries, setFamilyBudgets, setFamilyAccounts, setFamilyCategories, applyTxUpsert, applyTxRemove, resolvePartnerProfile, refetchTransactions, refetchRecurringAndEntries, workspace } = data
+  const { partnerProfiles, reload, ensureMonthLoaded, ensureMonthsLoaded, setAccounts, setCategories, setBudgets, setGoals, setContributions, setGoalShares, setPartnerProfiles, setRecurring, setRecurringEntries, setFamilyBudgets, setFamilyAccounts, setFamilyCategories, applyTxUpsert, applyTxRemove, resolvePartnerProfile, applyMaterialized, workspace } = data
   const { txModal, accModal, budgetModal, goalModal, catModal, recurringModal, setPayModal, setImportHistoryTxs, setImportModal } = modals
 
   // Runs a mutation's write+local-patch; on failure, logs, toasts, and (for
@@ -144,10 +146,12 @@ export function useFinanceActions({ data, modals }: {
 
   const saveGoalShare = async (goalId: string, sharedWithUserId: string) => {
     if (!user) return
+    // API-012: share não tem UPDATE; repetido não faz nada (ON CONFLICT DO NOTHING).
     const { data: row, error } = await supabase.from('finance_goal_shares')
-      .upsert({ goal_id: goalId, owner_id: user.id, shared_with_user_id: sharedWithUserId }, { onConflict: 'goal_id,shared_with_user_id' })
-      .select().single()
+      .upsert({ goal_id: goalId, owner_id: user.id, shared_with_user_id: sharedWithUserId }, { onConflict: 'goal_id,shared_with_user_id', ignoreDuplicates: true })
+      .select().maybeSingle()
     if (error) throw error
+    if (!row) return
     let profile = partnerProfiles.find(p => p.id === sharedWithUserId)
     if (!profile) {
       const resolved = await resolvePartnerProfile(sharedWithUserId)
@@ -205,35 +209,29 @@ export function useFinanceActions({ data, modals }: {
     }, t('finance_save_error'))
   }
 
+  // API-012: o servidor grava o aporte, soma tudo e conclui a meta ao atingir o
+  // alvo, na mesma transação (antes era um segundo passo aqui, que falhava para
+  // quem aportava sem ser dono e somava só os aportes visíveis).
   const saveContribution = async (data: { goal_id: string; amount: number; note: string; date: string }) => {
     if (!user) return
-    const { data: row, error } = await supabase.from('finance_goal_contributions').insert({ ...data, user_id: user.id }).select().single()
+    const { data: result, error } = await supabase.rpc('finance_goal_contribute', {
+      p_goal: data.goal_id, p_amount_cents: data.amount, p_date: data.date, p_note: data.note,
+    })
     if (error) throw error
-    const contribution: FinanceGoalContribution = row
+    const { contribution_id, status } = result as { contribution_id: string; status: FinanceGoal['status']; total_cents: number }
+    const contribution: FinanceGoalContribution = { id: contribution_id, ...data, user_id: user.id, created_at: new Date().toISOString() }
     setContributions(prev => [contribution, ...prev])
-    // Auto-complete goal if accumulated >= target. This second write is
-    // best-effort: if it fails, the contribution is still saved (matches
-    // prior behavior) — just toast a distinct warning instead of throwing,
-    // since the modal shouldn't treat the whole save as failed.
-    const goal = goals.find(g => g.id === data.goal_id)
-    if (goal && goal.status === 'active') {
-      const total = contributions.filter(c => c.goal_id === data.goal_id).reduce((s, c) => s + c.amount, 0) + data.amount
-      if (total >= goal.target_amount) {
-        const { data: goalRow, error: goalErr } = await supabase.from('finance_goals').update({ status: 'completed' }).eq('id', data.goal_id).select().single()
-        if (goalErr) {
-          console.error('[Finance] goal auto-complete failed:', goalErr)
-          showToast('error', t('finance_goal_complete_error'))
-        } else {
-          setGoals(prev => upsertById(prev, goalRow as FinanceGoal))
-        }
-      }
-    }
+    setGoals(prev => prev.map(g => (g.id === data.goal_id && g.status !== status ? { ...g, status } : g)))
   }
 
+  // API-012: só o autor apaga o aporte (policy de DELETE). O DELETE barrado
+  // afeta 0 linhas sem erro; com o select('id') + requireRows isso vira erro e
+  // o aporte não some só da tela.
   const deleteContribution = async (id: string) => {
     await withToast(async () => {
-      const { error } = await supabase.from('finance_goal_contributions').delete().eq('id', id)
-      if (error) throw error
+      const { error } = requireRows(await supabase.from('finance_goal_contributions').delete().eq('id', id).select('id'))
+      // requireRows devolve um objeto simples; vira Error com code/hint para o log.
+      if (error) throw Object.assign(new Error(error.message), error)
       // Preserve prior behavior: doesn't un-complete an auto-completed goal.
       setContributions(prev => prev.filter(c => c.id !== id))
     }, t('finance_delete_error'))
@@ -283,7 +281,17 @@ export function useFinanceActions({ data, modals }: {
       ? await supabase.from('finance_recurring').update(data).eq('id', recurringModal.item.id).select().single()
       : await supabase.from('finance_recurring').insert({ ...data, user_id: user.id }).select().single()
     if (error) throw error
-    setRecurring(prev => upsertById(prev, row as FinanceRecurring))
+    const rec = row as FinanceRecurring
+    setRecurring(prev => upsertById(prev, rec))
+    // API-016: o servidor gera na hora os lançamentos e o orçamento do
+    // recorrente salvo e devolve a janela inteira (inclusive os pendentes que o
+    // dia novo moveu, mesmo de recorrente inativo). Falha só vai para o log: o
+    // recorrente já foi salvo e o cron cobre à noite. A janela aplicada passa a
+    // ser a da data do aparelho agora (o mês visto e a virada decidem por ela).
+    const today = deviceToday()
+    const { data: created, error: materializeError } = await materializeRecurring(today)
+    if (materializeError) console.error('[finance] recurring materialize failed', materializeError)
+    else if (created) applyMaterialized(created, today)
   }
 
   const deleteRecurring = async (id: string) => {
@@ -295,52 +303,31 @@ export function useFinanceActions({ data, modals }: {
     setRecurringEntries(prev => prev.filter(e => e.recurring_id !== id))
   }
 
-  // Three sequential writes (tx insert → entry update → conditional recurring
-  // deactivate). Not worth a 3-way manual rollback: a mid-sequence failure
-  // leaves genuinely ambiguous server state, so on any failure this falls
-  // back to a targeted refetch of just the touched entities to reconcile,
-  // rather than reload()'s full ~15+ query sweep.
-  const doMarkPaid = async (entry: FinanceRecurringEntry, rec: FinanceRecurring, amount: number) => {
-    if (!user) return
-    try {
-      const { data: txRow, error: txErr } = await supabase
-        .from('finance_transactions')
-        .insert({ user_id: user.id, type: rec.type, amount, description: rec.description, date: entry.due_date, account_id: rec.account_id, category_id: rec.category_id })
-        .select().single()
-      if (txErr) throw txErr
-      const tx: FinanceTransaction = txRow
-
-      const { data: entryRow, error: entryErr } = await supabase.from('finance_recurring_entries')
-        .update({ status: 'paid', amount, transaction_id: tx.id })
-        .eq('id', entry.id)
-        .select().single()
-      if (entryErr) throw entryErr
-
-      let updatedRec: FinanceRecurring | null = null
-      if (rec.total_installments != null) {
-        const paidBefore = recurringEntries.filter(e => e.recurring_id === rec.id && e.status === 'paid').length
-        if (paidBefore + 1 >= rec.total_installments) {
-          const { data: recRow, error: recErr } = await supabase.from('finance_recurring').update({ active: false }).eq('id', rec.id).select().single()
-          if (recErr) throw recErr
-          updatedRec = recRow
-        }
-      }
-
+  // API-016: pagar e pular são uma transação só no servidor (sem
+  // reconciliação de gravação parcial). Aplica o que voltou: a transação (que
+  // cai no balde do workspace quando herdou o workspace_id), o lançamento e o
+  // recorrente (inativo na última parcela). "Já pago" só atualiza o estado.
+  const applyEntryResult = async (result: RecurringEntryResult) => {
+    const { entry, transaction, recurring } = result
+    if (transaction) {
       // Defensive: entries are normally this month/next, already in range,
       // but a stale overdue entry could be paid from further back.
-      await ensureMonthLoaded(entry.due_date.slice(0, 7))
-      applyTxUpsert(tx)
-      setRecurringEntries(prev => upsertById(prev, entryRow))
-      if (updatedRec) setRecurring(prev => upsertById(prev, updatedRec))
-    } catch (err) {
-      console.error('[Finance] doMarkPaid failed:', err)
-      showToast('error', t('finance_save_error'))
-      // The sequence may have partially landed server-side — reconcile with
-      // a couple of targeted queries instead of guessing which write(s) hit.
-      await refetchTransactions()
-      await refetchRecurringAndEntries()
-      throw err
+      await ensureMonthLoaded(transaction.date.slice(0, 7))
+      applyTxUpsert(transaction)
     }
+    if (entry) setRecurringEntries(prev => upsertById(prev, entry))
+    if (recurring) setRecurring(prev => upsertById(prev, recurring))
+  }
+
+  const doMarkPaid = async (entry: FinanceRecurringEntry, _rec: FinanceRecurring, amount: number | null) => {
+    if (!user) return
+    const { data: result, error } = await markRecurringEntryPaid(entry.id, amount)
+    if (error || !result) {
+      console.error('[Finance] doMarkPaid failed:', error)
+      showToast('error', t('finance_save_error'))
+      throw error ?? new Error('finance_mark_entry_paid sem retorno')
+    }
+    await applyEntryResult(result)
   }
 
   const handleMarkPaid = (entry: FinanceRecurringEntry, rec: FinanceRecurring) => {
@@ -349,19 +336,19 @@ export function useFinanceActions({ data, modals }: {
     } else {
       // Fixed-amount path: fired directly from a list row, nothing awaits or
       // catches it — doMarkPaid already toasts internally before rethrowing,
-      // this just silences the resulting unhandled-rejection warning.
-      doMarkPaid(entry, rec, rec.amount ?? 0).catch(() => {})
+      // this just silences the resulting unhandled-rejection warning. Sem
+      // valor, o servidor recusa (22023) em vez de gravar zero.
+      doMarkPaid(entry, rec, rec.amount ?? null).catch(() => {})
     }
   }
 
   const skipEntry = async (entryId: string) => {
     await withToast(async () => {
-      const { error } = await supabase.from('finance_recurring_entries').update({ status: 'skipped' }).eq('id', entryId)
+      const { data: result, error } = await skipRecurringEntry(entryId)
       if (error) throw error
-      setRecurringEntries(prev => prev.map(e => (e.id === entryId ? { ...e, status: 'skipped' } : e)))
+      if (result) await applyEntryResult(result)
     }, t('finance_save_error'))
   }
-
 
   const openImportModal = async () => {
     if (!user) return

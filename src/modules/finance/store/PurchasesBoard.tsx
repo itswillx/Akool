@@ -16,6 +16,10 @@ import type { FinanceStoreStore } from './useFinanceStore'
 // aí que o modal abaixo oferece lançar a despesa no fluxo de caixa. Voltar para
 // 'quoting' desfaz isso (`updatePurchase` apaga a transação vinculada), do
 // mesmo jeito que reabrir uma venda apaga a receita.
+//
+// O modal grava pelo `markPurchased` (status, despesa e vínculo numa ação só,
+// a partir da compra que abriu o modal) e só fecha quando deu certo: recusado,
+// fica aberto com o motivo, e o card só volta quando a pessoa desiste.
 
 function ExpenseConfirmModal({ store, purchase, categories, onClose, onResolved }: {
   store: FinanceStoreStore
@@ -25,25 +29,27 @@ function ExpenseConfirmModal({ store, purchase, categories, onClose, onResolved 
   onResolved: (confirmed: boolean) => void
 }) {
   const { t } = useLanguage()
-  const [createTx, setCreateTx] = useState(!!purchase.account_id)
-  const [categoryId, setCategoryId] = useState('')
-  const [busy, setBusy] = useState(false)
   const product = store.products.find(p => p.id === purchase.product_id)
   const total = purchaseTotal(purchase)
+  // Sem conta ou com total zero não há despesa para lançar.
+  const canExpense = !!purchase.account_id && total > 0 && !purchase.transaction_id
+  const [createTx, setCreateTx] = useState(canExpense)
+  const [categoryId, setCategoryId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
 
   const dismiss = () => { onResolved(false); onClose() }
 
   const confirm = async () => {
     setBusy(true)
+    setFailed(false)
     try {
-      await store.updatePurchase(purchase.id, { status: 'purchased' })
-      if (createTx && purchase.account_id && !purchase.transaction_id) {
-        await store.generatePurchaseExpense(
-          purchase.id,
-          t('finance_store_tx_purchase_desc', { name: product?.name ?? '' }),
-          categoryId || null,
-        )
-      }
+      const ok = await store.markPurchased(purchase.id, {
+        createExpense: createTx && canExpense,
+        description: t('finance_store_tx_purchase_desc', { name: product?.name ?? '' }),
+        categoryId: categoryId || null,
+      })
+      if (!ok) { setFailed(true); return }
       onResolved(true)
       onClose()
     } finally {
@@ -58,13 +64,13 @@ function ExpenseConfirmModal({ store, purchase, categories, onClose, onResolved 
           {t('finance_store_purchase_confirm', { value: formatBRL(total) })}
         </div>
         {!purchase.transaction_id && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={createTx} disabled={!purchase.account_id}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: canExpense ? 'pointer' : 'not-allowed' }}>
+            <input type="checkbox" checked={createTx && canExpense} disabled={!canExpense}
               onChange={e => setCreateTx(e.target.checked)} />
             {t('finance_store_create_expense')}
           </label>
         )}
-        {createTx && !purchase.transaction_id && (
+        {createTx && canExpense && (
           <div>
             <label style={labelStyle}>{t('finance_store_tx_category')}</label>
             <select style={inputStyle} value={categoryId} onChange={e => setCategoryId(e.target.value)}>
@@ -77,6 +83,12 @@ function ExpenseConfirmModal({ store, purchase, categories, onClose, onResolved 
         )}
         {!purchase.account_id && (
           <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('finance_store_no_account_hint')}</div>
+        )}
+        {!!purchase.account_id && !purchase.transaction_id && total <= 0 && (
+          <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('finance_store_expense_not_positive_hint')}</div>
+        )}
+        {failed && store.error && (
+          <div role="alert" style={{ fontSize: 12.5, color: 'var(--color-error)', lineHeight: 1.45 }}>{store.error}</div>
         )}
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center', opacity: busy ? 0.7 : 1 }}
@@ -121,7 +133,8 @@ export function PurchasesBoard({ store, categories, onEdit }: {
     if (to === 'purchased' && purchase.status === 'quoting') {
       return new Promise<boolean>(resolve => setConfirming({ purchase, resolve }))
     }
-    return store.updatePurchase(purchase.id, { status: to }).then(() => true)
+    // O ok real: recusado, o kanban devolve o card à coluna de antes.
+    return store.updatePurchase(purchase.id, { status: to })
   }
 
   return (

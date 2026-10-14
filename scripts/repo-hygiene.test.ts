@@ -179,14 +179,33 @@ describe('index.html (UX-014)', () => {
   })
 })
 
+/**
+ * Código de produção do app e dos módulos puros das functions (API-027: o que
+ * sai de src/lib para supabase/functions/_domain continua nas travas). Inclui
+ * os arquivos novos ainda fora do índice do git.
+ */
+export function guardedSourceFiles(): string[] {
+  return execSync('git ls-files --cached --others --exclude-standard src supabase/functions/_domain supabase/functions/_api', { cwd: ROOT, encoding: 'utf8' })
+    .split('\n')
+    .filter(f => /\.(ts|tsx)$/.test(f) && !/\.(test|bench)\.|\/test\//.test(f) && existsSync(join(ROOT, f)))
+}
+
+describe('arquivos das travas de código (API-027)', () => {
+  it('varrem o app e os módulos puros das functions, sem os testes', () => {
+    const files = guardedSourceFiles()
+    expect(files).toEqual(expect.arrayContaining(['src/lib/localDate.ts', 'supabase/functions/_domain/isoDate.ts', 'supabase/functions/_api/schema.ts']))
+    expect(files.filter(f => f.includes('.test.') || !/^(src|supabase\/functions\/_domain|supabase\/functions\/_api)\//.test(f))).toEqual([])
+  })
+})
+
 // REL-007 e UX-011 (auditoria da validação): a data "de hoje" vem do relógio
 // local (localDateKey), nunca da data UTC (que vira amanhã às 21h em
 // Brasília); e toda data formatada leva o locale do perfil (localeOf(lang)),
 // nunca o do navegador. Os dois resíduos voltaram depois dos cards; esta trava
-// impede o terceiro.
+// impede o terceiro. Em _domain e _api não há relógio (o "hoje" vem de quem
+// chama), e o eslint barra o resto.
 describe('datas: relógio local e locale do perfil (REL-007, UX-011)', () => {
-  const files = execSync('git ls-files src', { cwd: ROOT, encoding: 'utf8' }).split('\n')
-    .filter(f => /\.(ts|tsx)$/.test(f) && !/\.(test|bench)\.|\/test\//.test(f) && f !== 'src/lib/localDate.ts')
+  const files = guardedSourceFiles().filter(f => f !== 'src/lib/localDate.ts')
 
   const offenders = (re: RegExp) => files.flatMap(f => {
     const text = readFileSync(join(ROOT, f), 'utf8')
@@ -195,6 +214,8 @@ describe('datas: relógio local e locale do perfil (REL-007, UX-011)', () => {
 
   it('nenhuma data UTC como "hoje" fora do localDate.ts', () => {
     expect(offenders(/toISOString\(\)\.(slice\(0, 10\)|split\('T'\)\[0\])/)).toEqual([])
+    // API-027: o isoDate.ts de _domain dá o dia UTC; com o relógio, é o "hoje" errado.
+    expect(offenders(/isoFromUTC\((Date\.now\(\)|\+?new Date\(\))/)).toEqual([])
   })
 
   it('nenhuma data formatada sem locale', () => {
@@ -206,8 +227,7 @@ describe('datas: relógio local e locale do perfil (REL-007, UX-011)', () => {
 // Chave escrita como string no meio do código não entra no inventário, não é
 // migrada e o logout não sabe dela.
 describe('chaves de storage só no inventário (QA-006)', () => {
-  const files = execSync('git ls-files src', { cwd: ROOT, encoding: 'utf8' }).split('\n')
-    .filter(f => /\.(ts|tsx)$/.test(f) && !/\.(test|bench)\.|\/test\//.test(f) && f !== 'src/lib/localKeys.ts')
+  const files = guardedSourceFiles().filter(f => f !== 'src/lib/localKeys.ts')
   const lines = (re: RegExp) => files.flatMap(f => readFileSync(join(ROOT, f), 'utf8').split('\n')
     .flatMap((line, i) => (re.test(line) ? [`${f}:${i + 1}`] : [])))
 

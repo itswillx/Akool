@@ -1,0 +1,19 @@
+{
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "x",
+          "styles": {
+            "highlight": true
+          }
+        }
+      ]
+    }
+  ],
+  "path": "/0/content/0/styles/highlight",
+  "keyword": "enum",
+  "breaks": "create"
+}

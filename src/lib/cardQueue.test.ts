@@ -93,6 +93,18 @@ describe('previewQueueOrder', () => {
     const filter = { ...emptyQueueFilter(), labels: ['rls'] }
     expect(previewQueueOrder(cards, COLUMNS, filter, new Set()).map(c => c.id)).toEqual(['sec-p0'])
   })
+
+  it('compara rótulos sem caixa, como private.cq_labels_match', () => {
+    const mixed = [
+      makeCard({ id: 'upper', priority: 'urgent', labels: ['Segurança'] }),
+      makeCard({ id: 'lower', priority: 'medium', labels: ['segurança'] }),
+      makeCard({ id: 'other', priority: 'medium', labels: ['performance'] }),
+    ]
+    const filter = { ...emptyQueueFilter(), labels: ['Segurança'] }
+    expect(previewQueueOrder(mixed, COLUMNS, filter, new Set()).map(c => c.id)).toEqual(['upper', 'lower'])
+    const allCaps = { ...emptyQueueFilter(), labels: ['SEGURANÇA'] }
+    expect(previewQueueOrder(mixed, COLUMNS, allCaps, new Set())).toHaveLength(2)
+  })
 })
 
 describe('fila priorizada', () => {

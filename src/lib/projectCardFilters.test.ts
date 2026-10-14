@@ -71,6 +71,12 @@ describe('filterProjectCards', () => {
     expect(filterProjectCards(cards, filters, TODAY)).toHaveLength(1)
   })
 
+  // API-013: como cq_cards e cq_enqueue, o rótulo não diferencia caixa.
+  it('filters by labels ignoring case', () => {
+    expect(filterProjectCards(cards, { ...defaultCardFilters(), labels: ['SEGURANÇA'] }, TODAY).map(c => c.id)).toEqual(['1'])
+    expect(filterProjectCards(cards, { ...defaultCardFilters(), labels: ['Performance'] }, TODAY).map(c => c.id)).toEqual(['3'])
+  })
+
   it('filters by assignee unassigned', () => {
     const filters = { ...defaultCardFilters(), assigneeId: 'unassigned' as const }
     expect(filterProjectCards(cards, filters, TODAY)).toHaveLength(2)
@@ -161,6 +167,11 @@ describe('collectBoardLabels', () => {
 
   it('returns empty array when no labels', () => {
     expect(collectBoardLabels([makeCard(), makeCard()])).toEqual([])
+  })
+
+  it('lists a label once regardless of case, keeping the first spelling seen', () => {
+    const cards = [makeCard({ labels: ['Segurança', 'api'] }), makeCard({ labels: ['segurança', 'API'] })]
+    expect(collectBoardLabels(cards)).toEqual(['api', 'Segurança'])
   })
 })
 

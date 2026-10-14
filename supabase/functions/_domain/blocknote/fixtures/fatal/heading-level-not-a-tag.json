@@ -1,0 +1,14 @@
+{
+  "content": [
+    {
+      "type": "heading",
+      "props": {
+        "level": "1 2"
+      },
+      "content": "x"
+    }
+  ],
+  "path": "/0/props/level",
+  "keyword": "enum",
+  "breaks": "mount"
+}

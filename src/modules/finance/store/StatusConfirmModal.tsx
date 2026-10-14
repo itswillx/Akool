@@ -5,6 +5,7 @@ import { saleNetReceived } from '../../../lib/financeStoreCalc'
 import type { FinanceCategory, FinanceStoreSale } from '../../../types'
 import { Modal, ghostBtnStyle, inputStyle, labelStyle, primaryBtnStyle, tabularNums } from '../ui'
 import type { ConfirmAction } from './saleTransitions'
+import { saleDateMax } from './saleDates'
 import { todayISO, type FinanceStoreStore } from './useFinanceStore'
 
 // Confirmação das transições com efeito colateral: vender (pode abrir a receita
@@ -14,20 +15,29 @@ import { todayISO, type FinanceStoreStore } from './useFinanceStore'
 // Movido do SalesView sem alterar o comportamento, para que a lista e o kanban
 // usem o mesmo modal — duplicá-lo seria duplicar a escrita em
 // `finance_transactions`.
+//
+// API-028: a transição e a receita são uma RPC só (store_sale_set_status ou
+// store_sale_generate_income). O servidor recusa receita com líquido <= 0
+// (finance_transactions só aceita valor > 0), então "Criar receita" fica
+// desligado com a dica, e a data vai até amanhã. onResolved recebe o resultado
+// real: false quando o servidor recusou, para o kanban reverter o card.
 export function StatusConfirmModal({ store, sale, action, categories, onClose, onResolved }: {
   store: FinanceStoreStore
   sale: FinanceStoreSale
   action: ConfirmAction
   categories: FinanceCategory[]
   onClose: () => void
-  /** true = confirmou, false = desistiu. O kanban usa isto para reverter o
-   *  preview otimista do card; a lista ignora. */
+  /** true = o servidor aplicou; false = desistiu ou o servidor recusou. O
+   *  kanban usa isto para reverter o preview do card; a lista, para mostrar o
+   *  erro na linha. */
   onResolved?: (confirmed: boolean) => void
 }) {
   const { t } = useLanguage()
   const items = store.saleItems.filter(i => i.sale_id === sale.id)
   const net = saleNetReceived(sale, items)
-  const [createTx, setCreateTx] = useState(!!sale.account_id)
+  // Sem conta ou com líquido <= 0 não há receita para lançar.
+  const canIncome = !!sale.account_id && net > 0
+  const [createTx, setCreateTx] = useState(canIncome)
   const [date, setDate] = useState(sale.sold_on ?? todayISO())
   const [categoryId, setCategoryId] = useState('')
   const [busy, setBusy] = useState(false)
@@ -42,16 +52,19 @@ export function StatusConfirmModal({ store, sale, action, categories, onClose, o
   const confirm = async () => {
     setBusy(true)
     try {
+      let ok: boolean
       if (action === 'sold') {
-        await store.setSaleStatus(sale.id, 'sold', { createTransaction: createTx, description: txDescription, date, categoryId: categoryId || null })
+        ok = await store.setSaleStatus(sale.id, 'sold', {
+          createTransaction: createTx && canIncome, description: txDescription, date, categoryId: categoryId || null,
+        })
       } else if (action === 'cancelled') {
-        await store.setSaleStatus(sale.id, 'cancelled')
+        ok = await store.setSaleStatus(sale.id, 'cancelled')
       } else if (action === 'reopen') {
-        await store.setSaleStatus(sale.id, 'negotiating')
+        ok = await store.setSaleStatus(sale.id, 'negotiating')
       } else {
-        await store.generateSaleIncome(sale.id, txDescription, categoryId || null)
+        ok = await store.generateSaleIncome(sale.id, txDescription, categoryId || null)
       }
-      onResolved?.(true)
+      onResolved?.(ok)
       onClose()
     } finally {
       setBusy(false)
@@ -75,6 +88,9 @@ export function StatusConfirmModal({ store, sale, action, categories, onClose, o
     </div>
   )
 
+  // Vender sem data, ou lançar receita sem líquido, o servidor recusaria.
+  const blocked = (action === 'sold' && !date) || (action === 'income' && !canIncome)
+
   const title = action === 'sold' ? t('finance_store_mark_sold')
     : action === 'cancelled' ? t('finance_store_cancel_sale')
     : action === 'reopen' ? t('finance_store_revert_status')
@@ -90,16 +106,19 @@ export function StatusConfirmModal({ store, sale, action, categories, onClose, o
             </div>
             <div>
               <label style={labelStyle}>{t('finance_store_sold_on')}</label>
-              <input style={inputStyle} type="date" value={date} onChange={e => setDate(e.target.value)} />
+              <input style={inputStyle} type="date" value={date} max={saleDateMax()} required onChange={e => setDate(e.target.value)} />
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={createTx} disabled={!sale.account_id}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: canIncome ? 'pointer' : 'not-allowed' }}>
+              <input type="checkbox" checked={createTx && canIncome} disabled={!canIncome}
                 onChange={e => setCreateTx(e.target.checked)} />
               {t('finance_store_create_income')}
             </label>
-            {createTx && categorySelect}
+            {createTx && canIncome && categorySelect}
             {!sale.account_id && (
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('finance_store_no_account_hint')}</div>
+            )}
+            {!!sale.account_id && net <= 0 && (
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('finance_store_net_not_positive_hint')}</div>
             )}
           </>
         )}
@@ -120,12 +139,15 @@ export function StatusConfirmModal({ store, sale, action, categories, onClose, o
             <div style={{ fontSize: 13.5, color: 'var(--color-text)', ...tabularNums }}>
               {t('finance_store_income_confirm', { value: formatBRL(net) })}
             </div>
+            {net <= 0 && (
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('finance_store_net_not_positive_hint')}</div>
+            )}
             {categorySelect}
           </>
         )}
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center', opacity: busy ? 0.7 : 1 }}
-            onClick={confirm} disabled={busy}>{title}</button>
+          <button style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center', opacity: busy || blocked ? 0.7 : 1 }}
+            onClick={confirm} disabled={busy || blocked}>{title}</button>
           <button style={ghostBtnStyle} onClick={dismiss}>{t('finance_cancel')}</button>
         </div>
       </div>

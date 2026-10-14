@@ -1,0 +1,12 @@
+[
+  {
+    "id": "0c56cace-3564-4d97-a4cd-d98dbb1d34df",
+    "type": "projectCard",
+    "props": {
+      "cardId": "00000000-0000-4000-c000-000000000001",
+      "boardId": "00000000-0000-4000-d000-000000000001",
+      "snapshot": "{\"title\":\"Revisar o roteiro 😀\",\"description\":\"Ler o **resumo** e marcar dúvidas.\",\"priority\":\"high\",\"startDate\":\"2026-10-01\",\"dueDate\":\"2026-10-20\",\"labels\":[\"estudo\",\"revisão\",\"ação\"],\"checklist\":[{\"text\":\"Capítulo 1\",\"completed\":true},{\"text\":\"Capítulo 2\",\"completed\":false}],\"completed\":false,\"columnName\":\"A fazer\",\"boardName\":\"Quadro de exemplo\",\"boardIcon\":\"📚\",\"boardColor\":\"#6366f1\"}"
+    },
+    "children": []
+  }
+]

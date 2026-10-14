@@ -1,0 +1,75 @@
+{
+  "products": [
+    { "key": "gpu", "kind": "unique", "name": "RTX 3070", "target_price": 250000, "archived": false },
+    { "key": "ssd", "kind": "stock", "name": "SSD 1 TB", "target_price": 40000, "archived": false },
+    { "key": "half", "kind": "stock", "name": "Cabo (meio exato)", "target_price": 0, "archived": false },
+    { "key": "third", "kind": "stock", "name": "Pasta (terços)", "target_price": 0, "archived": false },
+    { "key": "quote", "kind": "stock", "name": "Só cotação", "target_price": 0, "archived": false },
+    { "key": "old", "kind": "stock", "name": "Fonte arquivada", "target_price": 0, "archived": true },
+    { "key": "big", "kind": "stock", "name": "Lote grande", "target_price": 0, "archived": false }
+  ],
+  "purchases": [
+    { "product": "gpu", "quantity": 1, "unit_cost": 180000, "other_costs": 2500, "status": "received" },
+    { "product": "ssd", "quantity": 10, "unit_cost": 25000, "other_costs": 1500, "status": "received" },
+    { "product": "ssd", "quantity": 5, "unit_cost": 27000, "other_costs": 0, "status": "purchased" },
+    { "product": "ssd", "quantity": 4, "unit_cost": 99999, "other_costs": 0, "status": "quoting" },
+    { "product": "half", "quantity": 2, "unit_cost": 2, "other_costs": 1, "status": "received" },
+    { "product": "third", "quantity": 3, "unit_cost": 0, "other_costs": 200, "status": "received" },
+    { "product": "quote", "quantity": 2, "unit_cost": 5000, "other_costs": 0, "status": "quoting" },
+    { "product": "old", "quantity": 1, "unit_cost": 1000, "other_costs": 0, "status": "received" },
+    { "product": "big", "quantity": 1000, "unit_cost": 1000000000000, "other_costs": 999, "status": "received" }
+  ],
+  "sales": [
+    { "key": "s_neg", "status": "negotiating", "sold_on": null, "shipping_charged": 0, "shipping_cost": 0, "fees": 0 },
+    { "key": "s_sold", "status": "sold", "sold_on": "2026-09-10", "shipping_charged": 3000, "shipping_cost": 2500, "fees": 4000 },
+    { "key": "s_ship", "status": "shipped", "sold_on": "2026-09-28", "shipping_charged": 0, "shipping_cost": 1500, "fees": 1000 },
+    { "key": "s_deliv", "status": "delivered", "sold_on": "2026-08-31", "shipping_charged": 2000, "shipping_cost": 0, "fees": 500 },
+    { "key": "s_canc", "status": "cancelled", "sold_on": "2026-09-15", "shipping_charged": 0, "shipping_cost": 0, "fees": 0 },
+    { "key": "s_zero", "status": "sold", "sold_on": "2026-09-30", "shipping_charged": 0, "shipping_cost": 0, "fees": 500 }
+  ],
+  "items": [
+    { "sale": "s_neg", "product": "ssd", "quantity": 2, "unit_price": 40000, "unit_cost_at_sale": 25767 },
+    { "sale": "s_sold", "product": "gpu", "quantity": 1, "unit_price": 250000, "unit_cost_at_sale": 182500 },
+    { "sale": "s_sold", "product": "ssd", "quantity": 3, "unit_price": 38000, "unit_cost_at_sale": 25767 },
+    { "sale": "s_ship", "product": "ssd", "quantity": 1, "unit_price": 41000, "unit_cost_at_sale": 25767 },
+    { "sale": "s_ship", "product": "big", "quantity": 10, "unit_price": 1000000000000, "unit_cost_at_sale": 1000000000001 },
+    { "sale": "s_deliv", "product": "half", "quantity": 1, "unit_price": 10, "unit_cost_at_sale": 3 },
+    { "sale": "s_deliv", "product": null, "quantity": 1, "unit_price": 1000, "unit_cost_at_sale": 0 },
+    { "sale": "s_canc", "product": "ssd", "quantity": 4, "unit_price": 39000, "unit_cost_at_sale": 25767 },
+    { "sale": "s_canc", "product": "third", "quantity": 3, "unit_price": 500, "unit_cost_at_sale": 67 },
+    { "sale": "s_zero", "product": "quote", "quantity": 1, "unit_price": 0, "unit_cost_at_sale": 0 }
+  ],
+  "expected": {
+    "figures": {
+      "gpu": { "purchased": 1, "sold": 1, "reserved": 0, "available": 0, "avg_unit_cost": 182500 },
+      "ssd": { "purchased": 15, "sold": 4, "reserved": 2, "available": 9, "avg_unit_cost": 25767 },
+      "half": { "purchased": 2, "sold": 1, "reserved": 0, "available": 1, "avg_unit_cost": 3 },
+      "third": { "purchased": 3, "sold": 0, "reserved": 0, "available": 3, "avg_unit_cost": 67 },
+      "quote": { "purchased": 0, "sold": 1, "reserved": 0, "available": -1, "avg_unit_cost": 0 },
+      "old": { "purchased": 1, "sold": 0, "reserved": 0, "available": 1, "avg_unit_cost": 1000 },
+      "big": { "purchased": 1000, "sold": 10, "reserved": 0, "available": 990, "avg_unit_cost": 1000000000001 }
+    },
+    "sales": {
+      "s_neg": { "items_total": 80000, "revenue": 80000, "net": 80000, "profit": 28466 },
+      "s_sold": { "items_total": 364000, "revenue": 367000, "net": 363000, "profit": 100699 },
+      "s_ship": { "items_total": 10000000041000, "revenue": 10000000041000, "net": 10000000040000, "profit": 12723 },
+      "s_deliv": { "items_total": 1010, "revenue": 3010, "net": 2510, "profit": 2507 },
+      "s_canc": { "items_total": 157500, "revenue": 157500, "net": 157500, "profit": 54231 },
+      "s_zero": { "items_total": 0, "revenue": 0, "net": -500, "profit": -500 }
+    },
+    "stock_capital": 990000000233097,
+    "month": { "ym": "2026-09", "revenue": 10000000408000, "cost": 10000000295078, "profit": 112922, "count": 3 }
+  },
+  "transitions": [
+    ["negotiating", "sold"],
+    ["sold", "shipped"],
+    ["shipped", "delivered"],
+    ["sold", "negotiating"],
+    ["shipped", "sold"],
+    ["delivered", "shipped"],
+    ["cancelled", "negotiating"],
+    ["negotiating", "cancelled"],
+    ["sold", "cancelled"],
+    ["shipped", "cancelled"]
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  // API-005: os módulos puros das edge functions (`_api` e `_domain`), checados
+  // pelo `tsc -b` sem DOM e sem nada do Deno. A cola Deno (`*/index.ts`) e o
+  // `runtime/` (únicos com npm:/jsr:) ficam de fora; importBoundary.test.ts
+  // garante que nada aqui dentro importa de lá.
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.functions.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    /* Os testes leem migrations com node:fs */
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  /* Sem "/**" no fim: o TypeScript ignora esse padrão em include. */
+  "include": ["supabase/functions/_api", "supabase/functions/_domain"],
+  "exclude": ["supabase/functions/**/runtime", "supabase/functions/**/index.ts"]
+}

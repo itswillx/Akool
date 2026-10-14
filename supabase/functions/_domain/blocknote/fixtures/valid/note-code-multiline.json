@@ -1,0 +1,34 @@
+[
+  {
+    "id": "0c9dd595-b86e-40aa-bd4d-fbe74d19763e",
+    "type": "codeBlock",
+    "props": {
+      "language": "python"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "def f(x):\n    return x * 2\n\n\nprint(f(3))",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "b20089ba-6716-4753-a1a4-3300627cf961",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "linha 1\nlinha 2",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

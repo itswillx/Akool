@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { BlockNoteSchema, defaultBlockSpecs, filterSuggestionItems } from '@blocknote/core'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { filterSuggestionItems } from '@blocknote/core'
+import type { BlockNoteEditor } from '@blocknote/core'
 import { BlockNoteView } from '@blocknote/mantine'
 import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
 import type { DefaultReactSuggestionItem } from '@blocknote/react'
@@ -9,8 +10,8 @@ import { FolderKanban, PencilRuler } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { resolveSignedUrl } from '../lib/storageUrl'
 import { prepareUpload, uploadContextBucket } from '../lib/uploadValidation'
-import { DiagramBlock } from './DiagramBlock'
-import { ProjectCardBlock } from './blocks/ProjectCardBlock'
+import { noteSchema, type NoteBlock } from './noteSchema'
+import NoteInvalidContent from './NoteInvalidContent'
 import ImportProjectCardsModal from './ImportProjectCardsModal'
 import { buildCardSnapshot } from '../lib/projectImport'
 import type { ProjectBoard, ProjectCard, ProjectColumn } from '../types'
@@ -19,10 +20,11 @@ import { useCollaborativeContent } from '../hooks/useCollaborativeContent'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useToast } from '../contexts/ToastContext'
-import { asVersionedClient, chooseInitialContent, classifyLoad, contentDraft, createDebouncedSaver, isNewer, loadContentDraft, markContentOpen, saveVersionedContent, type SaveStatus } from '../lib/contentPersistence'
+import { asVersionedClient, chooseInitialContent, classifyLoad, contentDraft, createDebouncedSaver, isNewer, loadContentDraft, markContentOpen, saveVersionedContent, type DraftHooks, type SaveStatus } from '../lib/contentPersistence'
 import { onReconnect } from '../lib/connectivity'
 import { useAuth } from '../contexts/AuthContext'
 import SaveStatusBadge, { EditConflictBanner, EditorLoadError } from './SaveStatusBadge'
+import { findFatalNoteIssue, type BlockIssue } from '../../supabase/functions/_domain/blocknote/schema'
 
 interface NoteEditorProps {
   pageId: string
@@ -40,6 +42,8 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  // API-020: conteúdo que derrubaria o editor; a nota abre só para leitura.
+  const [invalid, setInvalid] = useState<{ content: unknown; issue: BlockIssue } | null>(null)
 
   const role = userShareRole(pageId)
   const isCollaborative = role !== null
@@ -50,6 +54,7 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
     setLoading(true)
     setLoadError(false)
     setInitialContent(null)
+    setInvalid(null)
 
     const load = async () => {
       const result = classifyLoad<{ content: unknown; updated_at: string | null }>(await supabase
@@ -67,13 +72,20 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
         return
       }
       const data = result.kind === 'ok' ? result.data : null
-      const remote = { value: data?.content && Array.isArray(data.content) && data.content.length > 0 ? data.content : [], version: data?.updated_at ?? null }
+      // API-020: conteúdo gravado que não é lista não vira nota vazia (o
+      // autosave gravaria por cima): passa pela guarda abaixo, como o resto.
+      const stored: unknown = data?.content ?? []
+      const remote = { value: stored, version: data?.updated_at ?? null }
       // REL-012: edição guardada sem conexão? Abre com ela; o primeiro save
       // grava ou, se alguém salvou depois, mostra o aviso de conflito.
       const draft = await loadContentDraft(userId, 'note_contents', pageId)
       if (cancelled) return
-      const chosen = chooseInitialContent(remote, draft && Array.isArray(draft.value) ? { value: draft.value, version: draft.version } : null)
-      setInitialContent(chosen.value)
+      const chosen = chooseInitialContent<unknown>(remote, draft && Array.isArray(draft.value) ? { value: draft.value, version: draft.version } : null)
+      // API-020: só as regras fatais, antes do useCreateBlockNote (que lança no
+      // render e leva a seção inteira para o ErrorBoundary, para todo mundo).
+      const issue = findFatalNoteIssue(chosen.value)
+      setInvalid(issue ? { content: chosen.value, issue } : null)
+      setInitialContent(Array.isArray(chosen.value) ? chosen.value : [])
       setInitialUpdatedAt(chosen.version)
       setFromDraft(chosen.fromDraft)
       setLoading(false)
@@ -83,7 +95,21 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
     return () => { cancelled = true }
   }, [pageId, reloadKey, userId])
 
+  // API-020: a tela só leitura do rascunho inválido conta como página aberta:
+  // o reenvio global (offlineSync) não manda o rascunho enquanto ela está na
+  // tela (e, mesmo fechada, ele recusa rascunho com problema fatal).
+  const invalidDraftOnScreen = !loading && invalid !== null && fromDraft
+  useEffect(() => (invalidDraftOnScreen ? markContentOpen('note_contents', pageId) : undefined), [invalidDraftOnScreen, pageId])
+
   if (loadError) return <EditorLoadError onRetry={() => setReloadKey(k => k + 1)} />
+
+  if (!loading && invalid) {
+    const discardDraft = async () => {
+      await contentDraft<unknown[]>(userId, 'note_contents', pageId)?.clear()
+      setReloadKey(k => k + 1)
+    }
+    return <NoteInvalidContent content={invalid.content} issue={invalid.issue} fromDraft={fromDraft} onDiscardDraft={() => { void discardDraft() }} />
+  }
 
   if (loading || initialContent === null) {
     return (
@@ -107,13 +133,6 @@ export default function NoteEditor({ pageId }: NoteEditorProps) {
   )
 }
 
-
-const schema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, diagram: DiagramBlock(), projectCard: ProjectCardBlock() },
-})
-
-// O schema expõe o tipo do bloco parcial (fantasma); evita instanciar os genéricos à mão.
-type NoteBlock = typeof schema.PartialBlock
 
 function EditorInner({
   pageId,
@@ -140,7 +159,11 @@ function EditorInner({
   // Um rascunho restaurado conta como edição: o realtime não o substitui.
   const isDirty = useRef(fromDraft)
   const localSavedAt = useRef<number>(0)
-  const [remoteKey, setRemoteKey] = useState(0)
+  // API-020: o conteúdo remoto efetivamente aplicado, com a versão. A guarda
+  // roda só sobre ele: o remoto que chega com a pessoa editando (ou na janela
+  // depois do save) não é aplicado e segue o conflito do REL-009, sem desmontar
+  // o editor no meio da digitação.
+  const [applied, setApplied] = useState<{ key: number; content: unknown; version: string | null } | null>(null)
 
   const { remoteContent, remoteUpdatedAt } = useCollaborativeContent(pageId, 'note_contents', isCollaborative)
 
@@ -152,16 +175,20 @@ function EditorInner({
       const withinProtectionWindow = Date.now() - localSavedAt.current < POST_SAVE_PROTECTION_MS
       if (!isDirty.current && !withinProtectionWindow) {
         lastSaveAt.current = remoteUpdatedAt
-        setRemoteKey(k => k + 1)
+        setApplied(prev => ({ key: (prev?.key ?? 0) + 1, content: remoteContent, version: remoteUpdatedAt }))
       }
     }
   }, [remoteContent, remoteUpdatedAt])
 
-  const currentContent = remoteKey > 0 && remoteContent
-    ? remoteContent as unknown[]
-    : initialContent
+  const remoteKey = applied?.key ?? 0
+  const currentContent = applied ? applied.content as unknown[] : initialContent
   // REL-009: a versão do conteúdo com que o editor monta; o save só grava sobre ela.
-  const currentVersion = remoteKey > 0 && remoteContent ? remoteUpdatedAt : initialUpdatedAt
+  const currentVersion = applied ? applied.version : initialUpdatedAt
+  // API-020: o remoto aplicado passa pela mesma guarda; com problema fatal, o
+  // editor (que montaria com ele) dá lugar à leitura.
+  const remoteIssue = useMemo(() => (applied ? findFatalNoteIssue(applied.content) : null), [applied])
+
+  if (remoteIssue) return <NoteInvalidContent content={currentContent} issue={remoteIssue} fromDraft={false} onDiscardDraft={() => {}} />
 
   return (
     <EditorCore
@@ -183,6 +210,80 @@ function EditorInner({
       appTheme={theme}
     />
   )
+}
+
+/**
+ * O autosave da nota (REL-002, REL-009, REL-012). API-020: o que a guarda
+ * (findFatalNoteIssue) recusa não vai ao servidor, senão a nota ficaria só
+ * leitura para todos. A colagem que produziria isso é desfeita na hora (o
+ * `pasteHandler` do EditorCore); esta guarda cobre as outras origens (soltar
+ * uma tabela arrastada, um bloco de código enorme virando parágrafo). Ela roda
+ * uma vez por save (depois do debounce), não a cada tecla; `onBlocked` avisa na
+ * passagem de liberado para recusado, e `unblock` (tentar de novo) deixa avisar
+ * outra vez. O rascunho local guarda também o recusado: o offlineSync não o
+ * envia, e a página o abre só leitura, com o texto e o botão de descartar.
+ * `isBlocked` diz se o último conteúdo conferido foi recusado: ao sair, o
+ * EditorCore guarda o pendente no aparelho (keepPending), e a colagem não leva
+ * a culpa do que já estava recusado.
+ */
+function createNoteSaver({ userId, pageId, version, onStatus, onBlocked }: {
+  userId: string | undefined
+  pageId: string
+  version: string | null
+  onStatus: (status: SaveStatus) => void
+  onBlocked: () => void
+}) {
+  let blocked = false
+  const refuse = (content: unknown[]): boolean => {
+    const fatal = findFatalNoteIssue(content) !== null
+    if (fatal && !blocked) onBlocked()
+    blocked = fatal
+    return fatal
+  }
+  const hooks = contentDraft<unknown[]>(userId, 'note_contents', pageId)
+  const draft: DraftHooks<unknown[]> | undefined = hooks && {
+    // Confere só para o status e o aviso: guardar no aparelho é sempre seguro.
+    persist: (value, base) => {
+      refuse(value)
+      return hooks.persist(value, base)
+    },
+    clear: hooks.clear,
+  }
+  const saver = createDebouncedSaver<unknown[]>({
+    delayMs: 1000,
+    // Sem conexão e recusado: fica no aparelho, mas nunca vai ao servidor, então é "Não salvo".
+    onStatus: status => onStatus(blocked && status === 'offline' ? 'error' : status),
+    version,
+    // REL-012: sem conexão, o pendente vai para o rascunho local.
+    draft,
+    save: (content, { force, version: expected }) => (refuse(content)
+      ? Promise.resolve({ ok: false, error: 'note_content_invalid' })
+      : saveVersionedContent(asVersionedClient(supabase), { table: 'note_contents', pageId, values: { content }, expected, force })),
+  })
+  return { saver, draft, unblock: () => { blocked = false }, isBlocked: () => blocked }
+}
+
+type EditorDoc = BlockNoteEditor['prosemirrorState']['doc']
+
+/**
+ * API-020: desfaz só a colagem, voltando ao documento de antes (`before`). O
+ * histórico do editor junta passos vizinhos feitos em menos de 500 ms, e o undo
+ * levaria junto o que a pessoa digitou logo antes de colar. Nesse caso, refaz e
+ * troca só o trecho que a colagem mudou pelo de antes.
+ */
+function undoPaste(editor: Pick<BlockNoteEditor, 'undo' | 'redo' | 'transact' | 'prosemirrorState'>, before: EditorDoc) {
+  editor.undo()
+  if (editor.prosemirrorState.doc.eq(before)) return
+  editor.redo()
+  editor.transact(tr => {
+    const start = before.content.findDiffStart(tr.doc.content)
+    const end = before.content.findDiffEnd(tr.doc.content)
+    if (start === null || end === null) return
+    // As pontas se cruzam quando o trecho colado repete o que vem em volta.
+    const overlap = Math.max(0, start - Math.min(end.a, end.b))
+    tr.replace(start, end.b + overlap, before.slice(start, end.a + overlap))
+    if (!tr.doc.eq(before)) tr.replaceWith(0, tr.doc.content.size, before.content)
+  })
 }
 
 function EditorCore({ pageId, userId, initialContent, readOnly, initialVersion, restoredDraft, onReloadFromServer, onSave, onDirty, appTheme }: {
@@ -226,10 +327,44 @@ function EditorCore({ pageId, userId, initialContent, readOnly, initialVersion, 
     [],
   )
 
+  // REL-002: autosave que confere o erro do upsert, mantém a edição em caso de
+  // falha ("Não salvo · Tentar de novo") e salva o pendente ao sair da página.
+  // REL-009: o save só grava sobre a versão conhecida; se outra pessoa salvou
+  // antes, o saver para em `conflict` e o aviso pede a escolha.
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  // API-020: um aviso por recusa, da guarda do saver (createNoteSaver) ou da
+  // colagem desfeita (pasteHandler, abaixo).
+  const [notice, setNotice] = useState<{ count: number; key: 'note_save_blocked' | 'note_paste_blocked' }>({ count: 0, key: 'note_save_blocked' })
+  const shownNotices = useRef(0)
+  useEffect(() => {
+    if (notice.count <= shownNotices.current) return
+    shownNotices.current = notice.count
+    showToast('error', t(notice.key))
+  }, [notice, showToast, t])
+  const [{ saver, draft, unblock, isBlocked }] = useState(() => createNoteSaver({
+    userId, pageId, version: initialVersion, onStatus: setSaveStatus,
+    onBlocked: () => setNotice(prev => ({ count: prev.count + 1, key: 'note_save_blocked' })),
+  }))
+
   const editor = useCreateBlockNote({
-    schema,
+    schema: noteSchema,
     uploadFile,
     resolveFileUrl,
+    // API-020: a colagem que deixaria a nota sem reabrir (uma tabela com células
+    // mescladas fora da grade, que o editor mostra mas não reabre) é desfeita na
+    // hora, com aviso, e o que a pessoa escreve depois continua salvando. Se a
+    // nota já estava recusada antes da colagem, a culpa não é dela: fica com a
+    // guarda do saver.
+    pasteHandler: ({ defaultPasteHandler, editor: target }) => {
+      const wasFatal = isBlocked() && findFatalNoteIssue(target.document) !== null
+      const before = target.prosemirrorState.doc
+      const handled = defaultPasteHandler()
+      if (!wasFatal && findFatalNoteIssue(target.document) !== null) {
+        undoPaste(target, before)
+        setNotice(prev => ({ count: prev.count + 1, key: 'note_paste_blocked' }))
+      }
+      return handled
+    },
     // QA-005: o conteúdo vem do banco como unknown[]; o tipo é o do próprio schema.
     // Passa por unknown de propósito: comparar unknown[] com o bloco do schema faz o
     // TypeScript expandir o schema inteiro ("type instantiation is excessively deep").
@@ -241,21 +376,14 @@ function EditorCore({ pageId, userId, initialContent, readOnly, initialVersion, 
   // are inserted right after it.
   const referenceBlockIdRef = useRef<string | null>(null)
 
-  // REL-002: autosave que confere o erro do upsert, mantém a edição em caso de
-  // falha ("Não salvo · Tentar de novo") e salva o pendente ao sair da página.
-  // REL-009: o save só grava sobre a versão conhecida; se outra pessoa salvou
-  // antes, o saver para em `conflict` e o aviso pede a escolha.
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
-  const [saver] = useState(() => createDebouncedSaver<unknown[]>({
-    delayMs: 1000,
-    onStatus: setSaveStatus,
-    version: initialVersion,
-    // REL-012: sem conexão, o pendente vai para o rascunho local.
-    draft: contentDraft<unknown[]>(userId, 'note_contents', pageId),
-    save: (content, { force, version }) => saveVersionedContent(asVersionedClient(supabase), {
-      table: 'note_contents', pageId, values: { content }, expected: version, force,
-    }),
-  }))
+  // A última edição agendada e a versão sobre a qual ela foi feita (o que vai
+  // para o aparelho ao sair, em conflito ou recusado: keepPending, abaixo).
+  const pending = useRef<unknown[] | null>(null)
+  const baseVersion = useRef(initialVersion)
+  const schedule = useCallback((content: unknown[]) => {
+    pending.current = content
+    saver.schedule(content)
+  }, [saver])
   const [resolving, setResolving] = useState(false)
   const keepMine = async () => {
     setResolving(true)
@@ -266,7 +394,12 @@ function EditorCore({ pageId, userId, initialContent, readOnly, initialVersion, 
     onReloadFromServer()
   }
 
-  useEffect(() => { saver.setOnSaved(onSave) }, [saver, onSave])
+  useEffect(() => {
+    saver.setOnSaved((at, stillDirty) => {
+      if (at) baseVersion.current = at
+      onSave(at, stillDirty)
+    })
+  }, [saver, onSave])
 
   // REL-012: a página aberta reenvia o rascunho sozinha quando a conexão volta;
   // o reenvio global (offlineSync) pula as páginas abertas.
@@ -274,11 +407,20 @@ function EditorCore({ pageId, userId, initialContent, readOnly, initialVersion, 
   useEffect(() => onReconnect(() => { void saver.flush() }), [saver])
   // Abriu com o rascunho local: manda já (grava, ou cai no aviso de conflito).
   useEffect(() => {
-    if (restoredDraft) saver.schedule(editor.document)
-  }, [restoredDraft, saver, editor])
+    if (restoredDraft) schedule(editor.document)
+  }, [restoredDraft, schedule, editor])
+
+  // API-020: ao sair (desmonte, pagehide, aba escondida), manda o pendente e
+  // guarda no aparelho o que não foi e o saver não guardou: a edição em
+  // conflito (o aviso some junto com o editor) e o conteúdo que a guarda recusa.
+  // Vai sobre a versão em que foi feito; ao abrir, a página mostra o aviso de
+  // conflito ou a leitura com o texto e o botão de descartar.
+  const keepPending = useCallback(() => saver.flush().then(() => {
+    if ((saver.status === 'conflict' || isBlocked()) && pending.current) return draft?.persist(pending.current, baseVersion.current)
+  }), [saver, draft, isBlocked])
 
   useEffect(() => {
-    const flush = () => { void saver.flush() }
+    const flush = () => { void keepPending() }
     const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
     window.addEventListener('pagehide', flush)
     document.addEventListener('visibilitychange', onVisibility)
@@ -287,13 +429,13 @@ function EditorCore({ pageId, userId, initialContent, readOnly, initialVersion, 
       document.removeEventListener('visibilitychange', onVisibility)
       flush()
     }
-  }, [saver])
+  }, [keepPending])
 
   const handleChange = useCallback(() => {
     if (readOnly) return
     onDirty?.()
-    saver.schedule(editor.document)
-  }, [saver, editor, readOnly, onDirty])
+    schedule(editor.document)
+  }, [schedule, editor, readOnly, onDirty])
 
   // Slash menu: default items plus a "Projetos" entry that opens the card picker
   // and a "Diagrama" entry that inserts the (lazily loaded) Excalidraw block.
@@ -346,7 +488,7 @@ function EditorCore({ pageId, userId, initialContent, readOnly, initialVersion, 
 
   return (
     <div className="flex-1 overflow-y-auto h-full" style={{ position: 'relative' }}>
-      <SaveStatusBadge status={saveStatus} onRetry={() => { void saver.flush() }} />
+      <SaveStatusBadge status={saveStatus} onRetry={() => { unblock(); void saver.flush() }} />
       {saveStatus === 'conflict' && (
         <EditConflictBanner busy={resolving} onLoadSaved={loadSaved} onKeepMine={() => { void keepMine() }} />
       )}

@@ -28,3 +28,13 @@ regexes = ['''^[0-9a-f]{32}$''']
 [[allowlists]]
 description = "JWT fictício do teste de scrub"
 regexes = ['''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.c2lnbmF0dXJlLXNpZ25hdHVyZQ''']
+
+# 3. UUID de exemplo no catálogo de ações da API (API-008: o exemplo de saída
+#    de tokens traz token_id, que o generic-api-key confunde com chave). Um
+#    UUID é identificador, não segredo; só UUIDs canônicos e só em
+#    supabase/functions/_api/ passam.
+[[allowlists]]
+description = "UUID de exemplo no catálogo de ações da API"
+condition = "AND"
+paths = ['''^supabase/functions/_api/''']
+regexes = ['''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''']

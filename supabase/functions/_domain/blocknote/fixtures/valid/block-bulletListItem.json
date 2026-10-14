@@ -1,0 +1,37 @@
+[
+  {
+    "id": "6678609c-f398-4159-8486-997b22c9f5db",
+    "type": "bulletListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "item",
+        "styles": {}
+      }
+    ],
+    "children": [
+      {
+        "id": "75991b86-df10-484f-8869-10ef5c9943d5",
+        "type": "bulletListItem",
+        "props": {
+          "backgroundColor": "default",
+          "textColor": "default",
+          "textAlignment": "left"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "subitem",
+            "styles": {}
+          }
+        ],
+        "children": []
+      }
+    ]
+  }
+]

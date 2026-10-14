@@ -111,42 +111,48 @@ Manter entradas de localhost se usar dev local:
 http://localhost:5173/**
 ```
 
-### 3.3 MFA com passkey (entrar com o celular)
+### 3.3 Passkey de login no lugar do código ("Entrar com o celular")
 
-Em Configurações → Segurança, quem tem o app autenticador pode cadastrar uma
-passkey. Na tela do código, "Entrar com o celular" abre a passkey: no
-computador o navegador mostra um QR para ler com a câmera do celular
-(Bluetooth ligado nos dois aparelhos); no celular, Face ID ou digital. O
-código continua valendo. A passkey é um **fator de MFA** (WebAuthn), não o
-login principal, porque só o fator sobe a sessão para AAL2.
+Quem tem o app autenticador pode cadastrar uma passkey em Configurações →
+Segurança. Na tela do código (depois de e-mail e senha), "Entrar com o celular"
+abre a passkey: no computador o navegador mostra um QR para ler com a câmera do
+celular (Bluetooth ligado nos dois aparelhos); no celular, Face ID ou digital. O
+código continua valendo.
 
-**Ainda não disponível:** em 04/10/2026 a Management API recusou ligar o WebAuthn
-de MFA no projeto hospedado (422 "Enabling of MFA with WebAuthn not currently
-supported"). Por isso o app esconde a passkey atrás da Build Variable
-`VITE_MFA_PASSKEY` (desligada): sem ela, "Adicionar passkey" e "Entrar com o
-celular" não aparecem. Quando o Supabase liberar, ligue a configuração abaixo e,
-depois, `VITE_MFA_PASSKEY=true` no Coolify (novo build).
+É a **passkey de login** do Supabase (experimental, `signInWithPasskey`). Em
+04/10/2026 o projeto hospedado recusou a passkey como *fator de MFA* (422
+"Enabling of MFA with WebAuthn not currently supported"), então o app e as edge
+functions (`supabase/functions/_shared/aal.ts`) aceitam a sessão aberta com
+passkey (amr `passkey`, AAL1) no lugar do código. Segurança:
 
-Ligar pela Management API (`PATCH /v1/projects/{ref}/config/auth`) ou no painel
-(Authentication):
+- O GoTrue só deixa cadastrar passkey em sessão AAL2 de quem tem MFA: ninguém
+  adiciona uma passkey só com a senha.
+- A passkey do celular (Senhas do iCloud, Google) sempre pede biometria ou a
+  senha do aparelho. O servidor pede verificação como "preferred": uma chave
+  física sem PIN, cadastrada por quem já passou pelo MFA, entraria sem biometria.
+- A sessão aberta por passkey é AAL1 no Supabase: para mudar aparelhos ou
+  passkeys nela, o app pede entrar com o código.
+
+Ligado no Supabase em 04/10/2026 (Management API `PATCH /v1/projects/{ref}/config/auth`
+ou painel em Authentication → Passkeys):
 
 | Campo | Valor |
 |---|---|
-| `mfa_web_authn_enroll_enabled` | `true` |
-| `mfa_web_authn_verify_enabled` | `true` |
+| `passkey_enabled` | `true` |
 | `webauthn_rp_id` | domínio do site sem `www` (ex.: `slinkysalsichinha.com.br`) |
 | `webauthn_rp_display_name` | `Akool` |
 | `webauthn_rp_origins` | `https://SUA-URL-COOLIFY` (até 5 origens) |
 
-- `passkey_enabled` fica `false`: a passkey como login principal daria AAL1, e
-  o app pediria o código do mesmo jeito.
+No app, a passkey só aparece com a Build Variable `VITE_MFA_PASSKEY=true` no
+Coolify (novo build).
+
 - O `webauthn_rp_id` é para sempre: trocar invalida todas as passkeys
   cadastradas.
 - Com o RP do site, passkey não funciona em localhost nem em previews (outro
   domínio); o app mostra "só funcionam no site oficial". O staging precisa de
   RP próprio (ex.: `localhost` com `http://localhost:5173`).
-- Para desligar sem travar ninguém: `mfa_web_authn_verify_enabled=false`. O
-  botão passa a avisar que a passkey está indisponível e o código continua.
+- Para desligar sem travar ninguém: tire `VITE_MFA_PASSKEY` (o botão some) e/ou
+  ponha `passkey_enabled=false`. O código continua valendo o tempo todo.
 
 ## 4. Checklist de validação
 

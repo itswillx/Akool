@@ -15,6 +15,7 @@ import {
   type CardQueueStatus,
   type QueueFilter,
 } from '../../lib/cardQueue'
+import { hasCardLabel, labelKey } from '../../lib/cardLabels'
 import type { ProjectCard, ProjectColumn } from '../../types'
 import ModalShell from './ModalShell'
 
@@ -109,10 +110,22 @@ export default function QueueModal({ boardId, columns, cards, canEdit, isMobile,
   )
   const columnName = useMemo(() => new Map(columns.map(c => [c.id, c.name])), [columns])
   // Temas: labels dos cards abertos (sem as de esforço), dos mais usados.
+  // Agrupa sem caixa, como o cq_enqueue filtra, e mostra a primeira grafia
+  // vista (igual a collectBoardLabels); cada card conta uma vez por tema.
   const labelCounts = useMemo(() => {
-    const map = new Map<string, number>()
-    openCards.forEach(c => (c.labels ?? []).forEach(l => { if (!l.startsWith('esforço:')) map.set(l, (map.get(l) ?? 0) + 1) }))
-    return [...map].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 16)
+    const map = new Map<string, [string, number]>()
+    openCards.forEach(c => {
+      const seen = new Set<string>()
+      ;(c.labels ?? []).forEach(l => {
+        const key = labelKey(l)
+        if (l.startsWith('esforço:') || seen.has(key)) return
+        seen.add(key)
+        const entry = map.get(key)
+        if (entry) entry[1]++
+        else map.set(key, [l, 1])
+      })
+    })
+    return [...map.values()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 16)
   }, [openCards])
 
   const searchResults = useMemo(() => {
@@ -129,6 +142,16 @@ export default function QueueModal({ boardId, columns, cards, canEdit, isMobile,
       const next = list.includes(value) ? list.filter(v => v !== value) : [...list, value]
       return { ...f, [key]: next }
     })
+    setMessage(null)
+  }
+
+  // API-013: o tema mostra a primeira grafia vista, que pode mudar com o modal
+  // aberto; o chip liga e desliga pela chave sem caixa, como o filtro do quadro.
+  const toggleLabel = (label: string) => {
+    setFilter(f => ({
+      ...f,
+      labels: hasCardLabel(f.labels, label) ? f.labels.filter(l => labelKey(l) !== labelKey(label)) : [...f.labels, label],
+    }))
     setMessage(null)
   }
 
@@ -290,7 +313,7 @@ export default function QueueModal({ boardId, columns, cards, canEdit, isMobile,
                 <SectionTitle>{t('projects_queue_labels')}</SectionTitle>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {labelCounts.map(([label, count]) => (
-                    <Chip key={label} active={filter.labels.includes(label)} onClick={() => toggle('labels', label)}>
+                    <Chip key={label} active={hasCardLabel(filter.labels, label)} onClick={() => toggleLabel(label)}>
                       {label}
                       <span style={{ opacity: 0.7 }}>{count}</span>
                     </Chip>

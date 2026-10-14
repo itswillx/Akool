@@ -1,49 +1,27 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+// API-027: o plano (colunas por tópico, linhas, limites e rótulos) é puro e mora
+// em supabase/functions/_domain/importPlan.ts, que a API também usa. Aqui fica a
+// gravação pelo supabase-js. O planTopicColumns continua saindo daqui: a tela,
+// a CLI e o mock do ImportCardsModal.test.tsx importam deste arquivo.
+import { tPtBR, type DomainTFor } from '../../supabase/functions/_domain/i18n.pt-BR'
+import {
+  importIssueText, insertBatches, oldestFirst, planCardRows, type ImportIssueKey, type ImportWarning, type TopicColumnPlan,
+} from '../../supabase/functions/_domain/importPlan'
+import type { Database } from '../types/db'
 import type { ParsedBacklogCard } from './backlogMarkdownParser'
-import type { ProjectColumn } from '../types'
-import { normalizeSearch } from './graph'
+import { fetchAllRows } from './fetchAllRows'
+
+export {
+  importIssueText,
+  importWarningText,
+  oldestFirst,
+  planCardRows,
+  planTopicColumns,
+  type ImportWarning,
+  type TopicColumnPlan,
+} from '../../supabase/functions/_domain/importPlan'
 
 const BATCH_SIZE = 20
-
-// Mesmas cores de BOARD_COLORS (ProjectsPanel), em ciclo pela ordem do tópico no arquivo.
-const TOPIC_COLUMN_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#22c55e', '#06b6d4', '#3b82f6']
-
-function titleMatchesExternalId(title: string, externalId: string): boolean {
-  return title.startsWith(`${externalId} —`) || title.startsWith(`${externalId} -`)
-}
-
-export interface TopicColumnPlan {
-  topic: string
-  name: string
-  color: string
-  /** Coluna existente com o mesmo nome (sem acento/caixa); null = será criada. */
-  columnId: string | null
-  sortOrder: number
-}
-
-/**
- * Uma coluna por `## Tópico:` do backlog, na ordem do arquivo. Reaproveita
- * colunas com o mesmo nome para o reimport não duplicar; as novas entram
- * depois das existentes.
- */
-export function planTopicColumns(
-  topics: string[],
-  existingColumns: Pick<ProjectColumn, 'id' | 'name' | 'sort_order'>[],
-): TopicColumnPlan[] {
-  const byName = new Map(existingColumns.map(c => [normalizeSearch(c.name), c]))
-  let nextOrder = existingColumns.length ? Math.max(...existingColumns.map(c => c.sort_order)) + 1 : 0
-
-  return topics.map((topic, i) => {
-    const existing = byName.get(normalizeSearch(topic))
-    return {
-      topic,
-      name: existing?.name ?? topic,
-      color: TOPIC_COLUMN_COLORS[i % TOPIC_COLUMN_COLORS.length],
-      columnId: existing?.id ?? null,
-      sortOrder: existing?.sort_order ?? nextOrder++,
-    }
-  })
-}
 
 export interface EnsureTopicColumnsResult {
   columnByTopic: Record<string, string>
@@ -52,7 +30,7 @@ export interface EnsureTopicColumnsResult {
 }
 
 export async function ensureTopicColumns(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>,
   boardId: string,
   plan: TopicColumnPlan[],
 ): Promise<EnsureTopicColumnsResult> {
@@ -88,79 +66,62 @@ export interface ImportCardsResult {
   /** IDs pulados porque um card com o mesmo "ID —" já está no quadro (UX-009). */
   skippedIds: string[]
   errors: string[]
+  /** API-033: dependências que ficaram de fora (importWarningText dá o texto). */
+  warnings: ImportWarning[]
 }
 
+export interface ImportCardsOptions {
+  skipDuplicates?: boolean
+  columnByTopic?: Record<string, string>
+  /** O idioma dos problemas em `errors` (importIssueText): a tela passa o `t` dela; padrão, o tPtBR (CLI). */
+  t?: DomainTFor<ImportIssueKey>
+}
+
+/**
+ * Grava os cards no quadro. API-033: lê o quadro inteiro (REL-003, páginas de
+ * 1000), põe do mais antigo para o mais novo com o oldestFirst, como a prévia
+ * do ImportCardsModal, e insere por níveis de dependência (insertBatches). Se
+ * um lote falha, os anteriores ficam, e cada card gravado já tem as
+ * dependências gravadas: uma nova tentativa com "pular duplicados" grava o resto.
+ */
 export async function importParsedCards(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>,
   boardId: string,
   columnId: string | null,
   cards: ParsedBacklogCard[],
-  options: { skipDuplicates?: boolean; columnByTopic?: Record<string, string> } = {},
+  options: ImportCardsOptions = {},
 ): Promise<ImportCardsResult> {
-  const skipDuplicates = options.skipDuplicates ?? true
-  const columnByTopic = options.columnByTopic ?? {}
-  const errors: string[] = []
-  const skippedIds: string[] = []
-  let created = 0
-
-  const columnFor = (card: ParsedBacklogCard) => (card.topic ? columnByTopic[card.topic] : undefined) ?? columnId
-
-  const { data: existingRows, error: existingError } = await supabase
+  // O order deixa as páginas estáveis; quem decide qual card vale é o oldestFirst.
+  const existing = await fetchAllRows((from, to) => supabase
     .from('project_cards')
-    .select('title, column_id, sort_order')
+    .select('id, title, column_id, sort_order, depends_on, created_at')
     .eq('board_id', boardId)
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
+    .range(from, to))
 
-  if (existingError) {
-    return { created: 0, skipped: 0, skippedIds, errors: [existingError.message] }
+  if (existing.error) {
+    return { created: 0, skipped: 0, skippedIds: [], errors: [existing.error.message], warnings: [] }
   }
 
-  const existing = (existingRows ?? []) as { title: string; column_id: string; sort_order: number }[]
-  const existingTitles = existing.map(r => r.title)
-  const nextOrder = new Map<string, number>()
-  for (const r of existing) {
-    nextOrder.set(r.column_id, Math.max(nextOrder.get(r.column_id) ?? 0, r.sort_order + 1))
-  }
-
-  const toInsert: { card: ParsedBacklogCard; columnId: string }[] = []
-
-  for (const card of cards) {
-    if (skipDuplicates && existingTitles.some(t => titleMatchesExternalId(t, card.externalId))) {
-      skippedIds.push(card.externalId)
-      continue
-    }
-    const target = columnFor(card)
-    if (!target) {
-      errors.push(`${card.externalId}: sem coluna de destino`)
-      continue
-    }
-    toInsert.push({ card, columnId: target })
-  }
-
-  if (errors.length > 0) return { created: 0, skipped: skippedIds.length, skippedIds, errors }
-
-  const rows = toInsert.map(({ card, columnId: target }) => {
-    const order = nextOrder.get(target) ?? 0
-    nextOrder.set(target, order + 1)
-    return {
-      board_id: boardId,
-      column_id: target,
-      title: card.fullTitle,
-      description: card.description,
-      priority: card.priority,
-      due_date: null,
-      assignee_user_id: null,
-      labels: card.labels,
-      linked_page_id: null,
-      completed: false,
-      checklist: card.checklist,
-      attachments: [],
-      sort_order: order,
-      updated_at: new Date().toISOString(),
-    }
+  const plan = planCardRows({
+    boardId,
+    fallbackColumnId: columnId,
+    cards,
+    existing: oldestFirst(existing.data),
+    columnByTopic: options.columnByTopic,
+    skipDuplicates: options.skipDuplicates,
+    newId: () => crypto.randomUUID(),
   })
+  const { skippedIds, warnings } = plan
+  if (plan.issues.length > 0) {
+    const t = options.t ?? tPtBR
+    return { created: 0, skipped: skippedIds.length, skippedIds, errors: plan.issues.map(issue => importIssueText(issue, t)), warnings }
+  }
 
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const chunk = rows.slice(i, i + BATCH_SIZE)
+  const errors: string[] = []
+  let created = 0
+  for (const chunk of insertBatches(plan.rows, BATCH_SIZE)) {
     const { error } = await supabase.from('project_cards').insert(chunk)
     if (error) {
       errors.push(error.message)
@@ -169,5 +130,5 @@ export async function importParsedCards(
     created += chunk.length
   }
 
-  return { created, skipped: skippedIds.length, skippedIds, errors }
+  return { created, skipped: skippedIds.length, skippedIds, errors, warnings }
 }
