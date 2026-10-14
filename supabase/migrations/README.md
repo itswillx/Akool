@@ -174,3 +174,20 @@ end if;
 - Só a validação pula. O que é padrão da linha vale também sem usuário: o card sem `sort_order` vai para o fim da coluna e o `updated_at` é a versão do conteúdo (API-013, `project_cards_integrity`); o `finance_recurring_day_moved` (API-016); a posição e a versão dos cards de Estudos (API-021, `study_cards_rules`). As CHECK valem sempre: um backup que as fere deixa de restaurar.
 - Seguem a regra, com o restore provado no staging: `api013-project-cards.sql`, `api016-recurring.sql`, `api021-study.sql` e `api028-store-sales.sql` (bloco 2 de cada um, em `supabase/checks/`).
 - O harness do card inclui um INSERT sem claims, imitando a restauração e o cron (`supabase/checks/api006-restore.sql` é o modelo).
+
+**Exceção de guarda só para uma função (API-064/065).** Quando uma função DEFINER precisa fazer algo que a guarda recusa para o cliente (o `remove_workspace_member` tira do workspace as linhas de quem foi removido, com o `auth.uid()` da dona), a exceção na guarda é a mais estreita possível e depende de um GUC transacional que só aquela função liga e desliga:
+
+```sql
+-- na função (INVOKER, chamada só de dentro da DEFINER):
+perform set_config('akool.ws_release', p_workspace::text, true);
+-- ... os UPDATEs ...
+perform set_config('akool.ws_release', '', true);
+
+-- na guarda: além do GUC, as condições de negócio (aqui, workspace → privado,
+-- mesmo autor, autor fora do workspace e quem grava é a dona)
+current_setting('akool.ws_release', true) = old.workspace_id::text
+```
+
+- Nenhum cliente liga um GUC `akool.*` pelo PostgREST, então o RLS que deixa um membro atualizar a linha de outra pessoa (como `loan_is_owner` em pagamentos e garantias de empréstimo) não alcança a exceção.
+- A exceção que só acontece em cascata (o workspace antigo já não existe, no SET NULL de apagá-lo) dispensa o GUC.
+- O harness prova que a exceção não vale sem o GUC, com o GUC de outro workspace, para quem não é a dona, para membro ativo, para outro destino e para troca de autor (`supabase/checks/api064-workspace-exit.sql`, seção 7).

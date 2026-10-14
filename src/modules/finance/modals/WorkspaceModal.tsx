@@ -1,11 +1,15 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
+// API-064/065: criar, sair e remover membro pela camada de dados
+// (src/lib/data/financeWorkspace.ts), com o erro traduzido; o Sair e o
+// Remover dizem o que vai com a pessoa e o que fica no workspace.
 import { Users } from 'lucide-react'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { FieldGroup } from '@/shared/ui/Field'
 import { UserAvatar } from '@/shared/ui/UserAvatar'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { localeOf } from '../../../i18n/translations'
+import { createWorkspace, leaveWorkspace, removeWorkspaceMember, workspaceErrorText } from '../../../lib/data/financeWorkspace'
 import { supabase } from '../../../lib/supabase'
 import type { FinanceWorkspace, FinanceWorkspaceInvite, FinanceWorkspaceMember } from '../../../types'
 import {
@@ -46,11 +50,15 @@ export function WorkspaceModal({
     setTimeout(() => setFeedback(null), 3500)
   }
 
+  // O erro das RPCs de workspace no idioma da tela (a mensagem crua só quando
+  // não há tradução).
+  const errorText = (error: { code?: string; message?: string }) => workspaceErrorText(error, t)
+
   const handleCreate = async () => {
     if (!wsName.trim()) return
     setCreating(true)
-    const { error } = await supabase.rpc('create_workspace', { p_name: wsName.trim() })
-    if (error) showFeedback('error', error.message)
+    const { error } = await createWorkspace(wsName.trim())
+    if (error) showFeedback('error', errorText(error))
     else { await onReload(); showFeedback('success', t('finance_workspace_created')) }
     setCreating(false)
   }
@@ -82,16 +90,16 @@ export function WorkspaceModal({
 
   const handleLeave = async () => {
     setActing(true)
-    const { error } = await supabase.rpc('leave_workspace')
-    if (error) showFeedback('error', error.message)
+    const { error } = await leaveWorkspace()
+    if (error) showFeedback('error', errorText(error))
     else { await onReload(); setConfirmLeave(false); onClose() }
     setActing(false)
   }
 
   const handleRemoveMember = async (userId: string) => {
     setActing(true)
-    const { error } = await supabase.rpc('remove_workspace_member', { p_user_id: userId })
-    if (error) showFeedback('error', error.message)
+    const { error } = await removeWorkspaceMember(userId)
+    if (error) showFeedback('error', errorText(error))
     else { await onReload(); setConfirmRemove(null); showFeedback('success', t('finance_workspace_member_removed')) }
     setActing(false)
   }
@@ -183,7 +191,8 @@ export function WorkspaceModal({
           {activeTab === 'members' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {members.map(m => (
-                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 8, backgroundColor: 'var(--color-surface)' }}>
+                <Fragment key={m.id}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 8, backgroundColor: 'var(--color-surface)' }}>
                   <UserAvatar name={getMemberName(m)} seed={m.profile?.email} emoji={m.profile?.avatar_emoji} color={m.profile?.avatar_color} url={m.profile?.avatar_url} size={32} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -215,6 +224,13 @@ export function WorkspaceModal({
                     </>
                   )}
                 </div>
+                {confirmRemove === m.user_id && (
+                  <div style={{ padding: '0 12px' }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-text)' }}>{t('finance_workspace_remove_confirm', { name: getMemberName(m) })}</p>
+                    <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--color-text-muted)' }}>{t('finance_workspace_remove_detail')}</p>
+                  </div>
+                )}
+                </Fragment>
               ))}
 
               {/* Invite new member */}
@@ -225,6 +241,7 @@ export function WorkspaceModal({
                 {confirmLeave ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <p style={{ margin: 0, fontSize: 13, color: '#dc2626' }}>{t('finance_workspace_leave_confirm')}</p>
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-muted)' }}>{t('finance_workspace_leave_detail')}</p>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button disabled={acting} onClick={handleLeave}
                         style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: '#ef4444', color: '#fff', fontSize: 13, fontWeight: 600, cursor: acting ? 'not-allowed' : 'pointer', opacity: acting ? 0.6 : 1 }}>

@@ -55,16 +55,22 @@ export default function CoworkspaceOverviewTab({
   const catMap = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories])
   const memberMap = useMemo(() => new Map(members.map(m => [m.user_id, m])), [members])
 
-  // Every member shows up, even with zero spending; authors who already left
-  // the workspace would have workspace_id nulled by leave_workspace, so the
-  // members list covers everyone visible here.
+  // Every member shows up, even with zero spending. Since API-064/065 a row of
+  // someone who already left can stay in the workspace: the income or expense
+  // they recorded on a sale or purchase of someone who stays (it follows the
+  // sale, like the item), and leftovers a restore brings back. Those authors
+  // are not in `members`: they get the "former member" label and one shared
+  // bar, so the bars still add up to the month's expense.
   const spentByUser = useMemo(() => totalsByUser(monthTxs, 'expense'), [monthTxs])
   const memberSpending = useMemo(() =>
     members
       .map(m => ({ member: m, spent: spentByUser[m.user_id] ?? 0 }))
       .sort((a, b) => b.spent - a.spent),
     [members, spentByUser])
-  const maxMemberSpent = Math.max(1, ...memberSpending.map(m => m.spent))
+  const formerSpent = useMemo(() =>
+    Object.entries(spentByUser).reduce((sum, [userId, spent]) => (memberMap.has(userId) ? sum : sum + spent), 0),
+    [spentByUser, memberMap])
+  const maxMemberSpent = Math.max(1, formerSpent, ...memberSpending.map(m => m.spent))
 
   const monthBudgets = useMemo(() => budgets.filter(b => b.month === month), [budgets, month])
 
@@ -74,8 +80,9 @@ export default function CoworkspaceOverviewTab({
   }
 
   const memberName = (userId: string) => {
-    const p = memberMap.get(userId)?.profile
-    return p?.display_name || p?.email || '?'
+    const m = memberMap.get(userId)
+    if (!m) return t('finance_workspace_former_member')
+    return m.profile?.display_name || m.profile?.email || '?'
   }
 
   const caption = (text: string) => <p style={{ ...sectionCaptionStyle, fontSize: 11.5 }}>{text}</p>
@@ -134,12 +141,13 @@ export default function CoworkspaceOverviewTab({
         <div style={{ ...cardSurfaceStyle, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
           {caption(t('finance_ws_view_members_spending'))}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {memberSpending.map(({ member, spent }) => (
-              <div key={member.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {avatarOf(member.user_id, 28)}
+            {[...memberSpending.map(({ member, spent }) => ({ key: member.id, userId: member.user_id, spent })),
+              ...(formerSpent > 0 ? [{ key: 'former', userId: '', spent: formerSpent }] : [])].map(({ key, userId, spent }) => (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {avatarOf(userId, 28)}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{memberName(member.user_id)}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{memberName(userId)}</span>
                     <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text)', flexShrink: 0, ...tabularNums }}>{fmt(spent)}</span>
                   </div>
                   <div style={{ height: 6, borderRadius: 999, background: 'var(--color-hover)', overflow: 'hidden' }}>

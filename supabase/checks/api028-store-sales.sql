@@ -10,8 +10,8 @@
 --
 -- Bloco 1 (staging e ensaio na produção): começa pelo levantamento (só
 -- contagens) e segue com pessoas descartáveis A (dona), B e G (membros do
--- workspace W da A) e C (de fora), e D (dona do W3), E e F (membros do W3)
--- para quem sai do workspace. Cobre:
+-- workspace W da A) e C (de fora), e D (dona do W3), E, F e H (membros do
+-- W3) para quem sai do workspace. Cobre:
 --   * paridade JS ⇄ SQL: o JSON entre parity:begin e parity:end é o
 --     supabase/functions/_domain/fixtures/storeParity.json (o
 --     storeParity.test.ts confere), e store_product_figures, o lucro, o
@@ -35,14 +35,17 @@
 --     42501), os erros de entrada;
 --   * o item segue a venda: a dona removida do workspace
 --     (remove_workspace_member) ou o dono que sai (leave_workspace) vê e soma
---     os itens dos outros na receita; o item não sai do workspace da venda; o
---     remove_workspace_member de hoje recusa (42501) quem tem linha
---     financeira no workspace;
+--     os itens dos outros na receita; o item não sai do workspace da venda.
+--     Desde o API-064/065 (20261014120000_api064_065_workspace_exit), a venda
+--     vai com quem sai para o privado, a receita que um membro lançou na
+--     venda de quem fica continua no W (a dona altera a data e cancela sem
+--     42501) e remover quem tem linha financeira no W passa; o harness
+--     próprio desses cards é o supabase/checks/api064-workspace-exit.sql;
 --   * cascatas de SET NULL sobre uma venda antiga fora da regra (conta,
 --     cliente, transação, produto, workspace, nas duas ordens entre venda e
---     item, e o UPDATE do leave_workspace do card novo, depois do qual o item
---     de outra pessoa na venda que saiu do W some para os membros, e o autor
---     dele só o lê);
+--     item, o workspace apagado como no leave_workspace da última pessoa) e o
+--     leave_workspace de verdade, depois do qual o item de outra pessoa na
+--     venda que saiu do W some para os membros, e o autor dele só o lê;
 --   * INSERT sem usuário (restore, cron) e JWT authenticated sem sub;
 --   * compatibilidade com o front antigo, repetindo as gravações dele;
 --   * estrutura: 9 funções INVOKER em public, 5 em private sem EXECUTE para
@@ -70,6 +73,7 @@ declare
   ud uuid := gen_random_uuid();
   ue uuid := gen_random_uuid();
   uf uuid := gen_random_uuid();
+  uh uuid := gen_random_uuid();
   ug uuid := gen_random_uuid();
   ws uuid := gen_random_uuid();
   ws2 uuid := gen_random_uuid();
@@ -127,6 +131,7 @@ declare
   s_e uuid;
   s_d uuid;
   s_f uuid;
+  s_d2 uuid;
   i_ws5 uuid := gen_random_uuid();
   i_ws5b uuid := gen_random_uuid();
   i_f uuid;
@@ -406,7 +411,7 @@ begin
   insert into auth.users (id, email) values
     (a, format('api028-a-%s@example.invalid', tag)), (b, format('api028-b-%s@example.invalid', tag)), (c, format('api028-c-%s@example.invalid', tag)),
     (ud, format('api028-d-%s@example.invalid', tag)), (ue, format('api028-e-%s@example.invalid', tag)), (uf, format('api028-f-%s@example.invalid', tag)),
-    (ug, format('api028-g-%s@example.invalid', tag));
+    (ug, format('api028-g-%s@example.invalid', tag)), (uh, format('api028-h-%s@example.invalid', tag));
   insert into public.profiles (id, email, display_name, role, is_active, invite_slots_remaining) values
     (a, format('api028-a-%s@example.invalid', tag), 'A', 'standard', true, 0),
     (b, format('api028-b-%s@example.invalid', tag), 'B', 'standard', true, 0),
@@ -414,15 +419,16 @@ begin
     (ud, format('api028-d-%s@example.invalid', tag), 'D', 'standard', true, 0),
     (ue, format('api028-e-%s@example.invalid', tag), 'E', 'standard', true, 0),
     (uf, format('api028-f-%s@example.invalid', tag), 'F', 'standard', true, 0),
-    (ug, format('api028-g-%s@example.invalid', tag), 'G', 'standard', true, 0);
-  -- W3 é da D, com E e F membros: quem sai do workspace (seção 8b). W5 é da
+    (ug, format('api028-g-%s@example.invalid', tag), 'G', 'standard', true, 0),
+    (uh, format('api028-h-%s@example.invalid', tag), 'H', 'standard', true, 0);
+  -- W3 é da D, com E, F e H membros: quem sai do workspace (seção 8b). W5 é da
   -- A, sem membros: o SET NULL de apagar o workspace (seção 10), inclusive
   -- num item legado do W5 cuja venda está no W (a ordem "item primeiro"). G
   -- é membro do W sem venda nem item: quem deixa de ver o item quando a venda
   -- sai do W (seção 10).
   insert into public.finance_workspaces (id, name, owner_id) values (ws, 'api028 W', a), (ws2, 'api028 W2', a), (ws3, 'api028 W3', ud), (ws5, 'api028 W5', a);
   insert into public.finance_workspace_members (workspace_id, user_id, role) values (ws, a, 'owner'), (ws, b, 'member'), (ws, ug, 'member'),
-    (ws3, ud, 'owner'), (ws3, ue, 'member'), (ws3, uf, 'member');
+    (ws3, ud, 'owner'), (ws3, ue, 'member'), (ws3, uf, 'member'), (ws3, uh, 'member');
   insert into public.finance_accounts (id, user_id, workspace_id, name, type) values
     (acc_a, a, null, 'A', 'checking'), (acc_a2, a, null, 'A2', 'checking'), (acc_w, a, ws, 'W', 'checking'),
     (acc_b, b, null, 'B', 'checking'), (acc_c, c, null, 'C', 'checking'), (acc_leg, a, null, 'Legado', 'checking'),
@@ -476,7 +482,7 @@ begin
     -- Legado fora da regra: entregue sem data, receita que é despesa, cliente e
     -- conta da A, no W2.
     (s_leg, a, ws2, 'delivered', null, null, acc_leg, cust_leg, tx_leg, 0, 0, '2020-01-01'),
-    -- De B no workspace (o leave_workspace do card novo tira o workspace dela).
+    -- De B no workspace (o leave_workspace de B, na seção 10, tira o workspace dela).
     (s_bw, b, ws, 'negotiating', null, null, null, null, null, 0, 0, '2020-01-01'),
     -- Entregue e enviada, para a data de entrega (seção 5b).
     (s_del, a, ws, 'delivered', sp - 3, sp - 1, null, null, null, 0, 0, '2020-01-01'),
@@ -924,12 +930,11 @@ begin
                                       (select string_agg(unit_price::text, ' ' order by unit_price) from public.finance_store_sale_items where sale_id = s_foreign)),
                                'sold t t | 5000 t t | 1000 5000');
 
-  -- 8b. Quem sai do workspace (W3: D dona, E e F membros), só pelo app.
+  -- 8b. Quem sai do workspace (W3: D dona, E, F e H membros), só pelo app.
   -- Removida (remove_workspace_member): E, dona da venda, continua vendo o
-  -- item que F pôs nela, e a receita soma os dois. E não tem linhas
-  -- financeiras no W3 (a conta dela é privada, a venda é da Loja e a receita
-  -- só nasce depois): o remove_workspace_member de hoje recusa com 42501 quem
-  -- tem alguma (o caso de F, mais abaixo).
+  -- item que F pôs nela, e a receita soma os dois. Desde o API-064, a venda
+  -- de E vai com ela para o privado; o item de F fica no W3 e segue a venda
+  -- (F deixa de ver a venda).
   r := pg_temp.as_user(ue, format($q$select public.store_sale_create(%L::jsonb)::text$q$, jsonb_build_object('account_id', acc_e, 'workspace_id', ws3,
          'items', jsonb_build_array(jsonb_build_object('product_id', p_w3, 'unit_price', 10000)))));
   s_e := (pg_temp.res(r) -> 'sale' ->> 'id')::uuid;
@@ -940,7 +945,9 @@ begin
   r := pg_temp.as_user(uf, format($q$update public.finance_store_sale_items set workspace_id = null where id = %L$q$, i_f));
   out := out || pg_temp.expect('F tira o workspace do próprio item na venda do W3 (UPDATE direto)', r, 'erro 22023: O item fica no workspace da venda%');
   r := pg_temp.as_user(ud, format($q$select public.remove_workspace_member(%L)::text$q$, ue));
-  out := out || pg_temp.expect('D remove E do W3', r, 'ok ');
+  out := out || pg_temp.expect('D remove E do W3: a venda de E vai para o privado, o item de F fica no W3',
+                               r || ' ' || format('%s %s', (select workspace_id is null from public.finance_store_sales where id = s_e),
+                                                  (select workspace_id = ws3 from public.finance_store_sale_items where id = i_f)), 'ok  t t');
   r := pg_temp.as_user(ue, format($q$select count(*)::text from public.finance_store_sale_items where sale_id = %L$q$, s_e));
   out := out || pg_temp.expect('E, fora do W3, vê os 2 itens da própria venda', r, 'ok 2');
   r := pg_temp.as_user(c, format($q$select count(*)::text from public.finance_store_sale_items where sale_id = %L$q$, s_e))
@@ -951,60 +958,66 @@ begin
   out := out || pg_temp.expect('E vende com receita: o valor soma o item de F (300,00), em nome de E, privada',
                                pg_temp.or_err(format('%s %s %s', (v -> 'transaction' ->> 'amount')::numeric::bigint, v -> 'transaction' ->> 'user_id' = ue::text,
                                                coalesce(v -> 'transaction' ->> 'workspace_id', 'null')), r), '30000 t null');
-  r := pg_temp.as_user(uf, format($q$select public.store_sale_update(%L, '{}')::text$q$, s_e));
-  out := out || pg_temp.expect('F (vê a venda, não a receita privada de E) chama o update vazio: passa, sem receita',
-                               pg_temp.or_err(format('%s %s', coalesce(pg_temp.res(r) ->> 'transaction', 'null'), pg_temp.res(r) ->> 'transaction_changed'), r), 'null false');
-  r := pg_temp.as_user(uf, format($q$select public.store_sale_update(%L, '{"fees": 100}')::text$q$, s_e));
-  out := out || pg_temp.expect('F muda a taxa (o líquido muda): a receita é de E', r, 'erro 42501: A receita vinculada é de outra pessoa%');
+  r := pg_temp.as_user(uf, format($q$select public.store_sale_update(%L, '{}')::text$q$, s_e))
+       || ' | ' || pg_temp.as_user(uf, format($q$select count(*)::text from public.finance_store_sale_items where id = %L$q$, i_f));
+  out := out || pg_temp.expect('F não vê mais a venda privada de E (P0002), mas ainda lê o próprio item', r, 'erro P0002: Venda não encontrada | ok 1');
   r := pg_temp.as_user(ue, format($q$select public.store_sale_items_remove(%L)::text$q$, i_f));
   v := pg_temp.res(r);
   out := out || pg_temp.expect('E tira o item de F da própria venda: a receita volta a 100,00',
                                pg_temp.or_err(format('%s %s %s', (v -> 'transaction' ->> 'amount')::numeric::bigint, v ->> 'transaction_changed', jsonb_array_length(v -> 'items')), r),
                                '10000 true 1');
   -- Saída (leave_workspace): F lança a receita da venda de D no W3 e a do
-  -- próprio negócio, com um item de D, e sai.
+  -- próprio negócio, com um item de D, e sai. A receita de F na venda de D
+  -- fica no W3, seguindo a venda (API-064, decisão 4): D muda a data e
+  -- cancela sem depender de F.
   r := pg_temp.as_user(ud, format($q$select public.store_sale_create(%L::jsonb)::text$q$, jsonb_build_object('account_id', acc_w3, 'workspace_id', ws3,
          'items', jsonb_build_array(jsonb_build_object('product_id', p_w3, 'unit_price', 15000)))));
   s_d := (pg_temp.res(r) -> 'sale' ->> 'id')::uuid;
   r := pg_temp.as_user(uf, format($q$select public.store_sale_set_status(%L, 'sold', true, p_today => %L)::text$q$, s_d, sp));
   w := pg_temp.res(r) -> 'transaction';
-  -- O remove_workspace_member de hoje (DEFINER, com o auth.uid() da dona)
-  -- anula o workspace das linhas financeiras de quem sai, e o ws_guard recusa
-  -- realocar a linha de outra pessoa: quem tem transação, conta, categoria,
-  -- orçamento, meta ou recorrente no workspace não sai por ele. O card
-  -- "remove_workspace_member falha para membro com linhas financeiras"
-  -- inverte este caso.
-  r := pg_temp.as_user(ud, format($q$select public.remove_workspace_member(%L)::text$q$, uf));
-  out := out || pg_temp.expect('D tenta remover F, que lançou a receita da venda de D no W3: o 42501 de hoje (F e a receita continuam no W3)',
-                               r || ' | ' || (select count(*) from public.finance_workspace_members where workspace_id = ws3 and user_id = uf)
-                               || ' ' || coalesce((select (workspace_id = ws3)::text from public.finance_transactions where id = (w ->> 'id')::uuid), 'sem receita'),
-                               'erro 42501: Somente o autor pode realocar o lancamento | 1 true');
   r := pg_temp.as_user(uf, format($q$select public.store_sale_create(%L::jsonb)::text$q$, jsonb_build_object('account_id', acc_f, 'workspace_id', ws3,
          'items', jsonb_build_array(jsonb_build_object('product_id', p_w3, 'unit_price', 10000)))));
   s_f := (pg_temp.res(r) -> 'sale' ->> 'id')::uuid;
   r := pg_temp.as_user(ud, format($q$select public.store_sale_items_add(%L, %L::jsonb)::text$q$, s_f, jsonb_build_array(jsonb_build_object('product_id', p_w3, 'unit_price', 20000))));
   r := pg_temp.as_user(uf, $q$select public.leave_workspace()::text$q$);
-  out := out || pg_temp.expect('F sai do W3 (leave_workspace): a receita que F lançou na venda de D vira privada de F',
-                               r || ' ' || coalesce((select coalesce(workspace_id::text, 'null') || ' ' || (user_id = uf) from public.finance_transactions where id = (w ->> 'id')::uuid), 'sem receita'),
-                               'ok  null true');
+  out := out || pg_temp.expect('F sai do W3 (leave_workspace): a receita que F lançou na venda de D fica no W3, em nome de F; a venda de F vai para o privado',
+                               r || ' ' || coalesce((select (workspace_id = ws3) || ' ' || (user_id = uf) from public.finance_transactions where id = (w ->> 'id')::uuid), 'sem receita')
+                               || ' ' || coalesce((select (workspace_id is null)::text from public.finance_store_sales where id = s_f), 'sem venda'),
+                               'ok  true true true');
   r := pg_temp.as_user(uf, format($q$select public.store_sale_set_status(%L, 'sold', true, p_today => %L)::text$q$, s_f, sp));
   out := out || pg_temp.expect('F, fora do W3, vende a própria venda com receita: o valor soma o item de D (300,00)',
                                coalesce((pg_temp.res(r) -> 'transaction' ->> 'amount')::numeric::bigint::text, r), '30000');
   r := pg_temp.as_user(ud, format($q$select public.store_sale_update(%L, '{"notes": "nota da D"}')::text$q$, s_d));
-  out := out || pg_temp.expect('D edita a nota da venda com a receita de quem saiu: passa',
-                               pg_temp.or_err(format('%s %s %s', pg_temp.res(r) -> 'sale' ->> 'notes', coalesce(pg_temp.res(r) ->> 'transaction', 'null'),
-                                               pg_temp.res(r) ->> 'transaction_changed'), r), 'nota da D null false');
+  out := out || pg_temp.expect('D edita a nota da venda com a receita de quem saiu: passa, e D vê a receita',
+                               pg_temp.or_err(format('%s %s %s', pg_temp.res(r) -> 'sale' ->> 'notes', pg_temp.res(r) -> 'transaction' ->> 'id' = w ->> 'id',
+                                               pg_temp.res(r) ->> 'transaction_changed'), r), 'nota da D t false');
   r := pg_temp.as_user(ud, format($q$select public.store_sale_items_update(%L, '{"quantity": 1}')::text$q$,
                                   (select id from public.finance_store_sale_items where sale_id = s_d)));
   out := out || pg_temp.expect('D grava o item sem mudar o valor: passa', coalesce(pg_temp.res(r) ->> 'transaction_changed', r), 'false');
   r := pg_temp.as_user(ud, format($q$select public.store_sale_set_status(%L, 'shipped')::text$q$, s_d));
   r := pg_temp.as_user(ud, format($q$select public.store_sale_set_status(%L, 'sold', p_sold_on => %L)::text$q$, s_d, sp - 1));
-  out := out || pg_temp.expect('D volta para vendida com outra data: a data da receita de F não muda (42501)', r, 'erro 42501: A receita vinculada é de outra pessoa: só quem a lançou%');
-  r := pg_temp.as_user(ud, format($q$select public.store_sale_set_status(%L, 'cancelled')::text$q$, s_d));
-  out := out || pg_temp.expect('D cancela: quem lançou a receita precisa apagá-la (42501)', r, 'erro 42501: A receita vinculada é de outra pessoa: peça a quem a lançou%');
-  r := pg_temp.as_user(uf, format($q$with x as (delete from public.finance_transactions where id = %L returning 1) select count(*)::text from x$q$, w ->> 'id'));
-  r := r || ' ' || pg_temp.as_user(ud, format($q$select public.store_sale_set_status(%L, 'cancelled') -> 'sale' ->> 'status'$q$, s_d));
-  out := out || pg_temp.expect('F apaga a receita em Transações e então D cancela', r, 'ok 1 ok cancelled');
+  out := out || pg_temp.expect('D volta para vendida com outra data: a data da receita de F acompanha (sem 42501)',
+                               pg_temp.or_err(format('%s %s', pg_temp.res(r) -> 'transaction' ->> 'date', pg_temp.res(r) ->> 'transaction_changed'), r),
+                               format('%s true', sp - 1));
+  r := pg_temp.as_user(ud, format($q$select public.store_sale_set_status(%L, 'cancelled') -> 'sale' ->> 'status'$q$, s_d));
+  out := out || pg_temp.expect('D cancela: a receita de F, no W3, é apagada (sem 42501)',
+                               r || ' ' || (select count(*) from public.finance_transactions where id = (w ->> 'id')::uuid), 'ok cancelled 0');
+  -- Remoção (remove_workspace_member) de quem lançou a receita da venda da
+  -- dona: antes do API-065 dava 42501 ("Somente o autor pode realocar o
+  -- lancamento"). Agora H sai e a receita fica no W3.
+  r := pg_temp.as_user(ud, format($q$select public.store_sale_create(%L::jsonb)::text$q$, jsonb_build_object('account_id', acc_w3, 'workspace_id', ws3,
+         'items', jsonb_build_array(jsonb_build_object('product_id', p_w3, 'unit_price', 12000)))));
+  s_d2 := (pg_temp.res(r) -> 'sale' ->> 'id')::uuid;
+  r := pg_temp.as_user(uh, format($q$select public.store_sale_set_status(%L, 'sold', true, p_today => %L)::text$q$, s_d2, sp));
+  w := pg_temp.res(r) -> 'transaction';
+  r := pg_temp.as_user(ud, format($q$select public.remove_workspace_member(%L)::text$q$, uh));
+  out := out || pg_temp.expect('D remove H, que lançou a receita da venda de D no W3: H sai e a receita fica no W3',
+                               r || ' | ' || (select count(*) from public.finance_workspace_members where workspace_id = ws3 and user_id = uh)
+                               || ' ' || coalesce((select (workspace_id = ws3)::text from public.finance_transactions where id = (w ->> 'id')::uuid), 'sem receita'),
+                               'ok  | 0 true');
+  r := pg_temp.as_user(ud, format($q$select public.store_sale_set_status(%L, 'cancelled') -> 'sale' ->> 'status'$q$, s_d2));
+  out := out || pg_temp.expect('D cancela a venda com a receita de H (apagada no W3)',
+                               r || ' ' || (select count(*) from public.finance_transactions where id = (w ->> 'id')::uuid), 'ok cancelled 0');
 
   -- 9. Erros de entrada e de regra das RPCs.
   r := pg_temp.as_user(a, format($q$select public.store_sale_set_status(%L, 'shipped', p_today => %L)::text$q$, s_tx2, sp + 2));
@@ -1113,8 +1126,12 @@ begin
   out := out || pg_temp.expect('apagar a "receita" da venda legada', r, 'ok 1');
   r := pg_temp.as_user(a, format($q$with d as (delete from public.finance_store_products where id = %L returning 1) select count(*)::text from d$q$, p_leg));
   out := out || pg_temp.expect('apagar o produto do item legado', r, 'ok 1');
-  r := pg_temp.as_user(a, format($q$with d as (delete from public.finance_workspaces where id = %L returning 1) select count(*)::text from d$q$, ws2));
-  out := out || pg_temp.expect('apagar o workspace da venda legada', r, 'ok 1');
+  -- O workspace só é apagado pelo leave_workspace da última pessoa (DEFINER,
+  -- com o auth.uid() dela; o API-064 tirou a policy de DELETE): o mesmo
+  -- DELETE como postgres, com os claims de A.
+  r := pg_temp.try(jsonb_build_object('sub', a, 'role', 'authenticated'),
+                   format($q$with d as (delete from public.finance_workspaces where id = %L returning 1) select count(*)::text from d$q$, ws2));
+  out := out || pg_temp.expect('apagar o workspace da venda legada (como o leave_workspace da última pessoa)', r, 'ok 1');
   select format('%s %s %s %s %s %s %s', status, coalesce(sold_on::text, 'null'), customer_id is null, account_id is null, transaction_id is null, workspace_id is null,
                 (select product_id is null and quantity = 3 from public.finance_store_sale_items where id = i_leg))
     into r from public.finance_store_sales where id = s_leg;
@@ -1123,34 +1140,24 @@ begin
   -- gatilhos de FK (no staging, a venda antes). O item legado do W5 numa
   -- venda do W recebe o SET NULL com a venda num workspace que existe: é a
   -- ordem "item primeiro", que a regra do item deixa passar.
-  r := pg_temp.as_user(a, format($q$with d as (delete from public.finance_workspaces where id = %L returning 1) select count(*)::text from d$q$, ws5));
+  r := pg_temp.try(jsonb_build_object('sub', a, 'role', 'authenticated'),
+                   format($q$with d as (delete from public.finance_workspaces where id = %L returning 1) select count(*)::text from d$q$, ws5));
   out := out || pg_temp.expect('apagar o W5: o SET NULL passa na venda e no item do W5, e no item legado do W5 numa venda do W',
                                r || ' ' || format('%s %s %s %s', (select workspace_id is null from public.finance_store_sales where id = s_ws5),
                                                   (select workspace_id is null from public.finance_store_sale_items where id = i_ws5),
                                                   (select workspace_id is null from public.finance_store_sale_items where id = i_ws5b),
                                                   (select workspace_id = ws from public.finance_store_sales where id = s_ws5b)),
                                'ok 1 t t t t');
-  -- O UPDATE que o card "Sair do workspace leva as linhas da Loja" fará no
-  -- leave_workspace (SECURITY DEFINER, com o auth.uid() de quem sai), na
-  -- ordem do cabeçalho da migration: primeiro as vendas de quem sai, depois
-  -- só os itens dele nelas (o item de quem sai na venda de outra pessoa
-  -- fica, e o ws_guard recusa realocar o item de outra pessoa na venda dele).
-  -- Antes, A (membro do W) põe um item na venda de B pelo app: ele fica no W
-  -- quando a venda vai para o privado, e segue a venda.
+  -- B sai do W (leave_workspace, API-064): primeiro as vendas de quem sai,
+  -- depois só os itens dele nelas (o item de quem sai na venda de outra
+  -- pessoa fica, e o ws_guard recusa realocar o item de outra pessoa na venda
+  -- dele). Antes, A (membro do W) põe um item na venda de B pelo app: ele
+  -- fica no W quando a venda vai para o privado, e segue a venda.
   r := pg_temp.as_user(a, format($q$select public.store_sale_items_add(%L, %L::jsonb)::text$q$, s_bw, jsonb_build_array(jsonb_build_object('product_id', p_pairs, 'unit_price', 20000))));
   select (e ->> 'id')::uuid into i_abw from jsonb_array_elements(pg_temp.res(r) -> 'items') e where e ->> 'user_id' = a::text;
   out := out || pg_temp.expect('A (membro) põe um item de 200,00 na venda de B no W', coalesce((select workspace_id = ws from public.finance_store_sale_items where id = i_abw)::text, r), 'true');
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', b, 'role', 'authenticated')::text, true);
-  begin
-    update public.finance_store_sales set workspace_id = null where user_id = b and workspace_id = ws;
-    update public.finance_store_sale_items i set workspace_id = null
-     where i.user_id = b and i.workspace_id = ws and i.sale_id in (select s.id from public.finance_store_sales s where s.user_id = b);
-    r := 'ok';
-  exception when others then
-    r := format('erro %s: %s', sqlstate, sqlerrm);
-  end;
-  perform set_config('request.jwt.claims', '', true);
-  out := out || pg_temp.expect('o UPDATE de workspace do leave_workspace (card novo) passa', r, 'ok');
+  r := pg_temp.as_user(b, $q$select public.leave_workspace()::text$q$);
+  out := out || pg_temp.expect('B sai do W (leave_workspace)', r, 'ok ');
   out := out || pg_temp.expect('depois: a venda de B e o item dele no privado, o item de A ainda no W',
                                format('%s %s %s', (select workspace_id is null from public.finance_store_sales where id = s_bw),
                                       (select bool_and(workspace_id is null) from public.finance_store_sale_items where sale_id = s_bw and user_id = b),
