@@ -1,6 +1,6 @@
 {
   "files": 17,
-  "cards": 435,
+  "cards": 438,
   "backlogs": {
     "backlog-api-v1.md": {
       "topics": [
@@ -82,7 +82,10 @@
         "API-060 | low | M | Empréstimos | api,api-v1,lote-20,empréstimos,compartilhamento,esforço:m | arquivos 4 | subtarefas 0/14 | b4af96c0fbb29a7f",
         "API-061 | medium | S | Fundação da API | api,api-v1,lote-21,limpeza,fundação da api,esforço:s | arquivos 10 | subtarefas 0/13 | 548daac80b8b716b",
         "API-062 | low | S | Documentação | api,api-v1,lote-21,oauth,documentação,futuro,esforço:s | arquivos 2 | subtarefas 0/9 | 9a9173d1d5bd34af",
-        "API-063 | high | M | Fundação da API | api,api-v1,lote-22,validação,produção,fundação da api,esforço:m | arquivos 4 | subtarefas 0/12 | f0d6945b753853a0"
+        "API-063 | high | M | Fundação da API | api,api-v1,lote-22,validação,produção,fundação da api,esforço:m | arquivos 4 | subtarefas 0/12 | f0d6945b753853a0",
+        "API-064 | high | M | Finanças | api-v1,finanças,loja,workspace,supabase,privacidade,esforço:m | arquivos 5 | subtarefas 0/8 | 9fd2d9e4ccb5cb87 | depende de API-028",
+        "API-065 | medium | M | Finanças | api-v1,finanças,workspace,supabase,rls,esforço:m | arquivos 4 | subtarefas 0/7 | 761d4236862c926c",
+        "API-066 | medium | S | Finanças | api-v1,finanças,loja,frontend,esforço:s | arquivos 3 | subtarefas 0/4 | 075279b34884acdf"
       ]
     },
     "backlog-arch-013.md": {
