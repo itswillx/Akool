@@ -1,28 +1,13 @@
 import type { ProjectCard } from '../types'
+import { addDays, diffDays, isoFromUTC, mondayOf, toUTC } from '../../supabase/functions/_domain/isoDate'
 
 // Pure date / layout helpers for the projects timeline (Gantt) view.
 // All dates are 'YYYY-MM-DD' strings; arithmetic is done in UTC to avoid DST drift.
+// API-027: a aritmética de datas mora em supabase/functions/_domain/isoDate.ts
+// (a agenda e as estatísticas usam a mesma); o GanttView continua importando daqui.
+export { addDays, diffDays, isoFromUTC }
 
 const DAY_MS = 86_400_000
-
-function toUTC(iso: string): number {
-  const [y, m, d] = iso.split('-').map(Number)
-  return Date.UTC(y, m - 1, d)
-}
-
-export function isoFromUTC(ms: number): string {
-  const d = new Date(ms)
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
-}
-
-/** Whole days from `a` to `b` (b - a). Negative if b is before a. */
-export function diffDays(a: string, b: string): number {
-  return Math.round((toUTC(b) - toUTC(a)) / DAY_MS)
-}
-
-export function addDays(iso: string, n: number): string {
-  return isoFromUTC(toUTC(iso) + n * DAY_MS)
-}
 
 /** First day of the month for `iso`. */
 export function startOfMonth(iso: string): string {
@@ -38,9 +23,7 @@ export function endOfMonth(iso: string): string {
 
 /** Monday on or before `iso`. */
 export function startOfWeek(iso: string): string {
-  const dow = new Date(toUTC(iso)).getUTCDay() // 0=Sun..6=Sat
-  const back = (dow + 6) % 7 // days since Monday
-  return addDays(iso, -back)
+  return mondayOf(iso)
 }
 
 /** ISO-8601 week number. */

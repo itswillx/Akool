@@ -1,4 +1,5 @@
 import type { ProjectCard, ProjectCardChecklistItem, ProjectCardPriority, ProjectColumn } from '../types'
+import { hasCardLabel } from './cardLabels'
 
 // Fila de desenvolvimento (public.project_card_queue + RPCs cq_*). A regra vive
 // no SQL; aqui ficam só o espelho da ordenação para a prévia do app, os selos
@@ -106,7 +107,8 @@ export function isEmptyQueueFilter(f: QueueFilter): boolean {
 /**
  * Mesma seleção e ordem de public.cq_enqueue: cards explícitos OU cards que
  * batem com todos os filtros informados; só abertos e fora da fila ativa;
- * ordem por prioridade, coluna e posição no quadro.
+ * ordem por prioridade, coluna e posição no quadro. Rótulos comparam sem
+ * caixa, como private.cq_labels_match.
  */
 export function previewQueueOrder(
   cards: ProjectCard[],
@@ -126,7 +128,7 @@ export function previewQueueOrder(
       (filtered && !blockedIds.has(c.id) &&
         (filter.columnIds.length === 0 || filter.columnIds.includes(c.column_id)) &&
         (filter.priorities.length === 0 || filter.priorities.includes(c.priority)) &&
-        (filter.labels.length === 0 || (c.labels ?? []).some(l => filter.labels.includes(l)))),
+        (filter.labels.length === 0 || filter.labels.some(l => hasCardLabel(c.labels ?? [], l)))),
     )
     .sort((a, b) =>
       PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] ||

@@ -1,0 +1,23 @@
+[
+  {
+    "type": "table",
+    "content": {
+      "type": "tableContent",
+      "headerRows": 3,
+      "rows": [
+        {
+          "cells": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "cells": [
+            "c",
+            "d"
+          ]
+        }
+      ]
+    }
+  }
+]

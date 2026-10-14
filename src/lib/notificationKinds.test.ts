@@ -66,6 +66,19 @@ describe('notificationText', () => {
     expect(since.title).toBe('Backup overdue')
     expect(since.body).toMatch(/^No backup completed since October 1, 2026/)
   })
+
+  it('falha no cron de recorrentes (API-016): dia do calendário, sem fuso, e reserva sem os campos', () => {
+    const data = { date: '2026-10-08', failed: 2, budgets_failed: 1 }
+    expect(notificationText(note('finance_recurring_failed', data), t, 'pt-BR')).toEqual({
+      title: 'Recorrentes com falha',
+      body: 'A geração de recorrentes de 8 de outubro de 2026 falhou em 2 recorrente(s) e 1 grupo(s) de orçamento.',
+    })
+    expect(notificationText(note('finance_recurring_failed', data), getT('en'), 'en').body).toMatch(/^Generating recurring items for October 8, 2026 failed for 2/)
+    // Sem os campos (ou com data fora do formato), fica o texto gravado pelo banco.
+    const stored = note('finance_recurring_failed', { date: '08/10/2026', failed: 2, budgets_failed: 1 })
+    expect(notificationText(stored, t, 'pt-BR')).toEqual({ title: stored.title, body: stored.body })
+    expect(notificationText(note('finance_recurring_failed', { date: '2026-10-08' }), t, 'pt-BR').title).toBe(note('finance_recurring_failed').title)
+  })
 })
 
 describe('categoria, aparência, destino e detalhes', () => {
@@ -77,6 +90,7 @@ describe('categoria, aparência, destino e detalhes', () => {
     ['board_shared', 'projects', 'kanban', 'accent'],
     ['card_assigned', 'projects', 'cardCheck', 'accent'],
     ['backup_stale', 'system', 'database', 'warning'],
+    ['finance_recurring_failed', 'system', 'database', 'warning'],
     ['desconhecido', 'system', 'bell', 'neutral'],
   ])('%s → %s / %s / %s', (type, category, icon, tone) => {
     expect(notificationCategory(note(type))).toBe(category)

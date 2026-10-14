@@ -93,6 +93,27 @@ describe('buildAutoSchedule', () => {
     expect(mediumPatch.depends_on).toHaveLength(2)
   })
 
+  // API-013: o servidor recusa dependência em ciclo, e o cronograma é atômico.
+  it('does not chain onto a predecessor that already depends on the card', () => {
+    const urgent = card({ id: 'urgent', priority: 'urgent', depends_on: ['bridge'] })
+    const bridge = card({ id: 'bridge', column_id: 'c2', priority: 'low', depends_on: ['medium'], due_date: '2025-06-30' })
+    const medium = card({ id: 'medium', priority: 'medium' })
+    const low = card({ id: 'low', priority: 'low' })
+    const { patches } = buildAutoSchedule([urgent, bridge, medium, low], [column(), column({ id: 'c2' })], TODAY)
+    const byId = Object.fromEntries(patches.map(p => [p.cardId, p]))
+    // medium viria depois de urgent, mas urgent → bridge → medium já existe.
+    expect(byId.medium.depends_on).toEqual([])
+    expect(byId.low.depends_on).toEqual(['medium'])
+  })
+
+  it('does not chain onto a card that already has 100 dependencies (server limit)', () => {
+    const many = Array.from({ length: 100 }, (_, i) => `dep${i}`)
+    const urgent = card({ id: 'urgent', priority: 'urgent' })
+    const full = card({ id: 'full', priority: 'medium', depends_on: many })
+    const { patches } = buildAutoSchedule([urgent, full], [column()], TODAY)
+    expect(patches.find(p => p.cardId === 'full')!.depends_on).toHaveLength(100)
+  })
+
   it('excludes completed cards from scheduling entirely', () => {
     const done = card({ id: 'done', completed: true, priority: 'urgent' })
     const open = card({ id: 'open', priority: 'low' })

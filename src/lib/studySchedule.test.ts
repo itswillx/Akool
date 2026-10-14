@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import harness from '../../supabase/checks/api024-study-rpcs.sql?raw'
+import migration024 from '../../supabase/migrations/20261011120000_api024_study_rpcs.sql?raw'
 import { addDuration, distributeDueDates, isCardOverdue } from './studySchedule'
 import type { StudyCheckpoint } from '../types'
 
@@ -68,6 +70,76 @@ describe('distributeDueDates', () => {
       expect(dates[i] >= dates[i - 1]).toBe(true)
     }
     expect(new Set(dates).size).toBeLessThan(5)
+  })
+})
+
+// API-024: o study_reschedule repete o distributeDueDates no servidor. Os
+// vetores relativos do harness (supabase/checks/api024-study-rpcs.sql, `vec`:
+// [meta - hoje, n cards, prazo de cada card - hoje]) rodam contra a RPC no
+// staging e aqui contra a função do app: mudar um lado sem o outro quebra.
+
+type RelativeVector = [span: number, count: number, offsets: number[]]
+
+function harnessVectors(): RelativeVector[] {
+  const marker = "vec jsonb := '"
+  const start = harness.indexOf(marker)
+  expect(start).toBeGreaterThan(-1)
+  return JSON.parse(harness.slice(start + marker.length, harness.indexOf("';", start))) as RelativeVector[]
+}
+
+// Aritmética em UTC: independe do fuso de quem roda o teste.
+function plusDays(dateISO: string, days: number): string {
+  const [y, m, d] = dateISO.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
+}
+
+function daysBetween(fromISO: string, toISO: string): number {
+  return Math.round((Date.parse(`${toISO}T00:00:00Z`) - Date.parse(`${fromISO}T00:00:00Z`)) / 86_400_000)
+}
+
+describe('distributeDueDates × study_reschedule (vetores do harness do API-024)', () => {
+  const vectors = harnessVectors()
+
+  it('de 40 a 70 vetores, com meta no passado e em hoje, n = 1 e n = 100', () => {
+    expect(vectors.length).toBeGreaterThanOrEqual(40)
+    expect(vectors.length).toBeLessThanOrEqual(70)
+    expect(vectors.some(([span]) => span < 0)).toBe(true)
+    expect(vectors.some(([span]) => span === 0)).toBe(true)
+    expect(vectors.some(([, count]) => count === 1)).toBe(true)
+    expect(vectors.some(([, count]) => count === 100)).toBe(true)
+    for (const [, count, offsets] of vectors) expect(offsets).toHaveLength(count)
+  })
+
+  // Virada de mês, ano bissexto, horário de verão dos EUA e virada de ano. O
+  // fuso fica fixo em Nova York: no CI (UTC) e em São Paulo (sem horário de
+  // verão desde 2019) todo dia tem 24 h, e um Math.floor no lugar do
+  // Math.round do totalDays passaria. O stubEnv grava no process.env, e o Node
+  // relê o TZ; o pool do vitest é forks (padrão do vitest 4, sem pool no
+  // vite.config.ts), então a troca vale só para este arquivo.
+  describe('no fuso de Nova York', () => {
+    beforeAll(() => {
+      vi.stubEnv('TZ', 'America/New_York')
+      // Pré-condição: o fuso valeu, 8/3/2026 tem 23 h e 1/11/2026 tem 25 h.
+      const hours = (y: number, m: number, d: number) => (new Date(y, m - 1, d + 1).getTime() - new Date(y, m - 1, d).getTime()) / 3_600_000
+      expect([hours(2026, 3, 8), hours(2026, 11, 1)]).toEqual([23, 25])
+    })
+    afterAll(() => { vi.unstubAllEnvs() })
+
+    it.each(['2026-07-20', '2026-02-27', '2028-02-27', '2026-03-08', '2026-11-01', '2026-12-31'])('a partir de %s', start => {
+      for (const [span, count, offsets] of vectors) {
+        const dates = distributeDueDates(start, plusDays(start, span), count)
+        expect(dates.map(date => daysBetween(start, date)), `${span} ${count}`).toEqual(offsets)
+      }
+    })
+  })
+
+  it('a conta inteira do SQL, (2*i*span + n) / (2*n), é o Math.round do app', () => {
+    expect(migration024).toContain('v_today + ((2 * o.i * (v_target - v_today) + o.n) / (2 * o.n))::integer')
+    expect(migration024).toContain('case when v_target <= v_today then v_target')
+    for (const [span, count, offsets] of vectors) {
+      const sql = Array.from({ length: count }, (_, k) => (span <= 0 ? span : Math.floor((2 * (k + 1) * span + count) / (2 * count))))
+      expect(sql, `${span} ${count}`).toEqual(offsets)
+    }
   })
 })
 

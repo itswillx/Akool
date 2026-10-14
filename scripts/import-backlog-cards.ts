@@ -1,8 +1,12 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createClient } from '@supabase/supabase-js'
+import { tPtBR } from '../supabase/functions/_domain/i18n.pt-BR.ts'
 import { parseBacklogMarkdown } from '../src/lib/backlogMarkdownParser.ts'
-import { ensureTopicColumns, importParsedCards, planTopicColumns } from '../src/lib/importProjectCards.ts'
+import {
+  ensureTopicColumns, importIssueText, importParsedCards, importWarningText, planCardRows, planTopicColumns,
+} from '../src/lib/importProjectCards.ts'
+import type { Database } from '../src/types/db.ts'
 
 function loadEnvFile(path: string) {
   if (!existsSync(path)) return
@@ -28,6 +32,8 @@ function usage() {
   console.log(`Usage: npm run import:cards -- <file.md> [--board-id=<uuid>] [--by-topic] [--dry-run] [--no-skip-duplicates]
 
   --by-topic  cria uma coluna por "## Tópico:" (reaproveita colunas de mesmo nome)
+  --dry-run   não grava: lista os cards, as dependências (Depende de), as que
+              ficam fora do arquivo e os problemas que impedem importar (sai com 1)
 
 Environment (.env.local):
   VITE_SUPABASE_URL
@@ -84,6 +90,22 @@ async function main() {
   }
 
   if (dryRun) {
+    // API-033: o mesmo plano da importação, sem o quadro (as dependências fora
+    // do arquivo são procuradas nele só na importação).
+    const plan = planCardRows({ boardId: 'dry-run', fallbackColumnId: 'dry-run', cards: parsed.cards, existing: [], skipDuplicates: false })
+    const withDeps = parsed.cards.filter(c => c.dependsOn.length > 0)
+    if (withDeps.length > 0) {
+      console.log('\nDependências (Depende de):')
+      withDeps.forEach(c => console.log(`  ${c.externalId} depende de ${c.dependsOn.join(', ')}`))
+    }
+    if (plan.warnings.length > 0) {
+      console.log('\nDependências fora do arquivo (procuradas no quadro na importação):')
+      plan.warnings.forEach(w => console.log(`  ${w.cardId} → ${w.detail}`))
+    }
+    if (plan.issues.length > 0) {
+      console.log('\nProblemas que impedem a importação (ciclo, limites):')
+      plan.issues.forEach(i => console.log(`  - ${importIssueText(i, tPtBR)}`))
+    }
     if (byTopic) {
       console.log('\nColumns by topic (new columns go after the board\'s current ones):')
       for (const topic of parsed.topics) {
@@ -96,7 +118,7 @@ async function main() {
     console.log('\nDry run — preview:')
     console.log(JSON.stringify(parsed.cards.slice(0, 3), null, 2))
     if (parsed.cards.length > 3) console.log(`  ... and ${parsed.cards.length - 3} more`)
-    process.exit(0)
+    process.exit(plan.issues.length > 0 ? 1 : 0)
   }
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL
@@ -110,7 +132,7 @@ async function main() {
     process.exit(1)
   }
 
-  const supabase = createClient(supabaseUrl, serviceKey ?? anonKey!)
+  const supabase = createClient<Database>(supabaseUrl, serviceKey ?? anonKey!)
 
   if (serviceKey && userId) {
     // service role — no login needed
@@ -125,7 +147,7 @@ async function main() {
     process.exit(1)
   }
 
-  let resolvedBoardId = boardId
+  const resolvedBoardId = boardId
 
   if (!resolvedBoardId) {
     const { data: boards, error } = await supabase
@@ -175,7 +197,12 @@ async function main() {
     console.log(`Importing into column "${firstColumn.name}" (${firstColumn.id})`)
   }
 
-  const result = await importParsedCards(supabase, resolvedBoardId, firstColumn?.id ?? null, parsed.cards, { skipDuplicates, columnByTopic })
+  const result = await importParsedCards(supabase, resolvedBoardId, firstColumn?.id ?? null, parsed.cards, { skipDuplicates, columnByTopic, t: tPtBR })
+
+  if (result.warnings.length > 0) {
+    console.log('\nAvisos (dependências que ficaram de fora):')
+    result.warnings.forEach(w => console.log(`  - ${importWarningText(w, tPtBR)}`))
+  }
 
   if (result.errors.length > 0) {
     console.error('Import errors:', result.errors.join('; '))

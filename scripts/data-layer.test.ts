@@ -55,11 +55,13 @@ describe('camada de dados (ARCH-003)', () => {
     expect(worse, 'use/crie funções em src/lib/data/<domínio>.ts').toEqual([])
   })
 
-  it('Pages e Projetos continuam sem chamadas diretas', () => {
+  it('Pages, Projetos e Estudos continuam sem chamadas diretas', () => {
     const current = currentCounts()
     for (const file of [
       'src/contexts/PagesContext.tsx', 'src/modules/projects/ProjectsPanel.tsx',
       'src/modules/projects/QueueModal.tsx', 'src/modules/projects/boardLoader.ts',
+      // API-029: Estudos passa pela src/lib/data/study.ts.
+      'src/modules/study/useStudyTopics.ts',
     ]) {
       expect(current[file] ?? 0, file).toBe(0)
     }

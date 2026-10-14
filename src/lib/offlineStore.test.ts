@@ -29,7 +29,7 @@ describe('offlineStore', () => {
 
   it('lista só os rascunhos da conta e apaga um ou todos', async () => {
     await putDraft(note('u1', 'p1', 'a'))
-    await putDraft({ userId: 'u1', table: 'quick_notes', id: 'q1', value: { content: 'b' }, version: null, savedAt: 2 })
+    await putDraft({ userId: 'u1', table: 'quick_notes', id: 'q1', value: { content: 'b' }, version: '2026-10-05T12:00:00.123456+00:00', savedAt: 2 })
     await putDraft(note('u2', 'p9', 'c'))
     expect((await listDrafts('u1')).map(d => d.key).sort()).toEqual(['u1:note_contents:p1', 'u1:quick_notes:q1'])
     await deleteDraftFor('u1', 'note_contents', 'p1')

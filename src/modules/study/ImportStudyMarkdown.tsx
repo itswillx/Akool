@@ -5,7 +5,8 @@ import { parseStudyMarkdown, type StudyParseResult } from '../../lib/studyMarkdo
 
 // Reusable paste/upload + live preview piece for the Claude-generated .md,
 // used by the creation modal and the append-cards modal (ImportCardsModal
-// pattern: hidden file input + textarea + useMemo parse + warnings box).
+// pattern: hidden file input + textarea + useMemo parse + warnings box). The
+// server-limit drops get their own box above the format warnings.
 
 interface ImportStudyMarkdownProps {
   onResult: (result: StudyParseResult | null) => void
@@ -97,15 +98,31 @@ export default function ImportStudyMarkdown({ onResult }: ImportStudyMarkdownPro
         </>
       )}
 
+      {/* API-021: o que passa dos limites do servidor vem primeiro e inteiro;
+          os avisos de formato vêm todos, numa caixa que rola. */}
+      {parseResult && parseResult.dropped.length > 0 && (
+        <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'color-mix(in srgb, var(--color-error) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--color-error) 33%, transparent)', fontSize: 12, color: 'var(--color-text)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, marginBottom: 6 }}>
+            <AlertTriangle size={14} color="var(--color-error)" />
+            {t('study_import_dropped')}
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {parseResult.dropped.map((message, i) => (
+              <li key={`${i}-${message}`} style={{ marginBottom: 2 }}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {parseResult && parseResult.warnings.length > 0 && (
-        <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: '#f59e0b18', border: '1px solid #f59e0b44', fontSize: 12, color: 'var(--color-text)' }}>
+        <div style={{ maxHeight: 160, overflowY: 'auto', padding: '10px 12px', borderRadius: 8, backgroundColor: '#f59e0b18', border: '1px solid #f59e0b44', fontSize: 12, color: 'var(--color-text)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, marginBottom: 6 }}>
             <AlertTriangle size={14} color="#f59e0b" />
             {t('study_import_warnings')}
           </div>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {parseResult.warnings.slice(0, 8).map(warning => (
-              <li key={warning} style={{ marginBottom: 2 }}>{warning}</li>
+            {parseResult.warnings.map((warning, i) => (
+              <li key={`${i}-${warning}`} style={{ marginBottom: 2 }}>{warning}</li>
             ))}
           </ul>
         </div>

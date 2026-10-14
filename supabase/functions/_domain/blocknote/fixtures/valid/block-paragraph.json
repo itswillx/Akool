@@ -1,0 +1,40 @@
+[
+  {
+    "id": "87e23592-3a1d-4f36-be4b-4bc4a81a174e",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "blue",
+      "textAlignment": "center"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Olá, ",
+        "styles": {
+          "bold": true
+        }
+      },
+      {
+        "type": "text",
+        "text": "mundo",
+        "styles": {
+          "italic": true,
+          "textColor": "red"
+        }
+      },
+      {
+        "type": "link",
+        "href": "https://exemplo.com/caminho?q=1",
+        "content": [
+          {
+            "type": "text",
+            "text": "um link",
+            "styles": {}
+          }
+        ]
+      }
+    ],
+    "children": []
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "id": "2f0147ab-1d02-40a0-97bc-f3c666a458a4",
+    "type": "file",
+    "props": {
+      "backgroundColor": "default",
+      "name": "arquivo.pdf",
+      "url": "https://exemplo.com/arquivo.pdf",
+      "caption": "PDF"
+    },
+    "children": []
+  }
+]

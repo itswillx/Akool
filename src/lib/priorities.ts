@@ -4,15 +4,13 @@ import type { ProjectCardPriority, TodoPriority } from '../types'
 // a ordem, as cores e as chaves de tradução viviam em 9 cópias (kanban, fila,
 // filtros, importação, bloco de card, PDF, tarefas).
 
-/** Da mais urgente para a menos (ordem de exibição e de desempate). */
-export const PROJECT_PRIORITIES: readonly ProjectCardPriority[] = ['urgent', 'high', 'medium', 'low']
+// API-027: a ordem (da mais urgente para a menos) e o isProjectPriority moram em
+// supabase/functions/_domain/projectTypes.ts (a agenda e a API usam os mesmos).
+// Aqui fica o que é de tela: cores e chaves de tradução.
+export { isProjectPriority, PROJECT_PRIORITIES } from '../../supabase/functions/_domain/projectTypes'
 
 export const PROJECT_PRIORITY_COLORS: Record<ProjectCardPriority, string> = {
   low: '#94a3b8', medium: '#3b82f6', high: '#f59e0b', urgent: '#ef4444',
-}
-
-export function isProjectPriority(value: string): value is ProjectCardPriority {
-  return (PROJECT_PRIORITIES as readonly string[]).includes(value)
 }
 
 export function projectPriorityLabelKey(priority: ProjectCardPriority): `projects_priority_${ProjectCardPriority}` {

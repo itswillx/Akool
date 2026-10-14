@@ -1,0 +1,21 @@
+[
+  {
+    "id": "4a1a7bd1-3d95-431c-a2df-84db5a29b527",
+    "type": "quote",
+    "props": {
+      "backgroundColor": "gray",
+      "textColor": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "citação",
+        "styles": {
+          "underline": true,
+          "strike": true
+        }
+      }
+    ],
+    "children": []
+  }
+]

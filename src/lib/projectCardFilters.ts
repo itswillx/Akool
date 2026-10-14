@@ -1,4 +1,6 @@
 import type { ProjectCard, ProjectCardPriority } from '../types'
+import { isOverdue as isOverdueOn } from '../../supabase/functions/_domain/isoDate'
+import { hasCardLabel, labelKey } from './cardLabels'
 import { localKey } from './localKeys'
 
 export type DueDatePreset = 'all' | 'overdue' | 'today' | 'this_week' | 'no_date' | 'has_date'
@@ -31,9 +33,9 @@ export function todayStr(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** API-027: a regra mora em _domain/isoDate.ts (sem relógio); aqui o "hoje" padrão é o do aparelho. */
 export function isOverdue(card: ProjectCard, today?: string): boolean {
-  const t = today ?? todayStr()
-  return !!(card.due_date && !card.completed && card.due_date < t)
+  return isOverdueOn(card, today ?? todayStr())
 }
 
 export function isDueToday(card: ProjectCard, today?: string): boolean {
@@ -87,7 +89,8 @@ export function filterProjectCards(
     }
     if (filters.priorities.length > 0 && !filters.priorities.includes(card.priority)) return false
     if (!matchesDuePreset(card, filters.duePreset, today)) return false
-    if (filters.labels.length > 0 && !filters.labels.some(l => card.labels.includes(l))) return false
+    // API-013: rótulo sem diferença de caixa, como cq_cards e cq_enqueue.
+    if (filters.labels.length > 0 && !filters.labels.some(l => hasCardLabel(card.labels, l))) return false
     if (filters.assigneeId === 'unassigned') {
       if (card.assignee_user_id) return false
     } else if (filters.assigneeId && card.assignee_user_id !== filters.assigneeId) {
@@ -116,10 +119,11 @@ export function countActiveFilters(filters: ProjectCardFilters): number {
   return n
 }
 
+/** Um por rótulo, ignorando a caixa (fica a grafia que aparece primeiro). */
 export function collectBoardLabels(cards: ProjectCard[]): string[] {
-  const set = new Set<string>()
-  cards.forEach(c => c.labels.forEach(l => set.add(l)))
-  return [...set].sort((a, b) => a.localeCompare(b))
+  const byKey = new Map<string, string>()
+  cards.forEach(c => c.labels.forEach(l => { if (!byKey.has(labelKey(l))) byKey.set(labelKey(l), l) }))
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b))
 }
 
 export function loadCardFilters(boardId: string): ProjectCardFilters {

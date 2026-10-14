@@ -1,0 +1,17 @@
+[
+  {
+    "id": "6ac90ab3-ae50-4796-9252-e0ee3c6379b6",
+    "type": "codeBlock",
+    "props": {
+      "language": "typescript"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "const a = 1\nconst b = 2\n",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

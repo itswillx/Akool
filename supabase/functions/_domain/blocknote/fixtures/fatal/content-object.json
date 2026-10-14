@@ -1,0 +1,13 @@
+{
+  "content": [
+    {
+      "type": "paragraph",
+      "content": {
+        "a": 1
+      }
+    }
+  ],
+  "path": "/0/content",
+  "keyword": "type",
+  "breaks": "create"
+}

@@ -1,0 +1,121 @@
+[
+  {
+    "id": "b50ea2fd-c015-42ef-9b42-7a5ac0f22ad8",
+    "type": "bulletListItem",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "nível 1",
+        "styles": {}
+      }
+    ],
+    "children": [
+      {
+        "id": "609f0579-2491-4604-8a3a-476dbff790f4",
+        "type": "bulletListItem",
+        "props": {
+          "backgroundColor": "default",
+          "textColor": "default",
+          "textAlignment": "left"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "nível 2",
+            "styles": {}
+          }
+        ],
+        "children": [
+          {
+            "id": "3218ed42-58ad-4152-8a0b-45596cc67507",
+            "type": "toggleListItem",
+            "props": {
+              "backgroundColor": "default",
+              "textColor": "default",
+              "textAlignment": "left"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "nível 3",
+                "styles": {}
+              }
+            ],
+            "children": [
+              {
+                "id": "cc9e8565-cadd-45d6-9ec4-bff6a6de97b6",
+                "type": "numberedListItem",
+                "props": {
+                  "backgroundColor": "default",
+                  "textColor": "default",
+                  "textAlignment": "left"
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "nível 4",
+                    "styles": {}
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "c79c47ba-e8b4-44c6-bde9-f2f0e50c6a97",
+                    "type": "checkListItem",
+                    "props": {
+                      "backgroundColor": "default",
+                      "textColor": "default",
+                      "textAlignment": "left",
+                      "checked": false
+                    },
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "nível 5",
+                        "styles": {}
+                      }
+                    ],
+                    "children": [
+                      {
+                        "id": "76414705-f19e-4fb2-b0c3-b97f28efc2b5",
+                        "type": "paragraph",
+                        "props": {
+                          "backgroundColor": "default",
+                          "textColor": "default",
+                          "textAlignment": "left"
+                        },
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "nível 6",
+                            "styles": {}
+                          }
+                        ],
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "daf1b82a-8912-4d9c-80da-a5fb28158381",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [],
+    "children": []
+  }
+]

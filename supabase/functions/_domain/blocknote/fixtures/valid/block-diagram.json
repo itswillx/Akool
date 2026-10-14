@@ -1,0 +1,12 @@
+[
+  {
+    "id": "fe7b2de7-5936-4707-99ad-b038990babc2",
+    "type": "diagram",
+    "props": {
+      "elements": "[{\"id\":\"ret-1\",\"type\":\"rectangle\",\"x\":10,\"y\":10,\"width\":120,\"height\":60,\"angle\":0,\"strokeColor\":\"#1e1e1e\",\"backgroundColor\":\"transparent\",\"fillStyle\":\"solid\",\"strokeWidth\":2,\"strokeStyle\":\"solid\",\"roughness\":1,\"opacity\":100,\"groupIds\":[],\"frameId\":null,\"index\":\"a0\",\"roundness\":{\"type\":3},\"seed\":1,\"version\":3,\"versionNonce\":7,\"isDeleted\":false,\"boundElements\":null,\"updated\":1,\"link\":null,\"locked\":false},{\"id\":\"seta-1\",\"type\":\"arrow\",\"x\":140,\"y\":40,\"width\":80,\"height\":0,\"angle\":0,\"strokeColor\":\"#1e1e1e\",\"backgroundColor\":\"transparent\",\"fillStyle\":\"solid\",\"strokeWidth\":2,\"strokeStyle\":\"solid\",\"roughness\":1,\"opacity\":100,\"groupIds\":[],\"frameId\":null,\"index\":\"a0\",\"roundness\":null,\"seed\":1,\"version\":3,\"versionNonce\":7,\"isDeleted\":false,\"boundElements\":null,\"updated\":1,\"link\":null,\"locked\":false,\"points\":[[0,0],[80,0]],\"lastCommittedPoint\":null,\"startBinding\":null,\"endBinding\":null,\"startArrowhead\":null,\"endArrowhead\":\"arrow\",\"elbowed\":false},{\"id\":\"txt-1\",\"type\":\"text\",\"x\":240,\"y\":25,\"width\":120,\"height\":60,\"angle\":0,\"strokeColor\":\"#1e1e1e\",\"backgroundColor\":\"transparent\",\"fillStyle\":\"solid\",\"strokeWidth\":2,\"strokeStyle\":\"solid\",\"roughness\":1,\"opacity\":100,\"groupIds\":[],\"frameId\":null,\"index\":\"a0\",\"roundness\":null,\"seed\":1,\"version\":3,\"versionNonce\":7,\"isDeleted\":false,\"boundElements\":null,\"updated\":1,\"link\":null,\"locked\":false,\"text\":\"Fim\",\"fontSize\":20,\"fontFamily\":5,\"textAlign\":\"left\",\"verticalAlign\":\"top\",\"containerId\":null,\"originalText\":\"Fim\",\"autoResize\":true,\"lineHeight\":1.25}]",
+      "appState": "{\"viewBackgroundColor\":\"#ffffff\",\"zoom\":{\"value\":1},\"scrollX\":0,\"scrollY\":0}",
+      "collapsed": "false"
+    },
+    "children": []
+  }
+]

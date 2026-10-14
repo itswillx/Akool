@@ -26,10 +26,12 @@ export type Database = {
           created_at: string
           expires_at: string
           id: string
+          last_client: string | null
           last_used_at: string | null
           name: string
           prefix: string
           revoked_at: string | null
+          scopes: Json
           token_hash: string
           user_id: string
         }
@@ -37,10 +39,12 @@ export type Database = {
           created_at?: string
           expires_at?: string
           id?: string
+          last_client?: string | null
           last_used_at?: string | null
           name?: string
           prefix: string
           revoked_at?: string | null
+          scopes?: Json
           token_hash: string
           user_id: string
         }
@@ -48,10 +52,12 @@ export type Database = {
           created_at?: string
           expires_at?: string
           id?: string
+          last_client?: string | null
           last_used_at?: string | null
           name?: string
           prefix?: string
           revoked_at?: string | null
+          scopes?: Json
           token_hash?: string
           user_id?: string
         }
@@ -1943,7 +1949,7 @@ export type Database = {
           links?: Json
           parent_card_id?: string | null
           priority?: string
-          sort_order?: number
+          sort_order: number
           start_date?: string | null
           title?: string
           updated_at?: string
@@ -2220,7 +2226,7 @@ export type Database = {
           quiz?: Json
           rationale?: string
           resources?: Json
-          sort_order?: number
+          sort_order: number
           title: string
           topic_id: string
           updated_at?: string
@@ -2626,7 +2632,7 @@ export type Database = {
         Returns: Json
       }
       create_api_token: {
-        Args: { p_expires_in_days?: number; p_name?: string }
+        Args: { p_expires_in_days?: number; p_name?: string; p_scopes?: Json }
         Returns: Json
       }
       create_project_board: {
@@ -2647,6 +2653,31 @@ export type Database = {
         Args: { p_invite_id: string }
         Returns: undefined
       }
+      delete_api_token: { Args: { p_id: string }; Returns: undefined }
+      finance_goal_contribute: {
+        Args: {
+          p_amount_cents: number
+          p_date?: string
+          p_goal: string
+          p_note?: string
+        }
+        Returns: Json
+      }
+      finance_goal_owned: { Args: { p_goal: string }; Returns: boolean }
+      finance_mark_entry_paid: {
+        Args: {
+          p_account?: string
+          p_amount_cents?: number
+          p_date?: string
+          p_entry: string
+        }
+        Returns: Json
+      }
+      finance_materialize_recurring: {
+        Args: { p_month?: string; p_today?: string }
+        Returns: Json
+      }
+      finance_skip_entry: { Args: { p_entry: string }; Returns: Json }
       generate_invite_code: { Args: never; Returns: Json }
       get_my_profile: {
         Args: never
@@ -2747,7 +2778,12 @@ export type Database = {
         Returns: number
       }
       resolve_api_token: { Args: { p_hash: string }; Returns: string }
+      resolve_api_token_v2: {
+        Args: { p_client?: string; p_hash: string }
+        Returns: Json
+      }
       restore_site_backup: { Args: { p_tables: Json }; Returns: Json }
+      revoke_all_my_api_tokens: { Args: never; Returns: number }
       revoke_api_token: { Args: { p_id: string }; Returns: undefined }
       schedule_project_cards: {
         Args: { p_board: string; p_patches: Json }
@@ -2768,8 +2804,313 @@ export type Database = {
         Args: { p_api_key: string; p_provider: string }
         Returns: undefined
       }
+      store_product_figures: {
+        Args: { p_products: string[] }
+        Returns: {
+          available: number
+          avg_unit_cost: number
+          product_id: string
+          purchased: number
+          reserved: number
+          sold: number
+        }[]
+      }
+      store_sale_create: { Args: { p_sale: Json }; Returns: Json }
+      store_sale_delete: { Args: { p_sale: string }; Returns: Json }
+      store_sale_generate_income: {
+        Args: { p_category?: string; p_description?: string; p_sale: string }
+        Returns: Json
+      }
+      store_sale_items_add: {
+        Args: { p_items: Json; p_sale: string }
+        Returns: Json
+      }
+      store_sale_items_remove: { Args: { p_item: string }; Returns: Json }
+      store_sale_items_update: {
+        Args: { p_item: string; p_patch: Json }
+        Returns: Json
+      }
+      store_sale_set_status: {
+        Args: {
+          p_category?: string
+          p_create_income?: boolean
+          p_description?: string
+          p_sale: string
+          p_sold_on?: string
+          p_status: string
+          p_today?: string
+        }
+        Returns: Json
+      }
+      store_sale_update: {
+        Args: { p_patch: Json; p_sale: string }
+        Returns: Json
+      }
+      study_cards_append: {
+        Args: { p_cards: Json; p_topic: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      study_checkpoint_add: {
+        Args: { p_card: string; p_id?: string; p_text: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_checkpoint_edit: {
+        Args: {
+          p_card: string
+          p_checkpoint: string
+          p_note?: string
+          p_text?: string
+        }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_checkpoint_remove: {
+        Args: { p_card: string; p_checkpoint: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_checkpoint_toggle: {
+        Args: { p_card: string; p_checkpoint: string; p_completed?: boolean }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_import_topic: {
+        Args: { p_payload: Json; p_today?: string }
+        Returns: Json
+      }
       study_lookup_cache_prune: { Args: never; Returns: number }
+      study_quiz_answer: {
+        Args: { p_answer: Json; p_card: string; p_question: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_quiz_reset: {
+        Args: { p_card: string; p_only_wrong?: boolean }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_reschedule: {
+        Args: { p_today?: string; p_topic: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      study_resource_add: {
+        Args: { p_card: string; p_id?: string; p_title?: string; p_url: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      study_resource_remove: {
+        Args: { p_card: string; p_resource: string }
+        Returns: {
+          blocks: Json
+          checkpoints: Json
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          quiz: Json
+          rationale: string
+          resources: Json
+          sort_order: number
+          title: string
+          topic_id: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       try_cast_uuid: { Args: { p_text: string }; Returns: string }
+      update_api_token_scopes: {
+        Args: { p_id: string; p_scopes: Json }
+        Returns: Json
+      }
       user_can_access_board: {
         Args: { p_board_id: string; p_min_role?: string }
         Returns: boolean

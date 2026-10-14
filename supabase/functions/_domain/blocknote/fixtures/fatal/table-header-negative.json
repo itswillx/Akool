@@ -1,0 +1,21 @@
+{
+  "content": [
+    {
+      "type": "table",
+      "content": {
+        "type": "tableContent",
+        "rows": [
+          {
+            "cells": [
+              "a"
+            ]
+          }
+        ],
+        "headerRows": -1
+      }
+    }
+  ],
+  "path": "/0/content/headerRows",
+  "keyword": "type",
+  "breaks": "create"
+}

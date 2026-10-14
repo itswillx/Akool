@@ -1,6 +1,6 @@
 import type { Database as GeneratedDatabase } from './database'
 import type {
-  AppNotification, FinanceAccountType, FinanceAttachment, FinanceGoalStatus,
+  ApiScopes, AppNotification, FinanceAccountType, FinanceAttachment, FinanceGoalStatus,
   FinanceRecurringEntryStatus, FinanceStoreChannel, FinanceStoreCondition,
   FinanceStoreProductKind, FinanceStorePurchaseStatus, FinanceStoreSaleStatus,
   FinanceTxType, PageShareRole, PageType, ProjectCardAttachment,
@@ -33,14 +33,22 @@ type Overrides<O extends {
 /** Mapeamento homomórfico: preserva o `?` das colunas opcionais no Insert/Update. */
 type Patch<T, P> = { [K in keyof T]: K extends keyof P ? P[K] : T[K] }
 
-type PatchTable<T extends GeneratedTables[keyof GeneratedTables], P> = {
+/** As colunas `K` passam a opcionais (o resto fica como está). */
+type Loosen<T, K extends PropertyKey> = {
+  [C in keyof T as C extends K ? never : C]: T[C]
+} & {
+  [C in keyof T as C extends K ? C : never]?: T[C]
+}
+
+type PatchTable<T extends GeneratedTables[keyof GeneratedTables], P, Filled extends PropertyKey = never> = {
   Row: Patch<T['Row'], P>
-  Insert: Patch<T['Insert'], P>
+  Insert: Loosen<Patch<T['Insert'], P>, Filled>
   Update: Patch<T['Update'], P>
   Relationships: T['Relationships']
 }
 
 type TableOverrides = Overrides<{
+  api_tokens: { scopes: ApiScopes }
   audit_log: { details: Record<string, unknown> }
   drawing_contents: {
     elements: unknown[] | null
@@ -100,14 +108,27 @@ type TableOverrides = Overrides<{
   todos: { priority: TodoPriority }
 }>
 
+/**
+ * Colunas NOT NULL sem DEFAULT que um gatilho BEFORE INSERT preenche: o
+ * gerador as diz obrigatórias no Insert, mas o app pode (e deve) omiti-las.
+ */
+type FilledByTrigger = {
+  // API-013: private.project_card_integrity põe o card no fim da coluna.
+  project_cards: 'sort_order'
+  // API-021: private.study_card_rules põe o card no fim do tópico.
+  study_cards: 'sort_order'
+}
+
 type PatchedTables = {
   [T in keyof GeneratedTables]: T extends keyof TableOverrides
-    ? PatchTable<GeneratedTables[T], TableOverrides[T]>
+    ? PatchTable<GeneratedTables[T], TableOverrides[T], T extends keyof FilledByTrigger ? FilledByTrigger[T] : never>
     : GeneratedTables[T]
 }
 
 /** Argumentos jsonb das RPCs com a forma que o app manda. */
 type FunctionArgOverrides = {
+  create_api_token: { p_scopes?: ApiScopes }
+  update_api_token_scopes: { p_scopes: ApiScopes }
   reorder_project_cards: { p_moves: { id: string; column_id: string; sort_order: number }[] }
   reorder_project_columns: { p_columns: { id: string; sort_order: number }[] }
   schedule_project_cards: {

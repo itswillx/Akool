@@ -35,16 +35,29 @@ export function PurchaseModal({ store, product, purchase, accounts, categories, 
   const [attachments, setAttachments] = useState(purchase?.attachments ?? [])
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  // A gravação recusada: o modal fica aberto com o motivo (o aviso da aba
+  // fica atrás dele).
+  const [failed, setFailed] = useState(false)
 
   const qty = product.kind === 'unique' ? 1 : Math.max(1, Math.floor(Number(quantity) || 1))
   const total = qty * toCents(unitCost) + toCents(otherCosts)
+  // O min="0" do input não barra o que se digita: o banco recusa (23514).
+  const negative = toCents(unitCost) < 0 || toCents(otherCosts) < 0
+  // Total zero não tem despesa (o CHECK amount > 0 de finance_transactions a
+  // recusa): 'Gerar despesa' desliga e desmarca.
+  const canExpense = !!accountId && total > 0
+  if (createExpense && !canExpense) setCreateExpense(false)
 
   const handleSave = async () => {
+    if (negative) return
     setSaving(true)
+    setFailed(false)
     try {
       let supplier = supplierId || null
       if (supplierId === '__new') {
         supplier = newSupplier.trim() ? (await store.createSupplier(newSupplier.trim()))?.id ?? null : null
+        // Tentar de novo não cria o fornecedor outra vez.
+        if (supplier) { setSupplierId(supplier); setNewSupplier('') }
       }
       const draft = {
         product_id: product.id,
@@ -58,13 +71,15 @@ export function PurchaseModal({ store, product, purchase, accounts, categories, 
         attachments,
         status,
       }
-      if (purchase) await store.updatePurchase(purchase.id, draft)
-      else await store.createPurchase(draft, {
-        createTransaction: createExpense,
-        description: t('finance_store_tx_purchase_desc', { name: product.name }),
-        categoryId: categoryId || null,
-      })
-      onClose()
+      const ok = purchase
+        ? await store.updatePurchase(purchase.id, draft)
+        : (await store.createPurchase(draft, {
+            createTransaction: createExpense,
+            description: t('finance_store_tx_purchase_desc', { name: product.name }),
+            categoryId: categoryId || null,
+          })) !== null
+      if (ok) onClose()
+      else setFailed(true)
     } finally {
       setSaving(false)
     }
@@ -109,7 +124,9 @@ export function PurchaseModal({ store, product, purchase, accounts, categories, 
           </div>
         </div>
 
-        {total > 0 && (
+        {negative ? (
+          <div role="alert" style={{ fontSize: 12, color: 'var(--color-error)', marginTop: -6 }}>{t('finance_store_error_negative')}</div>
+        ) : total > 0 && (
           <div style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: -6, ...tabularNums }}>
             {t('finance_store_purchase_total', { value: formatBRL(total) })}
           </div>
@@ -145,11 +162,14 @@ export function PurchaseModal({ store, product, purchase, accounts, categories, 
 
         {!purchase && (
           <>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={createExpense} disabled={!accountId}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text)', cursor: canExpense ? 'pointer' : 'not-allowed' }}>
+              <input type="checkbox" checked={createExpense} disabled={!canExpense}
                 onChange={e => setCreateExpense(e.target.checked)} />
               {t('finance_store_create_expense')}
             </label>
+            {!!accountId && !negative && total <= 0 && (
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -6 }}>{t('finance_store_expense_not_positive_hint')}</div>
+            )}
             {createExpense && (
               <div>
                 <label style={labelStyle}>{t('finance_store_tx_category')}</label>
@@ -177,9 +197,13 @@ export function PurchaseModal({ store, product, purchase, accounts, categories, 
             value={attachments} onChange={setAttachments} />
         )}
 
+        {failed && store.error && (
+          <div role="alert" style={{ fontSize: 12.5, color: 'var(--color-error)', lineHeight: 1.45 }}>{store.error}</div>
+        )}
+
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center', opacity: saving ? 0.7 : 1 }}
-            onClick={handleSave} disabled={saving}>{t('finance_save')}</button>
+          <button style={{ ...primaryBtnStyle, flex: 1, justifyContent: 'center', opacity: saving || negative ? 0.7 : 1 }}
+            onClick={handleSave} disabled={saving || negative}>{t('finance_save')}</button>
           <button style={ghostBtnStyle} onClick={onClose}>{t('finance_cancel')}</button>
         </div>
 

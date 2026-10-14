@@ -9,15 +9,12 @@ import {
   budgetStatus,
   goalProgress,
   daysUntil,
-  recurringDueDate,
-  missingRecurringDueDates,
   monthsOfYear,
   monthlySeries,
   totalsByCategory,
   totalsByUser,
   topCategories,
   pendingRecurringTotal,
-  missingAutoBudgets,
   balancesByAccount,
   countByCategory,
   sumByGoal,
@@ -130,20 +127,6 @@ describe('daysUntil', () => {
   })
 })
 
-describe('recurringDueDate', () => {
-  it('formats a normal due date', () => {
-    expect(recurringDueDate(2025, 6, 10)).toBe('2025-06-10')
-  })
-  it('clamps day 31 to the last day of a short month', () => {
-    expect(recurringDueDate(2025, 2, 31)).toBe('2025-02-28') // Feb (non-leap)
-    expect(recurringDueDate(2024, 2, 31)).toBe('2024-02-29') // Feb (leap)
-    expect(recurringDueDate(2025, 4, 31)).toBe('2025-04-30') // April has 30
-  })
-  it('zero-pads month and day', () => {
-    expect(recurringDueDate(2025, 3, 5)).toBe('2025-03-05')
-  })
-})
-
 describe('monthsOfYear', () => {
   it('lists the 12 months of a year, zero-padded', () => {
     const months = monthsOfYear(2025)
@@ -250,129 +233,6 @@ describe('pendingRecurringTotal', () => {
   })
   it('ignores entries whose recurring is unknown', () => {
     expect(pendingRecurringTotal(recs, [entry('ghost')], '2025-06', 'expense')).toBe(0)
-  })
-})
-
-describe('missingRecurringDueDates', () => {
-  const now = new Date('2025-06-15T12:00:00')
-  const item = (extra: Partial<Parameters<typeof missingRecurringDueDates>[0]> = {}) => ({
-    active: true,
-    day_of_month: 10,
-    total_installments: null,
-    created_at: '2025-06-01T09:00:00',
-    ...extra,
-  })
-
-  it('generates current and next month for a brand-new item', () => {
-    expect(missingRecurringDueDates(item(), [], now)).toEqual(['2025-06-10', '2025-07-10'])
-  })
-
-  it('backfills months in which the app was never opened', () => {
-    // Created in February, entries exist only for Feb and Mar.
-    const r = missingRecurringDueDates(
-      item({ created_at: '2025-02-03T09:00:00' }),
-      ['2025-02-10', '2025-03-10'],
-      now,
-    )
-    expect(r).toEqual(['2025-04-10', '2025-05-10', '2025-06-10', '2025-07-10'])
-  })
-
-  it('fills gaps in the middle of the series', () => {
-    const r = missingRecurringDueDates(
-      item({ created_at: '2025-01-05T09:00:00' }),
-      ['2025-01-10', '2025-04-10', '2025-06-10'],
-      now,
-    )
-    expect(r).toEqual(['2025-02-10', '2025-03-10', '2025-05-10', '2025-07-10'])
-  })
-
-  it('compares by month, so an edited day_of_month never duplicates a month', () => {
-    const r = missingRecurringDueDates(item({ day_of_month: 25 }), ['2025-06-10'], now)
-    expect(r).toEqual(['2025-07-25'])
-  })
-
-  it('respects total_installments chronologically', () => {
-    const r = missingRecurringDueDates(
-      item({ created_at: '2025-03-01T09:00:00', total_installments: 3 }),
-      ['2025-03-10'],
-      now,
-    )
-    expect(r).toEqual(['2025-04-10', '2025-05-10'])
-  })
-
-  it('returns nothing when all installments already exist', () => {
-    const r = missingRecurringDueDates(
-      item({ created_at: '2025-03-01T09:00:00', total_installments: 2 }),
-      ['2025-03-10', '2025-04-10'],
-      now,
-    )
-    expect(r).toEqual([])
-  })
-
-  it('returns nothing for an inactive item', () => {
-    expect(missingRecurringDueDates(item({ active: false }), [], now)).toEqual([])
-  })
-
-  it('clamps the due day in short months', () => {
-    const r = missingRecurringDueDates(
-      item({ created_at: '2025-01-15T09:00:00', day_of_month: 31 }),
-      [],
-      new Date('2025-02-10T12:00:00'),
-    )
-    expect(r).toEqual(['2025-01-31', '2025-02-28', '2025-03-31'])
-  })
-})
-
-describe('missingAutoBudgets', () => {
-  const rec = (extra: Partial<Parameters<typeof missingAutoBudgets>[0][number]> = {}) => ({
-    type: 'expense' as const, active: true, is_variable: false, amount: 5000,
-    category_id: 'cat1', workspace_id: null, ...extra,
-  })
-
-  it('creates a budget for a qualifying active fixed-amount expense recurring', () => {
-    expect(missingAutoBudgets([rec()], [], '2025-06')).toEqual([
-      { category_id: 'cat1', month: '2025-06', amount_limit: 5000, workspace_id: null },
-    ])
-  })
-
-  it('skips variable-amount recurrings', () => {
-    expect(missingAutoBudgets([rec({ is_variable: true, amount: null })], [], '2025-06')).toEqual([])
-  })
-
-  it('skips inactive recurrings', () => {
-    expect(missingAutoBudgets([rec({ active: false })], [], '2025-06')).toEqual([])
-  })
-
-  it('skips income-type recurrings', () => {
-    expect(missingAutoBudgets([rec({ type: 'income' })], [], '2025-06')).toEqual([])
-  })
-
-  it('skips recurrings with no category', () => {
-    expect(missingAutoBudgets([rec({ category_id: null })], [], '2025-06')).toEqual([])
-  })
-
-  it('does not duplicate a budget that already exists for that category/month/scope', () => {
-    const existing = [{ category_id: 'cat1', month: '2025-06', workspace_id: null }]
-    expect(missingAutoBudgets([rec()], existing, '2025-06')).toEqual([])
-  })
-
-  it('treats personal and workspace scope as distinct even for the same category', () => {
-    const existing = [{ category_id: 'cat1', month: '2025-06', workspace_id: 'ws1' }]
-    // personal recurring (workspace_id null) still needs its own budget
-    expect(missingAutoBudgets([rec()], existing, '2025-06')).toEqual([
-      { category_id: 'cat1', month: '2025-06', amount_limit: 5000, workspace_id: null },
-    ])
-  })
-
-  it('does not let a budget in a different month block this month', () => {
-    const existing = [{ category_id: 'cat1', month: '2025-05', workspace_id: null }]
-    expect(missingAutoBudgets([rec()], existing, '2025-06')).toEqual([
-      { category_id: 'cat1', month: '2025-06', amount_limit: 5000, workspace_id: null },
-    ])
-  })
-
-  it('dedupes two active recurrings that would produce the same category/scope candidate', () => {
-    expect(missingAutoBudgets([rec(), rec({ amount: 7000 })], [], '2025-06')).toHaveLength(1)
   })
 })
 

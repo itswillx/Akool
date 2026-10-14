@@ -97,3 +97,19 @@ evento entre módulos é `finance_transactions_changed`, tipado em
 Loja e Metas **não são abas**: são sub-abas de `'myprojects'`. Os ids antigos
 continuam sendo aceitos por `resolveTabRequest` (a única função que os conhece),
 que os traduz para a sub-aba correspondente — ver `myprojects/README.md`.
+
+### Recorrentes e orçamentos automáticos (API-016)
+
+Os lançamentos do mês atual e do seguinte e os orçamentos automáticos nascem no
+servidor (`private.finance_materialize_core`, pelo cron às 00:05 de São Paulo e
+pela RPC `finance_materialize_recurring` na carga). O mês visto na tela fora
+dessa janela pede só os orçamentos dele (`useViewedMonthBudgets`, com
+`p_month`): a até 12 meses do atual, nunca antes da criação do recorrente,
+nunca depois da última parcela de um parcelado e nunca lançamento. A RPC
+devolve todos os orçamentos dos meses tratados que a pessoa enxerga; o de outro
+membro do workspace vai só para `familyBudgets` (`splitMaterializedBudgets`).
+"Fora da janela" se mede contra a janela que está no estado: `materializedYM`
+(de `useFinanceData`), o mês da data do aparelho da última carga ou
+materialização aplicada, e não contra o relógio. Com a tela aberta na virada do
+mês (foco, volta à aba ou troca de mês na tela), o app materializa de novo, sem
+`p_month`, na data nova e aplica os lançamentos e orçamentos da janela nova.

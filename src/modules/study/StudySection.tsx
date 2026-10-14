@@ -41,16 +41,30 @@ export default function StudySection({ isMobile = false }: StudySectionProps) {
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteRequest | null>(null)
 
   // Derived: if the open topic disappears (deleted), openTopic is null and
-  // the views render again — no cleanup effect needed.
+  // the views render again — no cleanup effect needed. API-029: deleted in
+  // another tab (a refetch no longer brings it), a notice says so instead.
   const openTopic = openTopicId ? store.topics.find(topic => topic.id === openTopicId) ?? null : null
+  const openTopicGone = openTopicId !== null && !openTopic && store.goneTopicIds.has(openTopicId)
   const overdueCount = useMemo(() => store.topics.filter(topic => isTopicOverdue(topic)).length, [store.topics])
 
   const requestDelete = (title: string, message: string, onConfirm: DeleteRequest['onConfirm']) => {
     setDeleteConfirm({ title, message, onConfirm })
   }
 
-  const content = openTopic ? (
+  const content = openTopicGone ? (
+    <div role="status" style={{ padding: isMobile ? 16 : 24, maxWidth: 860, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12 }}>
+      <p style={{ margin: 0, fontSize: 13.5, color: 'var(--color-text)' }}>{t('study_topic_deleted_elsewhere')}</p>
+      <button
+        type="button"
+        onClick={() => setOpenTopicId(null)}
+        style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+      >
+        {t('study_back')}
+      </button>
+    </div>
+  ) : openTopic ? (
     <StudyTopicDetail
+      key={openTopic.id}
       topic={openTopic}
       cards={store.cardsByTopic[openTopic.id] ?? []}
       logs={store.logsByTopic[openTopic.id] ?? []}
@@ -117,6 +131,12 @@ export default function StudySection({ isMobile = false }: StudySectionProps) {
         isMobile={isMobile}
       />
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto' }}>
+        {/* API-029: o servidor ainda sem as RPCs do API-024 (PGRST202). */}
+        {store.serverOutdated && (
+          <div role="alert" style={{ margin: isMobile ? '12px 16px 0' : '16px 24px 0', padding: '10px 12px', borderRadius: 8, border: '1px solid color-mix(in srgb, var(--color-error) 33%, transparent)', backgroundColor: 'color-mix(in srgb, var(--color-error) 10%, transparent)', color: 'var(--color-text)', fontSize: 12.5 }}>
+            {t('study_error_server_outdated')}
+          </div>
+        )}
         {content}
       </div>
 
@@ -133,12 +153,12 @@ export default function StudySection({ isMobile = false }: StudySectionProps) {
           return !!topic
         }}
         onImport={async (parsed, form) => {
-          const topic = await store.createTopicFromImport(parsed, form)
-          if (topic) {
+          const result = await store.createTopicFromImport(parsed, form)
+          if (result.ok) {
             setNewOpen(false)
-            setOpenTopicId(topic.id)
+            setOpenTopicId(result.topic.id)
           }
-          return !!topic
+          return result
         }}
       />
 

@@ -7,6 +7,8 @@
 // Everything domain-specific (how a graph is BUILT, what `value` means) stays in
 // the domain's own module.
 
+import { normalizeSearch } from '../../supabase/functions/_domain/text'
+
 export interface GraphNodeBase<K extends string = string> {
   /** Prefixed by kind ('acc:<uuid>', 'pg:<uuid>'…) so ids coming from different
    *  tables can never collide inside one graph. */
@@ -69,9 +71,8 @@ export function applyValueFilter<N extends GraphNodeBase, E extends GraphEdgeBas
 }
 
 // Accent/case-insensitive normalization so "saude" finds "Saúde".
-export function normalizeSearch(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
-}
+// API-027: mora em supabase/functions/_domain/text.ts (a importação de backlog usa).
+export { normalizeSearch }
 
 // Keep nodes whose label matches plus their direct neighbors; neighbors carry
 // `dimmed` so the graph can fade them — context without clutter.

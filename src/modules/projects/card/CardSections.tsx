@@ -1,4 +1,4 @@
-// ARCH-002: saiu do ProjectsPanel.tsx sem mudança de lógica.
+// ARCH-002: saiu do ProjectsPanel.tsx. API-013: seguem os limites do gatilho (src/lib/cardLimits.ts).
 import {
 ChevronDown,
 ChevronRight,
@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import { SignedImage } from '../../../components/SignedImage'
 import { useDialog } from '@/shared/hooks/useDialog'
 import { useLanguage } from '../../../i18n/LanguageContext'
+import { ATTACHMENTS_MAX, CHECKLIST_MAX_ITEMS, CHECKLIST_MAX_TEXT } from '../../../lib/cardLimits'
 import { linkDisplay, normalizeLinkUrl } from '../../../lib/cardLinks'
 import { safeWebHref } from '../../../lib/safeHref'
 import { resolveSignedUrl } from '../../../lib/storageUrl'
@@ -98,12 +99,15 @@ export function CardAttachmentsSection({
   const [open, setOpen] = useState(false)
   const visibleAttachments = attachments.filter(a => !removedIds.includes(a.id))
   const total = visibleAttachments.length + pendingFiles.length
+  // API-013: o gatilho do servidor recusa o card acima de ATTACHMENTS_MAX
+  // anexos; os removidos não contam, os pendentes sim.
+  const atLimit = total >= ATTACHMENTS_MAX
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    // Validação real acontece em onAddPending (prepareUpload: comprime e valida) — este check
-    // é só o filtro de picker do input accept="image/*".
-    if (file) onAddPending(file)
+    // A validação real acontece em onAddPending (prepareUpload: comprime e valida); aqui
+    // só o limite de anexos do card (o editor confere de novo, contando as pendentes).
+    if (file && !atLimit) onAddPending(file)
     e.target.value = ''
   }
 
@@ -172,15 +176,16 @@ export function CardAttachmentsSection({
       )}
       {canEdit && (
         <>
-          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
+          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} disabled={atLimit} />
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: '1px dashed var(--color-border)', background: 'transparent', color: 'var(--color-text-muted)', fontSize: 12.5, cursor: 'pointer', marginBottom: 6 }}
+            onClick={() => { if (!atLimit) fileInputRef.current?.click() }}
+            disabled={atLimit}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: '1px dashed var(--color-border)', background: 'transparent', color: 'var(--color-text-muted)', fontSize: 12.5, cursor: atLimit ? 'default' : 'pointer', opacity: atLimit ? 0.5 : 1, marginBottom: 6 }}
           >
             <Image size={14} />{t('projects_attachments_add')}
           </button>
-          <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)' }}>{t('projects_attachments_paste_hint')}</p>
+          {!atLimit && <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)' }}>{t('projects_attachments_paste_hint')}</p>}
         </>
       )}
       </>
@@ -201,10 +206,12 @@ export function CardChecklistSection({
   const done = items.filter(i => i.completed).length
   const total = items.length
   const progressPct = total > 0 ? Math.round((done / total) * 100) : 0
+  // API-013: limites do gatilho do servidor (itens e texto de cada item).
+  const atLimit = total >= CHECKLIST_MAX_ITEMS
 
   const addItem = () => {
     const text = input.trim()
-    if (!text) return
+    if (!text || atLimit) return
     onUpdate([...items, { id: crypto.randomUUID(), text, completed: false }], true)
     setInput('')
   }
@@ -244,6 +251,7 @@ export function CardChecklistSection({
                   <input
                     disabled={!canEdit}
                     value={item.text}
+                    maxLength={CHECKLIST_MAX_TEXT}
                     onChange={e => onUpdate(items.map(i => i.id === item.id ? { ...i, text: e.target.value } : i), false)}
                     style={{
                       flex: 1, minWidth: 0, border: 'none', background: 'transparent',
@@ -272,6 +280,8 @@ export function CardChecklistSection({
           {canEdit && (
             <input
               value={input}
+              maxLength={CHECKLIST_MAX_TEXT}
+              disabled={atLimit}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
               placeholder={t('projects_checklist_placeholder')}

@@ -181,8 +181,10 @@ export interface FinanceAttachment {
 // ─── Finance Store / Loja ───────────────────────────────────────────────────
 // Estoque de revenda (hardware etc.), pipeline de venda e clientes. O estoque
 // disponível é DERIVADO (comprado − vendido − reservado) em
-// src/lib/financeStoreCalc.ts; sale_items guardam snapshot de preço/custo para
-// o lucro histórico não mudar com edições no produto. Valores em centavos.
+// supabase/functions/_domain/financeStoreCalc.ts (o app usa por
+// src/lib/financeStoreCalc.ts; o servidor tem a mesma conta em SQL, API-028);
+// sale_items guardam snapshot de preço/custo para o lucro histórico não mudar
+// com edições no produto. Valores em centavos.
 
 // Fornecedor de uma compra. Veio de Obras e sobreviveu à remoção dela: a Loja
 // cria e lê as mesmas linhas de `finance_suppliers`.
@@ -320,6 +322,7 @@ export type NotificationType =
   | 'member_joined'
   | 'member_left'
   | 'backup_stale'
+  | 'finance_recurring_failed'
   | 'page_shared'
   | 'board_shared'
   | 'card_assigned'
@@ -511,6 +514,13 @@ export interface QuickNote {
   updated_at: string
 }
 
+// ─── API (tokens pessoais) ───────────────────────────────────────────────────
+
+/** API-001: nível de uma subseção no token (excluir ⊃ escrever ⊃ ler). */
+export type ApiScopeLevel = 'read' | 'write' | 'delete'
+/** `secao.subsecao` → nível; sem a chave = Nenhum. Catálogo: supabase/functions/_api/catalog.ts. */
+export type ApiScopes = Partial<Record<string, ApiScopeLevel>>
+
 // ─── Study Module ("Estudos") ────────────────────────────────────────────────
 
 export type StudyTopicStatus = 'planned' | 'studying' | 'paused' | 'completed'
@@ -527,6 +537,10 @@ export interface StudyResource {
   id: string
   title: string
   url: string
+  // Legacy keys from the old resource lookup (removed in SEC-015); the server
+  // still accepts them (API-021) and the app never writes them.
+  license?: string | null
+  licenseUrl?: string | null
 }
 
 // Stored in Portuguese as data (same rationale as STUDY_LEVELS — the value is
@@ -551,7 +565,8 @@ export interface StudyQuizChoiceQuestion {
   kind: 'choice'
   id: string
   statement: string
-  // 2-5 alternatives in generated order (typically 4, rendered A-D).
+  // 2-10 alternatives (server limit, API-021) in generated order; the prompt
+  // asks for 4, rendered A-D.
   options: string[]
   // Index of the correct alternative in `options`.
   answer: number

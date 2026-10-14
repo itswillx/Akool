@@ -1,0 +1,2 @@
+> citação
+continua preguiçosa

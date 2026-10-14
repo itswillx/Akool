@@ -137,6 +137,10 @@ jobs:
           VITE_SENTRY_DSN: ''
           E2E_USER: ${{ secrets.E2E_USER }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          # API-009: sem o snapshot da página (error-context) no relatório que sobe
+          # como artefato quando falha. O repositório é público, e a tela de tokens
+          # mostra o segredo; o api-tokens.spec.ts também desliga trace e capturas.
+          PLAYWRIGHT_NO_COPY_PROMPT: '1'
         run: npm run test:e2e
 
       - uses: actions/upload-artifact@v4
