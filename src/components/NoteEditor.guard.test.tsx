@@ -124,7 +124,11 @@ const ROWSPAN_TABLE = '<table><tr><td rowspan="2">A</td><td>B</td></tr><tr><td>C
 const hasTable = () => document.querySelector('.ProseMirror table') !== null
 const toasts = (key: string) => db.toast.mock.calls.filter(call => call[1] === key).length
 
-describe('NoteEditor: guarda de conteúdo (API-020)', () => {
+// No runner do CI, com cobertura, o editor leva mais de 3 s para recusar ou salvar (3083 ms em 14/10):
+// o teto da espera e o do teste ficam folgados, sem mudar o que se confere.
+const WAIT = { timeout: 10_000 }
+
+describe('NoteEditor: guarda de conteúdo (API-020)', { timeout: 30_000 }, () => {
   it('conteúdo válido abre o editor', async () => {
     render(<NoteEditor pageId="p1" />)
     await waitFor(() => expect(editorMounted()).toBe(true))
@@ -192,7 +196,7 @@ describe('NoteEditor: guarda de conteúdo (API-020)', () => {
     db.serverVersion = '2026-10-07T13:00:00Z'
     act(() => { db.setRemote?.({ remoteContent: invalid, remoteUpdatedAt: '2026-10-07T13:00:00Z' }) })
     // O remoto não foi aplicado: o save cai no conflito do REL-009, e o editor continua.
-    expect(await screen.findByText('editor_conflict_title', {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText('editor_conflict_title', {}, WAIT)).toBeTruthy()
     expect(editorMounted()).toBe(true)
     expect(screen.queryByText('note_invalid_title')).toBeNull()
     expect(editorText()).toContain('MINHA EDICAO')
@@ -209,7 +213,7 @@ describe('NoteEditor: guarda de conteúdo (API-020)', () => {
     await waitFor(() => expect(editorMounted()).toBe(true))
     typeInEditor('EDICAO EM CONFLITO ')
     db.serverVersion = '2026-10-07T13:00:00Z'
-    expect(await screen.findByText('editor_conflict_title', {}, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByText('editor_conflict_title', {}, WAIT)).toBeTruthy()
     expect(db.persisted).toEqual([])
     view.unmount()
     await waitFor(() => expect(db.persisted.some(d => JSON.stringify(d.value).includes('EDICAO EM CONFLITO'))).toBe(true))
@@ -224,7 +228,7 @@ describe('NoteEditor: guarda de conteúdo (API-020)', () => {
     expect(hasTable()).toBe(false)
     await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_paste_blocked'))
     typeInEditor('DEPOIS DA COLAGEM ')
-    await waitFor(() => expect(saved('DEPOIS DA COLAGEM')).toHaveLength(1), { timeout: 3000 })
+    await waitFor(() => expect(saved('DEPOIS DA COLAGEM')).toHaveLength(1), WAIT)
     expect(db.saves.some(s => JSON.stringify(s.values).includes('"table"'))).toBe(false)
     expect(screen.queryByText('editor_save_error')).toBeNull()
     expect(db.toast).toHaveBeenCalledTimes(1)
@@ -237,7 +241,7 @@ describe('NoteEditor: guarda de conteúdo (API-020)', () => {
     pasteHtml(MERGED_TABLE)
     expect(hasTable()).toBe(false)
     expect(editorText()).toBe('LOGO ANTES Nota boa')
-    await waitFor(() => expect(saved('LOGO ANTES')).toHaveLength(1), { timeout: 3000 })
+    await waitFor(() => expect(saved('LOGO ANTES')).toHaveLength(1), WAIT)
     expect(db.saves.some(s => JSON.stringify(s.values).includes('"table"'))).toBe(false)
     expect(toasts('note_paste_blocked')).toBe(1)
   })
@@ -247,7 +251,7 @@ describe('NoteEditor: guarda de conteúdo (API-020)', () => {
     await waitFor(() => expect(editorMounted()).toBe(true))
     pasteHtml(ROWSPAN_TABLE)
     expect(hasTable()).toBe(true)
-    await waitFor(() => expect(db.saves.some(s => JSON.stringify(s.values).includes('"table"'))).toBe(true), { timeout: 3000 })
+    await waitFor(() => expect(db.saves.some(s => JSON.stringify(s.values).includes('"table"'))).toBe(true), WAIT)
     expect(db.toast).not.toHaveBeenCalled()
   })
 
@@ -255,7 +259,7 @@ describe('NoteEditor: guarda de conteúdo (API-020)', () => {
     const view = render(<NoteEditor pageId="p1" />)
     await waitFor(() => expect(editorMounted()).toBe(true))
     insertHtml(MERGED_TABLE)
-    await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_save_blocked'), { timeout: 3000 })
+    await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_save_blocked'), WAIT)
     expect(screen.getByText('editor_save_error')).toBeTruthy()
     typeInEditor('ESCRITO DEPOIS ')
     await new Promise(r => setTimeout(r, 1200))
@@ -273,7 +277,7 @@ describe('NoteEditor: guarda de conteúdo (API-020)', () => {
     render(<NoteEditor pageId="p1" />)
     await waitFor(() => expect(editorMounted()).toBe(true))
     insertHtml(MERGED_TABLE)
-    await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_save_blocked'), { timeout: 3000 })
+    await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_save_blocked'), WAIT)
     typeInEditor('ANTES DE FECHAR ')
     act(() => { window.dispatchEvent(new Event('pagehide')) })
     await waitFor(() => expect(db.persisted.some(d => JSON.stringify(d.value).includes('ANTES DE FECHAR'))).toBe(true))
@@ -286,7 +290,7 @@ describe('NoteEditor: guarda de conteúdo (API-020)', () => {
       render(<NoteEditor pageId="p1" />)
       await waitFor(() => expect(editorMounted()).toBe(true))
       insertHtml(MERGED_TABLE)
-      await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_save_blocked'), { timeout: 3000 })
+      await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_save_blocked'), WAIT)
       expect(db.persisted.some(d => JSON.stringify(d.value).includes('"table"'))).toBe(true)
       expect(db.saves).toEqual([])
       // Fica no aparelho, mas nunca vai ao servidor: "Não salvo", e não "guardado neste aparelho".
@@ -301,7 +305,7 @@ describe('NoteEditor: guarda de conteúdo (API-020)', () => {
     render(<NoteEditor pageId="p1" />)
     await waitFor(() => expect(editorMounted()).toBe(true))
     insertHtml(MERGED_TABLE)
-    await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_save_blocked'), { timeout: 3000 })
+    await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_save_blocked'), WAIT)
     paste({ 'text/plain': 'TEXTO COLADO' })
     expect(editorText()).toContain('TEXTO COLADO')
     expect(toasts('note_paste_blocked')).toBe(0)
@@ -314,7 +318,7 @@ describe('NoteEditor: guarda de conteúdo (API-020)', () => {
     db.draft = { value: [{ type: 'paragraph', content: [{ type: 'text', text: lines, styles: {} }, { type: 'text', text: lines, styles: {} }] }], version: '2026-10-07T12:00:00Z' }
     render(<NoteEditor pageId="p1" />)
     await waitFor(() => expect(editorMounted()).toBe(true), { timeout: 5000 })
-    await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_save_blocked'), { timeout: 3000 })
+    await waitFor(() => expect(db.toast).toHaveBeenCalledWith('error', 'note_save_blocked'), WAIT)
     expect(db.saves).toEqual([])
     expect(db.persisted).toEqual([])
   })
