@@ -31,7 +31,9 @@ export function useAllocationSummary(userId: string | undefined): AllocationSumm
     if (!userId) return null
     const [prod, pur, saleItems, sales] = await Promise.all([
       supabase.from('finance_store_products').select('id,archived'),
-      supabase.from('finance_store_purchases').select('product_id,quantity,unit_cost,other_costs'),
+      // status: a compra em cotação não entra no estoque nem no custo médio
+      // (financeStoreCalc); sem a coluna, ela contaria como comprada (API-066).
+      supabase.from('finance_store_purchases').select('product_id,quantity,unit_cost,other_costs,status'),
       supabase.from('finance_store_sale_items').select('product_id,sale_id,quantity'),
       supabase.from('finance_store_sales').select('id,status'),
     ])
