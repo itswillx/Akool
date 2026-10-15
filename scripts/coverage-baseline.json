@@ -1,23 +1,21 @@
 {
   "src": 0,
-  "src/components": 53.52,
+  "src/components": 57.43,
   "src/contexts": 70.49,
   "src/hooks": 99.27,
   "src/i18n": 94.64,
-  "src/lib": 79.92,
+  "src/lib": 93.89,
   "src/modules/audit": 0,
   "src/modules/backup": 5.52,
   "src/modules/docsnetwork": 0,
   "src/modules/finance": 41.58,
-  "src/modules/projects": 55.52,
+  "src/modules/projects": 59.84,
   "src/modules/study": 78.37,
   "src/pages": 98.86,
   "src/shared": 82.94,
-  "supabase/functions/_api": 99.71,
-  "supabase/functions/_domain": 99.95,
+  "supabase/functions/_domain": 99.87,
   "supabase/functions/_shared": 98.73,
   "supabase/functions/admin-ops": 12.62,
-  "supabase/functions/cards-api": 2.73,
   "supabase/functions/site-backup": 5.22,
-  "total": 70.15
+  "total": 70.37
 }
