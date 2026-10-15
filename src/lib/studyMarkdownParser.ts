@@ -414,7 +414,7 @@ function fitToServerLimits(card: ParsedStudyCard, dropped: string[]): ParsedStud
  * antes e diz o que ficou de fora. O tamanho é o do payload inteiro, como o
  * servidor mede: `{topic, cards}` na importação (passe `topic`) e só a lista
  * no anexar. Corta do fim, para o roteiro não ganhar um buraco no meio. Pura,
- * linear, sem relógio nem DOM: o porte para a API (API-034) a reaproveita.
+ * linear, sem relógio nem DOM.
  */
 export function fitImportCards<T extends { title: string }>(cards: readonly T[], topic?: unknown): { cards: T[]; dropped: string[] } {
   const dropped: string[] = []

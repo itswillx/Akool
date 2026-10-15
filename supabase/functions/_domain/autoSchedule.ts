@@ -26,9 +26,9 @@ import { PROJECT_PRIORITIES, type ProjectCardPriority } from './projectTypes.ts'
 // Either way, columns are scheduled independently (categories run in
 // parallel) and completed cards are excluded entirely.
 //
-// API-027: mora em _domain (a API gera o mesmo cronograma que o botão), com
-// `today` obrigatório: no servidor não há relógio do aparelho. O app passa
-// pelo wrapper de src/lib/autoSchedule.ts, que usa o dia de hoje do aparelho.
+// API-027: mora em _domain, onde não há relógio, com `today` obrigatório. O app
+// passa pelo wrapper de src/lib/autoSchedule.ts, que usa o dia de hoje do
+// aparelho.
 
 export const DEFAULT_ESTIMATED_DAYS = 1
 

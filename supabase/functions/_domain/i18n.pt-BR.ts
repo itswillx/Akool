@@ -1,25 +1,12 @@
-// Dicionário pt-BR do _domain (§3 de docs/api-arquitetura.md). Os módulos puros
-// não podem importar o i18n do app (src/i18n), então os textos que eles
-// produzem (Markdown de card, texto puro de nota, avisos de importação) moram
-// aqui. Cada chave que existe também no app tem o mesmo texto lá: o teste de
+// Dicionário pt-BR do _domain. Os módulos puros não podem importar o i18n do
+// app (src/i18n), então os textos que eles produzem (Markdown de card, avisos
+// de importação) moram aqui. Cada chave tem o mesmo texto no app: o teste de
 // paridade em src/lib/projectDomain.test.ts confere.
 //
 // A interpolação é a mesma do getT do app (src/i18n/translations.ts): {nome}
 // vira o valor, numa passada só, e um placeholder sem valor fica como está.
 
 export const DOMAIN_PT_BR = {
-  // Texto puro de nota (blocksToText, API-023): rótulos dos blocos sem texto.
-  note_text_image: '[imagem: {name}]',
-  note_text_image_unnamed: '[imagem]',
-  note_text_diagram: '[diagrama]',
-  note_text_card: '[card: {title}]',
-  note_text_card_unnamed: '[card]',
-  note_text_file: '[arquivo: {name}]',
-  note_text_file_unnamed: '[arquivo]',
-  note_text_video: '[vídeo: {name}]',
-  note_text_video_unnamed: '[vídeo]',
-  note_text_audio: '[áudio: {name}]',
-  note_text_audio_unnamed: '[áudio]',
   // Markdown do card (cardMarkdown, API-027): as mesmas chaves do app.
   projects_new_card: 'Novo card',
   projects_table_column: 'Coluna',

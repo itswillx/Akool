@@ -3,8 +3,7 @@
 // confere, pelo tsc, que estes tipos e os do app continuam iguais.
 //
 // Os *Like são o que cada cálculo lê de uma linha. A linha inteira do app
-// (FinanceStoreSale, FinanceStoreSaleItem…) os satisfaz; a API passa a linha
-// do banco, com o status já estreitado para as uniões abaixo.
+// (FinanceStoreSale, FinanceStoreSaleItem…) os satisfaz.
 
 export type StoreSaleStatus = 'negotiating' | 'sold' | 'shipped' | 'delivered' | 'cancelled'
 export type StorePurchaseStatus = 'quoting' | 'purchased' | 'received'

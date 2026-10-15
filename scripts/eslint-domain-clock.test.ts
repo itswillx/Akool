@@ -2,7 +2,7 @@ import { ESLint } from 'eslint'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-// API-027: a guarda do eslint.config.js para _domain e _api (rodam no Deno, em
+// API-027: a guarda do eslint.config.js para _domain (roda no Deno, em
 // UTC, e no navegador, no fuso do aparelho): sem relógio, sem hora local e sem
 // navegador. A primeira versão deixava passar o parse em hora local, como o
 // `new Date(`${cd}T00:00:00`)` do createdPerWeek antigo, que errava a semana no
@@ -20,7 +20,7 @@ async function guardHits(code: string, file = 'supabase/functions/_domain/__guar
   return result.messages.filter(m => m.ruleId && GUARD_RULES.has(m.ruleId)).map(m => m.message)
 }
 
-describe('guarda de relógio e fuso em _domain e _api (API-027)', () => {
+describe('guarda de relógio e fuso em _domain (API-027)', () => {
   // O primeiro lintText carrega a config e o parser (1,3 s sozinho, 5,8 s com a
   // suíte em paralelo): todo teste tem timeout próprio, porque com -t qualquer
   // um pode ser o primeiro.
@@ -90,13 +90,12 @@ describe('guarda de relógio e fuso em _domain e _api (API-027)', () => {
     expect(await guardHits("new Date(iso + 'T00:00:00')")).toEqual([expect.stringMatching(/é hora local: use toUTC/)])
   }, 60_000)
 
-  it('vale para _api, e não para os testes', async () => {
-    expect(await guardHits("Date.parse('2025-03-10T00:00:00')", 'supabase/functions/_api/__guarda__.ts')).not.toEqual([])
+  it('não vale para os testes', async () => {
     expect(await guardHits("Date.parse('2025-03-10T00:00:00')", 'supabase/functions/_domain/__guarda__.test.ts')).toEqual([])
   }, 60_000)
 
-  it('o código atual de _domain e _api passa', async () => {
-    const results = await eslint.lintFiles(['supabase/functions/_domain', 'supabase/functions/_api'])
+  it('o código atual de _domain passa', async () => {
+    const results = await eslint.lintFiles(['supabase/functions/_domain'])
     const hits = results.flatMap(r => r.messages
       .filter(m => m.ruleId && GUARD_RULES.has(m.ruleId))
       .map(m => `${r.filePath.slice(ROOT.length + 1)}:${m.line} ${m.message}`))

@@ -5,9 +5,8 @@
 // não deixa o @blocknote/core entrar em _domain; a paridade da versão
 // instalada fica em blocknote.test.ts (package-lock.json).
 //
-// Subir o BlockNote (o ^0.50.0 aceita 0.50.x) exige atualizar este arquivo e
-// republicar a function api: o app e a API precisam aceitar a mesma coisa
-// (docs/api-arquitetura.md §3).
+// Subir o BlockNote (o ^0.50.0 aceita 0.50.x) exige atualizar este arquivo: o
+// editor e o validador precisam aceitar a mesma coisa.
 
 export const BLOCKNOTE_VERSION = '0.50.0'
 
@@ -89,7 +88,7 @@ export const COLOR_PROPS: ReadonlySet<string> = new Set(['backgroundColor', 'tex
 export const MAX_COLOR_LENGTH = 64
 
 /**
- * Limites de contrato da API: 2 MiB sobre o JSON compacto, 5000 blocos e
+ * Limites de contrato: 2 MiB sobre o JSON compacto, 5000 blocos e
  * profundidade 10, com os blocos da raiz na profundidade 1. Os 2 MiB valem
  * sobre a forma canônica, que é a gravada: o validador mede o que recebe, e o
  * normalize mede de novo o que devolve (a forma completa ganha id, props e
@@ -111,9 +110,11 @@ export const HARD_MAX_DEPTH = 64
  * editor.document, e o próximo save passa de 2 MB.
  * Os de contrato têm outro motivo: o tableContentToNodes do BlockNote 0.50 é
  * quadrático por tabela. Medido no create: 50x50 leva cerca de 0,7 s e
- * 100x100 cerca de 11 s. A API recusa uma tabela acima de 2.500 células
- * (contractCells) e uma nota cuja soma de células² das tabelas passa de
- * 2 × 2.500² (noteCellCost, cerca de 1,5 s de create: duas tabelas 50x50).
+ * 100x100 cerca de 11 s. O contrato (não fatal) acusa uma tabela acima de
+ * 2.500 células (contractCells) e uma nota cuja soma de células² das tabelas
+ * passa de 2 × 2.500² (noteCellCost, cerca de 1,5 s de create: duas tabelas
+ * 50x50). Hoje nada recusa por isso: a guarda do NoteEditor e o offlineSync
+ * usam só as fatais, e quem recusava era a escrita de notas da API v1.
  * Sem o teto da nota, 260 tabelas 25x100 cabem em 2 MiB e travam o editor por
  * minutos. Conteúdo gravado acima deles ainda abre, só fica lento.
  */

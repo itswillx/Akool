@@ -1,13 +1,12 @@
 // API-027: datas de calendário 'YYYY-MM-DD'. A aritmética é em UTC, então não
 // há salto de horário de verão. Aqui não há relógio: o "hoje" vem sempre de
-// quem chama. O app usa o relógio do aparelho (localDateKey, REL-007); a API,
-// o dia no fuso da pessoa, calculado no SQL. No Deno, o fuso local é UTC, e um
-// `new Date()` daqui viraria o dia seguinte às 21h em Brasília. Em _domain e
-// _api, o eslint barra o relógio (`new Date()`, `Date()`, `Date.now`) e a hora
-// local: getters e setters locais, `Date.parse` e `new Date` por partes ou com
-// texto sem Z nem offset depois da hora (literal, template ou concatenação com
-// cauda literal, como `dia + 'T00:00:00'`). A data sem hora é UTC, mas também é
-// barrada. `new Date(variavel)` e `dia + variavel` ele não vê: por isso o dia
+// quem chama. O app usa o relógio do aparelho (localDateKey, REL-007). No
+// Deno, o fuso local é UTC, e um `new Date()` daqui viraria o dia seguinte às
+// 21h em Brasília. Em _domain, o eslint barra o relógio (`new Date()`,
+// `Date()`, `Date.now`) e a hora local: getters e setters locais, `Date.parse`
+// e `new Date` por partes ou com texto sem Z nem offset depois da hora
+// (literal, template ou concatenação com cauda literal, como
+// `dia + 'T00:00:00'`). A data sem hora é UTC, mas também é barrada. `new Date(variavel)` e `dia + variavel` ele não vê: por isso o dia
 // 'YYYY-MM-DD' passa sempre por toUTC.
 
 const DAY_MS = 86_400_000

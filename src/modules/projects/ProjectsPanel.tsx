@@ -6,7 +6,6 @@ import { horizontalListSortingStrategy, SortableContext } from '@dnd-kit/sortabl
 import {
     ChevronDown,
     FolderKanban,
-    ListOrdered,
     Pencil,
     Plus,
     Share2,
@@ -25,8 +24,7 @@ import CardFilterBar from './CardFilterBar'
 import ImportCardsModal from './ImportCardsModal'
 import { BoardModal, ColumnModal, ShareModal } from './modals/BoardModals'
 import ProjectsNav from './ProjectsNav'
-import { collisionDetection, QueueBadgeContext } from './projectsShared'
-import QueueModal from './QueueModal'
+import { collisionDetection } from './projectsShared'
 import { LoadError, PrimaryBtn } from './ui'
 import { useBoardActions } from './useBoardActions'
 import { useBoardData } from './useBoardData'
@@ -55,13 +53,13 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
   const { t } = useLanguage()
   useModuleTour('projects')
 
-  // Estado, carga, realtime e fila do quadro: useBoardData.ts
+  // Estado, carga e realtime do quadro: useBoardData.ts
   const boardData = useBoardData()
-  const { boards, activeBoardId, setActiveBoardId, columns, cards, members, view, setView, loading, boardLoading, activeDragId, persistError, cardFilters, setCardFilters, boardError, boardsError, boardModal, setBoardModal, boardSelectorOpen, setBoardSelectorOpen, cardModal, setCardModal, columnModal, setColumnModal, shareOpen, setShareOpen, importOpen, setImportOpen, queueOpen, setQueueOpen, queueRows, queueRefreshKey, deleteConfirm, setDeleteConfirm, activeBoard, canEdit, isOwner, sensors, pLabel, loadBoards, loadBoardData, queueBadgeMap, filteredCards, availableLabels, filtersActive, cardsByColumn } = boardData
+  const { boards, activeBoardId, setActiveBoardId, columns, cards, members, view, setView, loading, boardLoading, activeDragId, persistError, cardFilters, setCardFilters, boardError, boardsError, boardModal, setBoardModal, boardSelectorOpen, setBoardSelectorOpen, cardModal, setCardModal, columnModal, setColumnModal, shareOpen, setShareOpen, importOpen, setImportOpen, deleteConfirm, setDeleteConfirm, activeBoard, canEdit, isOwner, sensors, pLabel, loadBoards, loadBoardData, filteredCards, availableLabels, filtersActive, cardsByColumn } = boardData
 
-  // Gravações (quadros, colunas, cards, fila): useBoardActions.ts
+  // Gravações (quadros, colunas, cards): useBoardActions.ts
   const boardActions = useBoardActions({ board: boardData, onOpenPage })
-  const { createBoard, updateBoard, deleteBoard, enqueueCard, saveColumn, deleteColumn, cardIO, cardColumnId, closeCardModal, finishCardSave, validateCard, deleteCard, openLinkedPage, handleRescheduleCard, handleGenerateSchedule } = boardActions
+  const { createBoard, updateBoard, deleteBoard, saveColumn, deleteColumn, cardIO, cardColumnId, closeCardModal, finishCardSave, deleteCard, openLinkedPage, handleRescheduleCard, handleGenerateSchedule } = boardActions
 
   // PERF-011: handlers estáveis para o memo das colunas e dos cards segurar.
   const openNewCard = useCallback((columnId: string) => setCardModal({ open: true, card: null, columnId }), [setCardModal])
@@ -92,7 +90,6 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
   })
 
   return (
-    <QueueBadgeContext.Provider value={queueBadgeMap}>
     <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', height: '100%', minWidth: 0, minHeight: 0, backgroundColor: 'var(--color-bg)', overflow: 'hidden' }}>
       {/* Faixa lateral (desktop) / chips de visualização (mobile) */}
       <ProjectsNav
@@ -105,9 +102,6 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
         onNewBoard={() => setBoardModal({ open: true, board: null })}
         onSelectView={setView}
         onImport={() => setImportOpen(true)}
-        canQueue={canEdit}
-        queueCount={queueRows.length}
-        onQueue={() => setQueueOpen(true)}
         onShare={() => setShareOpen(true)}
         onEditBoard={() => setBoardModal({ open: true, board: activeBoard })}
         onDeleteBoard={deleteBoard}
@@ -153,12 +147,8 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>{t('projects_title')}</h2>
           )}
 
-          {isMobile && activeBoard && canEdit && (
+          {isMobile && activeBoard && isOwner && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button onClick={() => setQueueOpen(true)} title={t('projects_queue')} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: queueRows.length ? 'var(--color-accent)' : 'var(--color-text-muted)', fontSize: 11, fontWeight: 700 }}>
-                <ListOrdered size={13} />{queueRows.length > 0 && queueRows.length}
-              </button>
-              {isOwner && (<>
               <button onClick={() => setImportOpen(true)} title={t('projects_import')} style={{ display: 'flex', padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
                 <Upload size={13} />
               </button>
@@ -171,7 +161,6 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
               <button onClick={deleteBoard} title={t('projects_delete')} style={{ display: 'flex', padding: 8, borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', color: '#ef4444' }}>
                 <Trash2 size={13} />
               </button>
-              </>)}
             </div>
           )}
         </div>
@@ -323,24 +312,9 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
           onSaved={() => { void finishCardSave() }}
           onDelete={cardModal.card ? deleteCard : undefined}
           onOpenPage={openLinkedPage}
-          queueBadge={cardModal.card ? queueBadgeMap.get(cardModal.card.id) : undefined}
-          onEnqueue={cardModal.card ? () => { void enqueueCard(cardModal.card!.id) } : undefined}
-          onValidate={cardModal.card ? (approve, note) => validateCard(cardModal.card!.id, approve, note) : undefined}
         />
       )}
       {shareOpen && activeBoard && <ShareModal board={activeBoard} onClose={() => setShareOpen(false)} />}
-      {queueOpen && activeBoardId && (
-        <QueueModal
-          boardId={activeBoardId}
-          columns={columns}
-          cards={cards}
-          canEdit={canEdit}
-          isMobile={isMobile}
-          refreshKey={queueRefreshKey}
-          onClose={() => setQueueOpen(false)}
-          onChanged={() => loadBoardData(activeBoardId, { silent: true })}
-        />
-      )}
       {importOpen && activeBoardId && (
         <ImportCardsModal
           open={importOpen}
@@ -360,6 +334,5 @@ export default function ProjectsPanel({ isMobile = false, onOpenPage }: {
         onCancel={() => setDeleteConfirm(null)}
       />
     </div>
-    </QueueBadgeContext.Provider>
   )
 }

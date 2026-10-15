@@ -7,8 +7,8 @@ import type { TranslationKey } from '../../i18n/translations'
 import { buildAutoSchedule } from '../../lib/autoSchedule'
 import {
     createBoard as createBoardRow, deleteBoard as deleteBoardRow, deleteCard as deleteCardRow,
-    deleteColumn as deleteColumnRow, enqueueCards, insertCard, insertColumn, normalizeCard, rescheduleCard,
-    saveCardVersioned, scheduleCards, updateBoard as updateBoardRow, updateColumn as updateColumnRow, validateQueueCard
+    deleteColumn as deleteColumnRow, insertCard, insertColumn, normalizeCard, rescheduleCard,
+    saveCardVersioned, scheduleCards, updateBoard as updateBoardRow, updateColumn as updateColumnRow
 } from '../../lib/data/projects'
 import { mapWriteError, requireRows, runGuarded, type WriteError } from '../../lib/optimistic'
 import type { Page, ProjectColumn } from '../../types'
@@ -17,7 +17,7 @@ import type { CardIO } from './card/useCardEditor'
 import { flattenPages } from './projectsShared'
 import type { useBoardData } from './useBoardData'
 
-// Gravações do quadro: quadros, colunas, cards, fila e cronograma.
+// Gravações do quadro: quadros, colunas, cards e cronograma.
 export function useBoardActions({ board, onOpenPage }: { board: ReturnType<typeof useBoardData>; onOpenPage?: (page: Page) => void }) {
   const { showToast } = useToast()
   const { t } = useLanguage()
@@ -69,17 +69,6 @@ export function useBoardActions({ board, onOpenPage }: { board: ReturnType<typeo
         await loadBoards()
       },
     })
-  }
-
-  const enqueueCard = async (cardId: string) => {
-    if (!activeBoardId) return
-    const { error } = await enqueueCards(activeBoardId, { cards: [cardId] })
-    if (error) {
-      showToast('error', t('projects_queue_error').replace('{message}', error.message))
-      return
-    }
-    showToast('success', t('projects_queue_card_added'))
-    await loadBoardData(activeBoardId, { silent: true })
   }
 
   const saveColumn = async (data: { name: string; color: string; wip_limit: number | null }) => {
@@ -155,22 +144,6 @@ export function useBoardActions({ board, onOpenPage }: { board: ReturnType<typeo
     const boardId = activeBoardId
     closeCardModal()
     if (boardId) await loadBoardData(boardId, { silent: true })
-  }
-
-  // Validação (fluxo v2): aprovar conclui; reprovar devolve o card ao topo da
-  // fila. O modal espera o editor gravar antes de chamar (CardModal) e fecha
-  // aqui, para o autosave não regravar o formulário antigo.
-  const validateCard = async (cardId: string, approve: boolean, note?: string): Promise<boolean> => {
-    if (!activeBoardId) return false
-    const { error } = await validateQueueCard(activeBoardId, cardId, approve, note ?? null)
-    if (error) {
-      showToast('error', t('projects_queue_error').replace('{message}', error.message))
-      return false
-    }
-    showToast('success', t(approve ? 'projects_queue_approved' : 'projects_queue_rejected'))
-    closeCardModal()
-    await loadBoardData(activeBoardId, { silent: true })
-    return true
   }
 
   /** Excluir o card aberto. `editor` para de gravar antes do DELETE e volta se ele falhar. */
@@ -250,5 +223,5 @@ export function useBoardActions({ board, onOpenPage }: { board: ReturnType<typeo
     return { scheduled: patches.length, overflowDays }
   }
 
-  return { writeFailed, createBoard, updateBoard, deleteBoard, enqueueCard, saveColumn, deleteColumn, cardIO, cardColumnId, closeCardModal, finishCardSave, validateCard, deleteCard, openLinkedPage, handleRescheduleCard, handleGenerateSchedule }
+  return { writeFailed, createBoard, updateBoard, deleteBoard, saveColumn, deleteColumn, cardIO, cardColumnId, closeCardModal, finishCardSave, deleteCard, openLinkedPage, handleRescheduleCard, handleGenerateSchedule }
 }

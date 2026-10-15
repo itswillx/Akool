@@ -4,7 +4,7 @@ import { X } from 'lucide-react'
 import { useDialog } from '@/shared/hooks/useDialog'
 import { useLanguage } from '../../i18n/LanguageContext'
 
-// Casca dos modais do módulo (importar cards, fila): bottom sheet no mobile,
+// Casca dos modais do módulo (hoje, o de importar cards): bottom sheet no mobile,
 // diálogo centralizado no desktop. O Esc fecha (UX-003); o clique no fundo
 // também, a menos que dismissOnBackdrop=false (ex.: import com texto colado,
 // UX-009 — um clique fora perdia o que foi colado).

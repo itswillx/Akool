@@ -10,7 +10,7 @@ Espaço de trabalho pessoal e colaborativo: páginas com notas, desenhos e taref
 |---|---|---|
 | Páginas | Notas (editor de blocos), desenhos (Excalidraw), nota + desenho lado a lado e listas de tarefas, em árvore e compartilháveis | `src/components/PageEditor.tsx`, `src/contexts/PagesContext.tsx` |
 | Documentos | Painel que reúne as páginas, os projetos e a rede de ligações entre elas | `src/components/DocumentsPanel.tsx`, `src/modules/docsnetwork/` |
-| Projetos | Quadros kanban e Gantt, cards com checklist, importação de backlog em Markdown e a fila de desenvolvimento | `src/modules/projects/` |
+| Projetos | Quadros kanban e Gantt, cards com checklist e importação de backlog em Markdown | `src/modules/projects/` |
 | Finanças | Transações, contas, orçamentos, metas, importação de extrato e visões por projeto | `src/modules/finance/` ([README do módulo](src/modules/finance/README.md)) |
 | Estudos | Tópicos, cards de estudo, roteiros e diário | `src/modules/study/` |
 | Backup | Backups do banco, manuais e automáticos | `src/modules/backup/` |
@@ -73,7 +73,6 @@ O CORS das functions em desenvolvimento aceita `http://localhost:5173` e `http:/
 | `npm run lint` | ESLint com todos os problemas |
 | `npm run lint:ci` | Lint que só falha com problema novo (base em `scripts/lint-baseline.json`) |
 | `npm run import:cards` | Importa um backlog em Markdown para um quadro de Projetos |
-| `npm run cards` | CLI da fila de desenvolvimento (ver abaixo) |
 | `npm run generate:maps` | Gera os mapas de arquitetura e do fluxo de login (em `docs/`) |
 | `npm run generate:architecture-map` | Só o mapa de arquitetura |
 | `npm run generate:auth-flow-map` | Só o mapa do fluxo de login |
@@ -102,7 +101,7 @@ Outros workflows: **Supabase drift** (push na `main` em `supabase/`, toda segund
 - **Testes sem segredos:** o `vite.config.ts` injeta um Supabase fictício no Vitest (`test.env`), que vence o `.env.local`. A suíte roda igual no CI e na sua máquina, e nunca aponta para o projeto real.
 - **Catraca do lint:** o projeto tem problemas de lint antigos, contados por arquivo e regra em `scripts/lint-baseline.json`. O `lint:ci` falha se aparecer um problema novo. Quando você corrigir algum, rode `npm run lint:ci -- --update` para baixar a base (ele recusa se houver piora). `npm run lint` continua mostrando tudo.
 - **Segredos:**
-  - **O que é varrido:** o gitleaks usa as regras padrão mais o token pessoal da API de cards (`.gitleaks.toml`).
+  - **O que é varrido:** o gitleaks usa as regras padrão mais o formato do token pessoal da antiga API v1 (`.gitleaks.toml`), que fica porque o CI varre o histórico.
   - **CI:** varre todo o histórico, com o binário em versão e sha256 fixados. Um achado antigo, já rotacionado, pode ir para o `.gitleaksignore`, pelo fingerprint.
   - **Hook de pre-commit:** `.githooks/pre-commit`, ativado sozinho na instalação das dependências dentro de um repositório git. Ele roda o gitleaks nos arquivos staged, e sem o gitleaks instalado (`brew install gitleaks`) só avisa.
   - **Testes do TestSprite:** a credencial literal neles é barrada pelo `npm test` (veja [`testsprite_tests/README.md`](testsprite_tests/README.md)).
@@ -118,7 +117,6 @@ Outros workflows: **Supabase drift** (push na `main` em `supabase/`, toda segund
 |---|---|
 | `admin-ops` | Operações de administrador sobre contas, registradas no `audit_log` |
 | `site-backup` | Backups do banco: manual, com JWT de admin, e automático, pelo cron |
-| `cards-api` | API da fila de desenvolvimento, autenticada por token pessoal (`akool_pat_…`) |
 
 As edges de IA (`ai-chat`, `analyze-transaction-photo`, `categorize-transactions` e `study-lookup`) saíram em 01/10/2026 (SEC-015): nenhuma tela as usava.
 
@@ -167,12 +165,9 @@ Produção roda no **Coolify**, com Nixpacks e Caddy:
 
 O passo a passo, com a checagem pós-deploy, está em [`docs/deploy-coolify.md`](docs/deploy-coolify.md). O Netlify não é mais usado.
 
-## Fila de desenvolvimento
+## Backlogs
 
-O desenvolvimento segue um quadro de Projetos que funciona como fila, em fases: avaliação, plano, desenvolvimento, validação e "aguardando você".
-- **CLI:** `npm run cards -- <comando>` (por exemplo, `next --count=3`, `card <ID>` e `complete <ID>`). `npm run cards` sem comando mostra a ajuda.
-- **Token:** a CLI precisa de `AKOOL_API_TOKEN` no `.env.local`. Ele é gerado em Configurações → API, e o banco só guarda o hash.
-- **Backlogs:** entram pelo Projetos → Importar, ou por `npm run import:cards`, no formato de [`docs/imports/`](docs/imports/).
+Os backlogs em Markdown entram pelo Projetos → Importar, ou por `npm run import:cards`. O formato e o passo a passo estão em [`docs/imports/README.md`](docs/imports/README.md).
 
 ## Documentação
 
@@ -182,5 +177,5 @@ O desenvolvimento segue um quadro de Projetos que funciona como fila, em fases: 
 - [`docs/plano-execucao.md`](docs/plano-execucao.md): roadmap de execução do backlog, por risco
 - [`docs/design-system.md`](docs/design-system.md): tokens de cor, espaçamento, raios e tipografia, e as regras de uso
 - [`docs/imports/backlog-system-design.md`](docs/imports/backlog-system-design.md): backlog de system design, no formato de importação
-- [`docs/imports/`](docs/imports/): backlogs no formato de importação
+- [`docs/imports/`](docs/imports/): backlogs no formato de importação ([formato](docs/imports/README.md))
 - [`src/modules/finance/README.md`](src/modules/finance/README.md): limites e estrutura do módulo financeiro

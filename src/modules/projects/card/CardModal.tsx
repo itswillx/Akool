@@ -4,7 +4,6 @@ Check,
 CheckSquare,
 Copy,
 ExternalLink,
-ListOrdered, ListPlus,
 Trash2,
 X
 } from 'lucide-react'
@@ -15,13 +14,11 @@ import { useToast } from '../../../contexts/ToastContext'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { activateProps } from '../../../lib/a11y'
 import { formatCardAsMarkdown } from '../../../lib/cardMarkdown'
-import { type QueueBadge } from '../../../lib/cardQueue'
 import { copyToClipboard } from '../../../lib/clipboard'
 import { prepareUpload } from '../../../lib/uploadValidation'
 import type { ProjectCard, ProjectCardChecklistItem, ProjectCardPriority } from '../../../types'
 import type { Member } from '../projectsShared'
-import { inputStyle, labelStyle, PRIORITY_COLORS, queueBadgeLabel } from '../projectsShared'
-import QueueReviewBanner from '../QueueReviewBanner'
+import { inputStyle, labelStyle, PRIORITY_COLORS } from '../projectsShared'
 import { GhostBtn, Modal, PrimaryBtn } from '../ui'
 import { addCardLabel, CARD_LABEL_MAX_LENGTH, CARD_LABELS_MAX } from '../../../lib/cardLabels'
 import { ATTACHMENTS_MAX, DEPENDS_ON_MAX } from '../../../lib/cardLimits'
@@ -33,12 +30,10 @@ import { CardAttachmentsSection, CardChecklistSection, CardLinksSection, Collaps
 import { PagePicker } from './PagePicker'
 
 // QA-003: exportado para o teste de componente (CardModal.test.tsx).
-export function CardModal({ card, boardId, columnId, columnName, members, allCards, canEdit, isMobile, queueBadge, io, onClose, onSaved, onDelete, onOpenPage, onEnqueue, onValidate }: {
+export function CardModal({ card, boardId, columnId, columnName, members, allCards, canEdit, isMobile, io, onClose, onSaved, onDelete, onOpenPage }: {
   card: ProjectCard | null; boardId: string; columnId?: string; columnName?: string; members: Member[]; allCards: ProjectCard[]; canEdit: boolean; isMobile?: boolean;
-  queueBadge?: QueueBadge; onEnqueue?: () => void;
   /** API-013: a E/S do quadro; versão, conflito e rascunho ficam no editor (useCardEditor). */
   io: CardIO;
-  onValidate?: (approve: boolean, note?: string) => Promise<boolean>;
   /** Fecha o modal. `keepDraft`: há um aviso de conflito pendente, e o rascunho fica para a próxima abertura. */
   onClose: (opts?: { keepDraft?: boolean }) => void;
   /** Salvar gravou tudo: o quadro fecha e recarrega. */
@@ -55,7 +50,7 @@ export function CardModal({ card, boardId, columnId, columnName, members, allCar
   const [labelInput, setLabelInput] = useState('')
   const [editingDesc, setEditingDesc] = useState(false)
   const [copied, setCopied] = useState(false)
-  // Cada clique em Salvar (ou Aprovar) com o aviso na tela devolve o foco a ele.
+  // Cada clique em Salvar com o aviso na tela devolve o foco a ele.
   const [conflictFocus, setConflictFocus] = useState(0)
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -104,17 +99,6 @@ export function CardModal({ card, boardId, columnId, columnName, members, allCar
       onSaved()
     }
   }
-
-  // Validação (fluxo v2): grava o que falta antes; com aviso pendente, não valida.
-  const handleValidate = onValidate ? async (approve: boolean, note?: string) => {
-    if (editor.conflict) { setConflictFocus(n => n + 1); return false }
-    if (!await editor.flush()) return false
-    const ok = await onValidate(approve, note)
-    // O quadro fechou o modal: o editor termina (grava o que mudou durante a
-    // validação e apaga imagens que não entraram no card).
-    if (ok) editor.finish()
-    return ok
-  } : undefined
 
   const handleDelete = onDelete ? () => onDelete({ stop: editor.stop, resume: editor.resume }) : undefined
 
@@ -343,17 +327,6 @@ export function CardModal({ card, boardId, columnId, columnName, members, allCar
           {copied ? <Check size={14} /> : <Copy size={14} />}
           {copied ? t('projects_copied') : t('projects_copy_card')}
         </button>
-        {canEdit && card && !card.completed && onEnqueue && (queueBadge ? (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 600, color: 'var(--color-text-muted)' }}>
-            <ListOrdered size={14} />
-            {queueBadgeLabel(t, queueBadge)}
-          </span>
-        ) : (
-          <button onClick={onEnqueue} title={t('projects_queue_add_card')}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'none', color: 'var(--color-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <ListPlus size={14} />{t('projects_queue_add_card')}
-          </button>
-        ))}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {saveStatusLabel && (
@@ -440,10 +413,6 @@ export function CardModal({ card, boardId, columnId, columnName, members, allCar
     </>
   )
 
-  // Fila (fluxo v2): card em Validação esperando o usuário aprovar ou reprovar.
-  const reviewBanner = card && canEdit && handleValidate && queueBadge?.kind === 'review'
-    ? <QueueReviewBanner onApprove={() => handleValidate(true)} onReject={reason => handleValidate(false, reason)} />
-    : null
   const conflictBanner = conflict && canEdit
     ? <CardConflictBanner fields={conflict.fields} focusSignal={conflictFocus} onLoadSaved={() => resolveConflict('theirs')} onKeepMine={() => resolveConflict('mine')} />
     : null
@@ -460,7 +429,6 @@ export function CardModal({ card, boardId, columnId, columnName, members, allCar
       {isMobile ? (
         <div onPaste={handlePaste} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {conflictBanner}
-          {reviewBanner}
           {leftColumn}
           {planningSection}
           {organizationSection}
@@ -470,7 +438,6 @@ export function CardModal({ card, boardId, columnId, columnName, members, allCar
       ) : (
         <div onPaste={handlePaste} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {conflictBanner}
-          {reviewBanner}
           {titleField}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.7fr) minmax(240px, 1fr)', gap: 20, alignItems: 'start' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>

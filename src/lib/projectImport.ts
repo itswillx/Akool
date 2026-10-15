@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import type { ProjectBoard, ProjectCard, ProjectColumn } from '../types'
 // API-020: o snapshot do bloco projectCard mora no módulo puro das notas, que
-// o valida (o API-044 monta o mesmo snapshot no servidor). Só tipo: nada no bundle.
+// o valida. Só tipo: nada no bundle.
 import type { ProjectCardSnapshot } from '../../supabase/functions/_domain/blocknote/projectCard'
 
 export type { ProjectCardSnapshot }

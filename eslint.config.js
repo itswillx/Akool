@@ -7,7 +7,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 import akool from './scripts/eslint-plugin-akool.mjs'
 
-// API-027: o fuso no fim do texto que vai ao `new Date` em _domain e _api. O Z
+// API-027: o fuso no fim do texto que vai ao `new Date` em _domain. O Z
 // ou o offset vêm logo depois dos minutos ou dos segundos ('…T01:30Z',
 // '…00.123+00:00', '…00-0300'); sem isso, o '-2025' de '03-10-2025' (hora local
 // no V8) contaria como offset. Sem a flag i: o 'z' minúsculo é Invalid Date no
@@ -88,10 +88,10 @@ export default defineConfig([
     },
   },
   {
-    // API-005: _api e _domain rodam no Deno e no navegador. O tsconfig.functions.json
+    // API-005: _domain roda no Deno e no navegador. O tsconfig.functions.json
     // tem types: ["node"] só por causa dos testes, então o tsc deixaria passar
     // globais do Node; a fronteira de imports não vê globais.
-    files: ['supabase/functions/_api/**/*.ts', 'supabase/functions/_domain/**/*.ts'],
+    files: ['supabase/functions/_domain/**/*.ts'],
     ignores: ['**/*.test.ts'],
     rules: {
       // API-027: o @types/node também declara localStorage e sessionStorage, e o
@@ -111,9 +111,9 @@ export default defineConfig([
       // de fora: sem os tipos, a regra barraria o `n.toString(16)` dos números.
       'no-restricted-syntax': [
         'error',
-        { selector: "NewExpression[callee.name='Date'][arguments.length=0]", message: '_domain e _api recebem o "agora" de quem chama.' },
-        { selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']", message: '_domain e _api recebem o "agora" de quem chama.' },
-        { selector: "CallExpression[callee.name='Date']", message: '`Date()` sem new é o "agora": _domain e _api o recebem de quem chama.' },
+        { selector: "NewExpression[callee.name='Date'][arguments.length=0]", message: '_domain recebe o "agora" de quem chama.' },
+        { selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']", message: '_domain recebe o "agora" de quem chama.' },
+        { selector: "CallExpression[callee.name='Date']", message: '`Date()` sem new é o "agora": _domain o recebe de quem chama.' },
         {
           selector: "NewExpression[callee.name='Date'][arguments.length>1]",
           message: 'Data montada por partes é hora local: use Date.UTC ou toUTC (isoDate.ts).',
@@ -149,9 +149,9 @@ export default defineConfig([
           selector: 'MemberExpression'
             + ':matches([property.name=/^(localStorage|sessionStorage|window|document|navigator|Date)$/], [property.value=/^(localStorage|sessionStorage|window|document|navigator|Date)$/])'
             + ':matches([object.name=/^(globalThis|self)$/], [object.expression.name=/^(globalThis|self)$/], [object.expression.expression.name=/^(globalThis|self)$/])',
-          message: 'Navegador, DOM e relógio não passam por globalThis em _domain e _api.',
+          message: 'Navegador, DOM e relógio não passam por globalThis em _domain.',
         },
-        { selector: "AssignmentPattern[right.type='CallExpression'][right.callee.name=/^today/]", message: '`today` é obrigatório em _domain e _api.' },
+        { selector: "AssignmentPattern[right.type='CallExpression'][right.callee.name=/^today/]", message: '`today` é obrigatório em _domain.' },
       ],
     },
   },
@@ -164,7 +164,7 @@ export default defineConfig([
     // passos do tour/Ajuda, o PDF (jsPDF/canvas não lê CSS) e os tokens em si.
     files: [
       'src/lib/priorities.ts', 'src/lib/avatar.ts', 'src/lib/financePdf.ts',
-      'src/modules/projects/projectsShared.ts', 'src/modules/projects/QueueModal.tsx', 'src/modules/study/studyUi.ts',
+      'src/modules/projects/projectsShared.ts', 'src/modules/study/studyUi.ts',
       'src/modules/finance/modals/AccountModal.tsx', 'src/modules/finance/modals/GoalModals.tsx', 'src/modules/finance/modals/CategoryModal.tsx',
       'src/modules/projects/modals/BoardModals.tsx', 'src/i18n/tourContent.ts', 'src/i18n/landingContent.ts', 'src/i18n/appPreviewContent.ts', 'src/i18n/helpContent.ts', 'src/shared/ui/uiTokens.ts',
     ],

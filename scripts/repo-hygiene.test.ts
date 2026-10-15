@@ -185,7 +185,7 @@ describe('index.html (UX-014)', () => {
  * os arquivos novos ainda fora do índice do git.
  */
 export function guardedSourceFiles(): string[] {
-  return execSync('git ls-files --cached --others --exclude-standard src supabase/functions/_domain supabase/functions/_api', { cwd: ROOT, encoding: 'utf8' })
+  return execSync('git ls-files --cached --others --exclude-standard src supabase/functions/_domain', { cwd: ROOT, encoding: 'utf8' })
     .split('\n')
     .filter(f => /\.(ts|tsx)$/.test(f) && !/\.(test|bench)\.|\/test\//.test(f) && existsSync(join(ROOT, f)))
 }
@@ -193,8 +193,8 @@ export function guardedSourceFiles(): string[] {
 describe('arquivos das travas de código (API-027)', () => {
   it('varrem o app e os módulos puros das functions, sem os testes', () => {
     const files = guardedSourceFiles()
-    expect(files).toEqual(expect.arrayContaining(['src/lib/localDate.ts', 'supabase/functions/_domain/isoDate.ts', 'supabase/functions/_api/schema.ts']))
-    expect(files.filter(f => f.includes('.test.') || !/^(src|supabase\/functions\/_domain|supabase\/functions\/_api)\//.test(f))).toEqual([])
+    expect(files).toEqual(expect.arrayContaining(['src/lib/localDate.ts', 'supabase/functions/_domain/isoDate.ts', 'supabase/functions/_domain/jsonSchema.ts']))
+    expect(files.filter(f => f.includes('.test.') || !/^(src|supabase\/functions\/_domain)\//.test(f))).toEqual([])
   })
 })
 
@@ -202,7 +202,7 @@ describe('arquivos das travas de código (API-027)', () => {
 // local (localDateKey), nunca da data UTC (que vira amanhã às 21h em
 // Brasília); e toda data formatada leva o locale do perfil (localeOf(lang)),
 // nunca o do navegador. Os dois resíduos voltaram depois dos cards; esta trava
-// impede o terceiro. Em _domain e _api não há relógio (o "hoje" vem de quem
+// impede o terceiro. Em _domain não há relógio (o "hoje" vem de quem
 // chama), e o eslint barra o resto.
 describe('datas: relógio local e locale do perfil (REL-007, UX-011)', () => {
   const files = guardedSourceFiles().filter(f => f !== 'src/lib/localDate.ts')
@@ -281,5 +281,72 @@ describe('docs e configs em dia (DEV-012)', () => {
   it('o README tem a seção Portas com 5173 e 4173', () => {
     const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
     expect(readme).toMatch(/### Portas[\s\S]*\| 5173 \|[\s\S]*\| 4173 \|/)
+  })
+})
+
+// A API v1 foi descontinuada em 14/10/2026: tokens com escopo, cards-api, _api,
+// a CLI de cards e a fila saíram do código. Comentário ou doc que ainda a
+// descreve como quem usa o código engana quem lê e segura restrições sem dono
+// (o teto de CPU da edge, por exemplo). Os IDs API-0xx ficam como
+// rastreabilidade. supabase/checks e as migrations ficam de fora: o banco da
+// API sai num PR próprio, e migration aplicada não se edita.
+
+/** Junta as linhas (e as continuações `//` e ` * ` de comentário), para achar a frase partida. */
+export function flatProse(text: string): string {
+  return text.replace(/[ \t]*\n[ \t]*(?:\/\/|\*(?!\/))?[ \t]*/g, ' ')
+}
+
+/** Os escopos de token da API v1 (área.subseção, do api_scope_catalog). */
+export const API_V1_SCOPE = /\b(?:projetos\.(?:cards|fila|quadros|validacao)|estudos\.(?:conteudo|diario|progresso)|documentos\.(?:desenhos|notas|notas_rapidas|paginas|tarefas)|financas\.(?:categorias|contas|emprestimos|loja|orcamentos_metas|recorrentes|transacoes)|perfil\.(?:convites|dados|notificacoes)|compartilhamento\.pessoas|admin\.(?:auditoria|backups|convites|usuarios))\b/g
+
+/**
+ * A API v1 como quem usa, lê ou grava; e o `_api` e o OpenAPI que saíram com
+ * ela. Depois do verbo vai `(?!\w)`, não `\b`: sem a flag u, o `ê` de "lê" não
+ * é letra para o `\b`.
+ */
+export const API_V1_CONSUMER = /\b(?:a|pela|da) API(?:,| e | (?:também )?(?:usa|usam|lê|leem|recusa|roda|exporta|passa|gera|grava)(?!\w))|\bpela API\b|\b(?:handler|dry_run|importação|limites|contrato|para a) (?:da )?API\b|\bOpenAPI\b|\b_api\b/gi
+
+/**
+ * Sem a API, nenhuma function importa _domain: quem o roda são as telas, a
+ * guarda do NoteEditor, o offlineSync, a CLI import:cards e os testes. Regra
+ * de _domain justificada pela edge, pela function ou por um 500 não tem mais
+ * dono. Se uma function voltar a importar _domain, esta trava sai.
+ */
+export const DOMAIN_EDGE_GHOST = /\b(?:a|na|da|pela) edge\b|\b(?:na|da|pela|que a) function\b|\bum 500\b/gi
+
+describe('API v1 removida: sem consumidor fantasma em código e docs', () => {
+  const markdown = execSync('git ls-files --cached --others --exclude-standard README.md docs src', { cwd: ROOT, encoding: 'utf8' })
+    .split('\n')
+    .filter(f => f.endsWith('.md') && existsSync(join(ROOT, f)))
+  const hits = (re: RegExp, files: readonly string[]) => files.flatMap(f =>
+    [...flatProse(readFileSync(join(ROOT, f), 'utf8')).matchAll(re)].map(m => `${f}: ${m[0]}`))
+
+  it('as travas acham a frase partida entre linhas de comentário', () => {
+    expect(flatProse('// x (a API\n// usa os mesmos).')).toBe('// x (a API usa os mesmos).')
+    expect(flatProse('/**\n * só com `estudos.diario`\n */')).toContain('com `estudos.diario` */')
+    expect('(a API usa os mesmos) / a API lê o formato / excluído pela API / a CLI e a API, o tPtBR'.match(API_V1_CONSUMER))
+      .toEqual(['a API usa', 'a API lê', 'pela API', 'a API,'])
+    // A API do Supabase, a do navegador e a do Sentry continuam livres.
+    expect('chamar a API do Supabase; a API responde 422; Sem a API ou; A Clipboard API'.match(API_V1_CONSUMER)).toBeNull()
+    expect('src/lib/data/admin.ts e admin/useAdminInvites'.match(API_V1_SCOPE)).toBeNull()
+  })
+
+  it('nenhum escopo de token em docs, READMEs e código', () => {
+    expect(hits(API_V1_SCOPE, [...markdown, ...guardedSourceFiles()])).toEqual([])
+  })
+
+  it('nenhum comentário descreve a API como quem usa o código', () => {
+    expect(hits(API_V1_CONSUMER, [...guardedSourceFiles(), ...markdown.filter(f => f.startsWith('src/'))])).toEqual([])
+  })
+
+  it('nenhuma regra de _domain se justifica por uma edge que não o roda', () => {
+    expect('não trava a edge; na memória da edge; um campo que a function ainda não conhece; nunca um 500'.match(DOMAIN_EDGE_GHOST))
+      .toEqual(['a edge', 'da edge', 'que a function', 'um 500'])
+    expect(flatProse('um campo que a\n//   function ainda não conhece').match(DOMAIN_EDGE_GHOST)).toEqual(['que a function'])
+    // Números e o inglês dos comentários continuam livres.
+    expect('mais de 500 subtarefas; CHECKLIST_MAX_ITEMS = 500; returns a function; edge colour'.match(DOMAIN_EDGE_GHOST)).toBeNull()
+    const domain = guardedSourceFiles().filter(f => f.startsWith('supabase/functions/_domain/'))
+    expect(domain.length).toBeGreaterThan(0)
+    expect(hits(DOMAIN_EDGE_GHOST, domain)).toEqual([])
   })
 })

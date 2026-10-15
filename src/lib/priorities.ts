@@ -5,7 +5,7 @@ import type { ProjectCardPriority, TodoPriority } from '../types'
 // filtros, importação, bloco de card, PDF, tarefas).
 
 // API-027: a ordem (da mais urgente para a menos) e o isProjectPriority moram em
-// supabase/functions/_domain/projectTypes.ts (a agenda e a API usam os mesmos).
+// supabase/functions/_domain/projectTypes.ts (a agenda e as estatísticas usam os mesmos).
 // Aqui fica o que é de tela: cores e chaves de tradução.
 export { isProjectPriority, PROJECT_PRIORITIES } from '../../supabase/functions/_domain/projectTypes'
 

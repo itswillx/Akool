@@ -436,8 +436,6 @@ export interface ProjectCardChecklistItem {
   id: string
   text: string
   completed: boolean
-  /** Item que só o usuário pode fazer (fila: card "Aguardando você"). */
-  owner?: 'user'
 }
 
 export interface ProjectCardAttachment {
@@ -510,13 +508,6 @@ export interface QuickNote {
   created_at: string
   updated_at: string
 }
-
-// ─── API (tokens pessoais) ───────────────────────────────────────────────────
-
-/** API-001: nível de uma subseção no token (excluir ⊃ escrever ⊃ ler). */
-export type ApiScopeLevel = 'read' | 'write' | 'delete'
-/** `secao.subsecao` → nível; sem a chave = Nenhum. Catálogo: supabase/functions/_api/catalog.ts. */
-export type ApiScopes = Partial<Record<string, ApiScopeLevel>>
 
 // ─── Study Module ("Estudos") ────────────────────────────────────────────────
 

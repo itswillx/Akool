@@ -4,9 +4,6 @@ import { LOCAL_KEYS, SESSION_KEYS } from '../../lib/localKeys'
 import {
 pointerWithin, rectIntersection
 } from '@dnd-kit/core'
-import { createContext } from 'react'
-import { useLanguage } from '../../i18n/LanguageContext'
-import { type QueueBadge } from '../../lib/cardQueue'
 import { type BoardMember } from './boardLoader'
 import { type ViewMode } from './ProjectsNav'
 
@@ -50,19 +47,6 @@ export const cardLinkStyle: React.CSSProperties = {
 }
 
 export type Member = BoardMember
-
-// Selo da fila de desenvolvimento por card. Via contexto para não atravessar
-// Column → SortableCard → CardView com mais uma prop.
-export const QueueBadgeContext = createContext<Map<string, QueueBadge>>(new Map())
-
-// Fase do fluxo Avaliação → Plano → Desenvolvimento → Validação. "plano",
-// "review" (validar) e "waiting" (aguardando você) esperam o usuário.
-export function queueBadgeLabel(t: ReturnType<typeof useLanguage>['t'], badge: QueueBadge): string {
-  if (badge.kind === 'queued') return t('projects_queue_badge_queued').replace('{rank}', String(badge.rank))
-  if (badge.kind === 'review') return t('projects_queue_badge_review')
-  if (badge.kind === 'waiting') return t('projects_queue_badge_waiting')
-  return badge.phase ? t(`projects_queue_phase_${badge.phase}`) : t('projects_queue_badge_working')
-}
 
 export const collisionDetection: CollisionDetection = (args) => {
   // When dragging a column, only collide with other columns so the drop always

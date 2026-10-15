@@ -5,7 +5,7 @@
 const REPLACEMENTS: [RegExp, string][] = [
   // JWT (sessão do Supabase, service role): três partes base64url.
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, '[jwt]'],
-  // Token pessoal da cards-api.
+  // Token pessoal da API v1 (descontinuada): o padrão fica, é inofensivo.
   [/\bakool_pat_[0-9a-f]{16,}/gi, '[token]'],
   // Chaves de API de IA que o app manipula (OpenAI, Anthropic e afins).
   [/\bsk-[A-Za-z0-9_-]{16,}/g, '[api-key]'],

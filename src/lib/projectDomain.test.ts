@@ -26,9 +26,6 @@ import { createdDayLocal, createdPerWeek } from './projectStats'
 // deriva: os tipos pelo tsc (expectTypeOf, conferido no `tsc -b`) e os textos
 // em tempo de execução.
 
-/** Famílias de chave que só existem no _domain (texto puro de nota, API-023). */
-const DOMAIN_ONLY = /^note_text_/
-
 describe('tipos de _domain × src/types', () => {
   it('o card do app serve onde o domínio pede um card', () => {
     expectTypeOf<ProjectCard>().toExtend<ScheduleCard>()
@@ -45,7 +42,7 @@ describe('tipos de _domain × src/types', () => {
   })
 
   it('o `t` do app serve onde o domínio pede um `t`', () => {
-    expectTypeOf<Exclude<DomainKey, `note_text_${string}`>>().toExtend<TranslationKey>()
+    expectTypeOf<DomainKey>().toExtend<TranslationKey>()
     expectTypeOf(getT('pt-BR')).toExtend<DomainTFor<CardMarkdownKey>>()
     expectTypeOf(getT('pt-BR')).toExtend<DomainTFor<BacklogIssueKey>>()
     expectTypeOf<`projects_import_issue_${BacklogIssueCode}`>().toEqualTypeOf<BacklogIssueKey>()
@@ -57,10 +54,9 @@ describe('tipos de _domain × src/types', () => {
 })
 
 describe('textos de _domain × src/i18n (pt-BR)', () => {
-  const keys = Object.keys(DOMAIN_PT_BR) as DomainKey[]
-  const shared = keys.filter(k => !DOMAIN_ONLY.test(k)) as (DomainKey & TranslationKey)[]
+  const shared = Object.keys(DOMAIN_PT_BR) as (DomainKey & TranslationKey)[]
 
-  it('toda chave que não é só do domínio existe no app com o mesmo texto', () => {
+  it('toda chave do domínio existe no app com o mesmo texto', () => {
     expect(shared.length).toBeGreaterThanOrEqual(37)
     expect(shared.filter(k => !(k in ptBR))).toEqual([])
     expect(shared.filter(k => DOMAIN_PT_BR[k] !== ptBR[k])).toEqual([])

@@ -13,7 +13,6 @@ on:
         type: choice
         options:
           - admin-ops
-          - cards-api
           - site-backup
       target:
         description: 'Destino'

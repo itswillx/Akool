@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 // API-027: o plano (colunas por tópico, linhas, limites e rótulos) é puro e mora
-// em supabase/functions/_domain/importPlan.ts, que a API também usa. Aqui fica a
-// gravação pelo supabase-js. O planTopicColumns continua saindo daqui: a tela,
+// em supabase/functions/_domain/importPlan.ts. Aqui fica a gravação pelo
+// supabase-js. O planTopicColumns continua saindo daqui: a tela,
 // a CLI e o mock do ImportCardsModal.test.tsx importam deste arquivo.
 import { tPtBR, type DomainTFor } from '../../supabase/functions/_domain/i18n.pt-BR'
 import {

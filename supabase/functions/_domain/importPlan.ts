@@ -1,6 +1,6 @@
 // API-027: o plano da importação de backlog, puro: colunas por tópico, linhas
 // de project_cards, limites e rótulos. Quem grava é src/lib/importProjectCards.ts
-// (supabase-js) e, no API-055, o handler da API (na transação).
+// (supabase-js), na tela e na CLI (import:cards).
 // API-033: ImportCardRow é contrato. O id de cada linha nova sai daqui (newId),
 // para o depends_on apontar para cards da mesma importação, e insertBatches
 // grava por níveis: o gatilho do API-013 recusa a dependência que ainda não
@@ -19,7 +19,7 @@ export const TOPIC_COLUMN_COLORS: readonly string[] = ['#6366f1', '#8b5cf6', '#e
 /** As chaves dos avisos do parser (UX-011), uma por BacklogIssueCode. */
 export type BacklogIssueKey = `projects_import_issue_${BacklogIssue['code']}`
 
-/** O aviso do parser no texto da tela de importação, para o dry_run da API sair igual. */
+/** O aviso do parser no texto da tela de importação. */
 export function backlogIssueText(issue: BacklogIssue, t: DomainTFor<BacklogIssueKey>): string {
   return t(`projects_import_issue_${issue.code}`, { id: issue.cardId ?? '', detail: issue.detail ?? '' })
 }
@@ -48,7 +48,7 @@ const ISSUE_MAX: Readonly<Partial<Record<ImportIssueCode, number>>> = {
 
 /**
  * O problema no idioma do `t` (`A-001: mais de 500 subtarefas`). A tela passa
- * o `t` dela; a CLI e a API, o tPtBR.
+ * o `t` dela; a CLI, o tPtBR.
  */
 export function importIssueText(issue: ImportIssue, t: DomainTFor<ImportIssueKey>): string {
   return t(`projects_import_error_${issue.code}`, { id: issue.cardId, detail: issue.detail ?? '', max: ISSUE_MAX[issue.code] ?? '' })
@@ -68,7 +68,7 @@ export interface ImportWarning {
 /** As chaves dos avisos de dependência, uma por ImportWarningCode. */
 export type ImportWarningKey = `projects_import_warning_${ImportWarningCode}`
 
-/** O aviso de dependência no texto da tela de importação (a CLI e a API usam o tPtBR). */
+/** O aviso de dependência no texto da tela de importação (a CLI usa o tPtBR). */
 export function importWarningText(warning: ImportWarning, t: DomainTFor<ImportWarningKey>): string {
   return t(`projects_import_warning_${warning.code}`, { id: warning.cardId, detail: warning.detail })
 }
@@ -188,7 +188,7 @@ export interface ExistingCard {
 /**
  * O card do quadro de cada ID externo ("ID —" ou "ID -" no começo do título,
  * como titleMatchesExternalId): o 1º da lista, que o caller manda do mais
- * antigo para o mais novo (oldestFirst), como o cq_resolve_card.
+ * antigo para o mais novo (oldestFirst).
  */
 function boardCardsByExternalId(existing: readonly ExistingCard[]): Map<string, ExistingCard> {
   const byId = new Map<string, ExistingCard>()

@@ -92,7 +92,7 @@ export const moduleTours: Record<Lang, Record<TourModule, TourStep[]>> = {
     projects: [
       { icon: 'kanban', color: '#0ea5e9', title: 'Quadros e colunas', description: 'Cada quadro tem colunas com limite de WIP opcional. Arraste os cards entre elas para mudar o status.' },
       { icon: 'checkSquare', color: '#f59e0b', title: 'Cards com tudo dentro', description: 'Prioridade, prazo, checklist, anexos e um link para a página do Akool que dá contexto.' },
-      { icon: 'layers', color: '#8b5cf6', title: 'Visões e fila', description: 'Kanban, lista, visão geral e linha do tempo do mesmo quadro. A fila de desenvolvimento ordena por prioridade.' },
+      { icon: 'layers', color: '#8b5cf6', title: 'Visões e filtros', description: 'Kanban, lista, visão geral e linha do tempo do mesmo quadro. Os filtros (texto, prioridade, prazo, rótulo, responsável e coluna) valem em todas.' },
     ],
     finance: [
       { icon: 'wallet', color: '#10b981', title: 'Contas e transações', description: 'Crie as contas, lance receitas e despesas (ou importe o extrato) e veja o saldo por conta.' },
@@ -109,7 +109,7 @@ export const moduleTours: Record<Lang, Record<TourModule, TourStep[]>> = {
     projects: [
       { icon: 'kanban', color: '#0ea5e9', title: 'Boards and columns', description: 'Each board has columns with an optional WIP limit. Drag cards between them to change status.' },
       { icon: 'checkSquare', color: '#f59e0b', title: 'Cards with everything', description: 'Priority, due date, checklist, attachments and a link to the Akool page that gives context.' },
-      { icon: 'layers', color: '#8b5cf6', title: 'Views and queue', description: 'Kanban, list, overview and timeline of the same board. The development queue orders by priority.' },
+      { icon: 'layers', color: '#8b5cf6', title: 'Views and filters', description: 'Kanban, list, overview and timeline of the same board. The filters (text, priority, due date, label, assignee and column) apply to all of them.' },
     ],
     finance: [
       { icon: 'wallet', color: '#10b981', title: 'Accounts and transactions', description: 'Create accounts, add income and expenses (or import a statement) and see the balance per account.' },

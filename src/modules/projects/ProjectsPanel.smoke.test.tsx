@@ -37,7 +37,6 @@ vi.mock('./boardLoader', async importOriginal => ({
   fetchBoardData: () => Promise.resolve({
     columns: [column('c1', 'A Fazer', 0), column('c2', 'Fazendo', 1), column('c3', 'Concluído', 2)],
     cards: [card('k1', 'Primeiro card', 'c1'), card('k2', 'Card em andamento', 'c2')],
-    queueRows: [],
     members: [],
   }),
 }))

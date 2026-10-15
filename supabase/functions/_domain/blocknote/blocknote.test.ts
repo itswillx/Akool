@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { MAX_ISSUES } from '../../_api/schema.ts'
+import { MAX_ISSUES } from '../jsonSchema.ts'
 import { diagramIssues } from './diagram.ts'
 import { defaultNewId, normalizeNoteContent, type NoteBlock } from './normalize.ts'
 import { newProjectCardIds, snapshotIssues, type ProjectCardSnapshot } from './projectCard.ts'
@@ -43,15 +43,15 @@ const cardBlock = (patch: Record<string, unknown> = {}, props: Record<string, un
   [{ type: 'projectCard', props: { cardId: '', boardId: '', snapshot: JSON.stringify({ ...SNAPSHOT, ...patch }), ...props } }]
 
 describe('versão do BlockNote', () => {
-  it('BLOCKNOTE_VERSION é a instalada (package-lock.json): subir o BlockNote exige rever o spec e republicar a api', () => {
+  it('BLOCKNOTE_VERSION é a instalada (package-lock.json): subir o BlockNote exige rever o spec', () => {
     const lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8')) as { packages: Record<string, { version: string }> }
     for (const name of ['core', 'react', 'mantine']) {
       expect(lock.packages[`node_modules/@blocknote/${name}`].version, name).toBe(BLOCKNOTE_VERSION)
     }
   })
 
-  it('_api/schema.ts continua folha: _domain pode importá-lo sem ciclo', () => {
-    const source = readFileSync(join(HERE, '..', '..', '_api', 'schema.ts'), 'utf8')
+  it('jsonSchema.ts continua folha (não importa nada)', () => {
+    const source = readFileSync(join(HERE, '..', 'jsonSchema.ts'), 'utf8')
     expect(source).not.toMatch(/^\s*(import|export)\s[^\n]*\sfrom\s/m)
   })
 })
@@ -667,6 +667,13 @@ describe('bordas do percurso e do normalize', () => {
     const issues = issuesOf(note)
     expect(issues.some(i => i.keyword === 'maxBytes' && !i.fatal)).toBe(true)
     expect(issues.some(i => i.fatal)).toBe(true)
+  })
+
+  it('o que lança no meio do percurso (um getter) vira problema fatal, nunca exceção', () => {
+    const trap = (err: Error) => [{ type: 'paragraph', get content(): unknown { throw err } }]
+    expect(issuesOf(trap(new Error('x')))[0]).toMatchObject({ path: '', keyword: 'internal', fatal: true, message: expect.stringMatching(/erro interno/) as unknown })
+    expect(issuesOf(trap(new RangeError('x')))[0]).toMatchObject({ keyword: 'internal', fatal: true, message: expect.stringMatching(/grande ou aninhada demais/) as unknown })
+    expect(findFatalNoteIssue(trap(new Error('x')))).toMatchObject({ keyword: 'internal', fatal: true })
   })
 
   it('newId que repete ids é erro de programação: o normalize lança em vez de gravar ids iguais', () => {

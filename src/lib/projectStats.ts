@@ -10,9 +10,9 @@ import { localDateKey } from './localDate'
 import { todayStr } from './projectCardFilters'
 
 // Pure aggregations for the Projects "Overview" dashboard.
-// API-027: moram em supabase/functions/_domain/projectStats.ts (a API usa as
-// mesmas), onde `today` é obrigatório. Aqui ficam os wrappers do app, com o dia
-// de hoje e o dia de criação no fuso do aparelho (REL-007).
+// API-027: moram em supabase/functions/_domain/projectStats.ts, onde `today` é
+// obrigatório. Aqui ficam os wrappers do app, com o dia de hoje e o dia de
+// criação no fuso do aparelho (REL-007).
 
 export {
   countByAssignee, countByColumnId, countByPriority, PRIORITY_ORDER,

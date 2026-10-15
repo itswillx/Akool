@@ -3,11 +3,11 @@ import type { ProjectCardPriority, ProjectChecklistItem as ProjectCardChecklistI
 // Parser dos backlogs em Markdown (docs/imports): `### CARD ABC-123 — Título`,
 // tabela ou lista de metadados, `**Problema:**`, `**Contexto:**`,
 // `**Subtarefas Kanban:**` e seções `## Tópico:`.
-// API-027: mora em _domain (a importação da API lê o mesmo formato); o app
-// reexporta por src/lib/backlogMarkdownParser.ts. O id de cada subtarefa vem de
-// `newId`: a API e os testes passam um determinístico.
+// API-027: mora em _domain; o app reexporta por src/lib/backlogMarkdownParser.ts,
+// de onde a tela e a CLI (import:cards) importam. O id de cada subtarefa vem de
+// `newId`: os testes passam um determinístico.
 // API-033: tudo é lido em tempo linear, sem regex com retrocesso (a tela
-// reparseia a cada tecla e a API roda na edge, com 2 s de CPU). CRLF vira LF.
+// reparseia a cada tecla). CRLF vira LF.
 // Problema e Contexto vão até o próximo marcador, fora de cerca de código. Os
 // metadados são lidos fora dessas seções, da lista de subtarefas e das cercas,
 // e `Depende de` vira `dependsOn`.

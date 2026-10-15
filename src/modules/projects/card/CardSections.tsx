@@ -259,12 +259,6 @@ export function CardChecklistSection({
                       textDecoration: item.completed ? 'line-through' : 'none', padding: '4px 0',
                     }}
                   />
-                  {item.owner === 'user' && (
-                    <span title={t('projects_checklist_owner_user_hint')}
-                      style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', backgroundColor: '#dc26261f', padding: '1px 6px', borderRadius: 999, flexShrink: 0 }}>
-                      {t('projects_checklist_owner_user')}
-                    </span>
-                  )}
                   {canEdit && (
                     <button aria-label={t('common_remove')}
                       onClick={() => onUpdate(items.filter(i => i.id !== item.id), true)}

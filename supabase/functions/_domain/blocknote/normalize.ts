@@ -1,9 +1,10 @@
 // API-020: leva uma nota válida (forma parcial do BlockNote) até a forma
 // canônica: a que o editor devolve em editor.document. Assim a nota escrita
-// pela API não muda ao ser aberta no app (nada de versão nova nem conflito do
-// REL-009 só por abrir). O resultado é ponto fixo do BlockNote 0.50 (o
-// src/components/noteSchema.test.ts carrega cada saída no editor e compara) e
-// idempotente.
+// fora do editor não muda ao ser aberta no app (nada de versão nova nem
+// conflito do REL-009 só por abrir). Servia à escrita de notas da API v1,
+// descontinuada em 14/10/2026; hoje só os testes a chamam. O resultado é ponto
+// fixo do BlockNote 0.50 (o src/components/noteSchema.test.ts carrega cada
+// saída no editor e compara) e idempotente.
 //
 // O que muda (só forma, nunca conteúdo):
 // - ids preservados ou gerados (newId injetável); com renameDuplicateIds, o
@@ -16,7 +17,7 @@
 //   primeira linha e headerRows/headerCols no ponto fixo do editor;
 // - bloco sem conteúdo fica sem a chave content; children sempre lista.
 //
-// Os limites de contrato valem sobre a saída, que é o que a API grava: a forma
+// Os limites de contrato valem sobre a saída, que é a forma gravada: a forma
 // completa pode crescer muito (cada célula vira tableCell com props), então o
 // normalize mede o que devolve (2 MiB) e confere de novo as tabelas com a
 // largura completa. Assim, normalize ok ⇒ a saída passa na forma completa e
@@ -66,12 +67,6 @@ export interface NormalizeOptions {
   /** Modo gravado (tolera chave a mais no snapshot do card). */
   stored?: boolean
   limits?: Partial<Limits>
-  /**
-   * Sem o teto de células da nota inteira (Σ células²) no validador e na forma
-   * completa, só o de cada tabela: a fase 1 do markdownToNote (a nota final
-   * passa depois pelo noteLimitIssues contra o custo da nota atual).
-   */
-  skipNoteCellCost?: boolean
 }
 
 export type NoteNormalization = { ok: true; blocks: NoteBlock[] } | { ok: false; issues: BlockIssue[] }
@@ -311,14 +306,12 @@ class Normalizer {
   /** O primeiro limite de contrato que só a forma completa estoura. */
   contract: BlockIssue | null = null
   tableCost = 0
-  readonly skipNoteCellCost: boolean
 
   constructor(opts: NormalizeOptions, maxBytes: number) {
     this.seen = new Set(opts.reservedIds ?? [])
     this.newId = opts.newId ?? (() => defaultNewId())
     this.rename = opts.renameDuplicateIds ?? false
     this.meter = new Meter(maxBytes)
-    this.skipNoteCellCost = opts.skipNoteCellCost ?? false
   }
 
   /**
@@ -331,7 +324,7 @@ class Normalizer {
     this.tableCost += cells * cells
     if (this.contract) return
     if (over) this.contract = { path, keyword: 'maxCells', message: `A tabela passa de ${TABLE_LIMITS.contractCells} células na forma completa (o editor fica lento)`, fatal: false }
-    else if (!this.skipNoteCellCost && this.tableCost > TABLE_LIMITS.noteCellCost) {
+    else if (this.tableCost > TABLE_LIMITS.noteCellCost) {
       this.contract = { path, keyword: 'maxCells', message: `As tabelas da nota passam do teto de células da nota inteira na forma completa (soma de células² acima de ${TABLE_LIMITS.noteCellCost})`, fatal: false }
     }
   }
@@ -397,7 +390,6 @@ export function normalizeNoteContent(value: unknown, opts: NormalizeOptions = {}
     limits: opts.limits,
     duplicateIds: rename ? 'ignore' : 'reject',
     reservedIds: rename ? undefined : opts.reservedIds,
-    skipNoteCellCost: opts.skipNoteCellCost,
   })
   if (!check.ok) return { ok: false, issues: check.issues }
   const { maxBytes } = { ...LIMITS, ...opts.limits }

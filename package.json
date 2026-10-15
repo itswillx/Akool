@@ -29,7 +29,6 @@
     "test:e2e": "playwright test",
     "prepare": "node scripts/install-git-hooks.mjs",
     "import:cards": "node scripts/import-backlog-cards.mjs",
-    "cards": "node scripts/cards.mjs",
     "gen:types": "node scripts/gen-db-types.mjs",
     "generate:architecture-map": "node scripts/generate-architecture-map.mjs",
     "generate:auth-flow-map": "node scripts/generate-auth-flow-map.mjs",
