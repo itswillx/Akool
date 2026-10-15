@@ -23,8 +23,8 @@ import {
 // Dates are 'YYYY-MM-DD' strings compared and sliced as text, never parsed
 // with `new Date(string)` (UTC shift in UTC-3).
 //
-// API-028: mora em _domain (a API usa os mesmos números) e o app reexporta por
-// src/lib/financeStoreCalc.ts. O servidor tem a mesma conta em SQL
+// API-028: mora em _domain; desde que a tela da Loja saiu do app (14/10/2026),
+// só os testes a usam. O servidor tem a mesma conta em SQL
 // (public.store_product_figures e o líquido das RPCs store_sale_*), e
 // fixtures/storeParity.json prende os dois lados (storeParity.test.ts e o
 // harness supabase/checks/api028-store-sales.sql). Sem relógio: o dia de

@@ -395,7 +395,7 @@ export function useStudyTopics(userId: string | undefined) {
     const res = await settled(() => db.appendStudyCards(topicId, [{ title: '' }]))
     if (!res.data) {
       const error = res.error ?? { message: 'sem resposta' }
-      // P0002 nas RPCs do tópico: ele foi excluído em outra aba ou pela API.
+      // P0002 nas RPCs do tópico: ele foi excluído em outra aba ou aparelho.
       if (db.studyErrorKind(error) === 'missing') topicGone(topicId)
       else toastError(error, 'study_error_create', 'study:create')
       return false

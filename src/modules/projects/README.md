@@ -59,8 +59,7 @@ o módulo continua importando de `src/lib`.
 - **Sem relógio em `_domain`:** `today` é obrigatório lá. Os padrões ficam nos
   wrappers de `src/lib` (`autoSchedule`, `projectStats`, `projectCardFilters`),
   com o dia do aparelho. O `createdPerWeek` recebe o dia de criação de cada card
-  (`dayOf`): o app passa o dia local do `created_at` (`createdDayLocal`), e o
-  servidor vai passar o dia no fuso da pessoa, calculado no SQL.
+  (`dayOf`): o app passa o dia local do `created_at` (`createdDayLocal`).
 - **Textos:** o Markdown do card, os avisos da importação e o que a impede
   (`importIssueText`) recebem um `t`. O app passa o seu; a CLI `import:cards`
   passa o `tPtBR` de `_domain/i18n.pt-BR.ts`, que tem os mesmos textos

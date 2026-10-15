@@ -10,7 +10,7 @@
 //   e _domain/cardLabels.ts) contados por code point, como o Postgres, a data
 //   válida por Date.UTC e o enum de prioridade. Prioridade desconhecida não
 //   quebra o render (cai na cor padrão). No modo gravado, chave a mais é tolerada: uma versão
-//   nova do app pode gravar um campo que a function ainda não conhece.
+//   nova do app pode gravar um campo que uma aba com a versão anterior ainda não conhece.
 
 import { compileSchema, jsonPointer, type JsonSchema, type SchemaIssue } from '../jsonSchema.ts'
 import { CARD_LABEL_MAX_LENGTH, CARD_LABELS_MAX } from '../cardLabels.ts'
@@ -41,7 +41,7 @@ export interface ProjectCardSnapshot {
   boardColor: string
 }
 
-// A ordem do enum aparece nas mensagens e no OpenAPI: não é a de exibição
+// A ordem do enum aparece nas mensagens do validador: não é a de exibição
 // (PROJECT_PRIORITIES, da mais urgente para a menos).
 export const PROJECT_CARD_PRIORITIES: readonly ProjectCardPriority[] = ['low', 'medium', 'high', 'urgent']
 
@@ -185,10 +185,8 @@ function sameCardProps(a: unknown, b: unknown): boolean {
 
 /**
  * API-044: os blocos projectCard de `after` que não estavam em `before` com o
- * mesmo id e as mesmas props (cardId, boardId e snapshot). Inserir card de
- * projeto pela API exige também projetos.cards:ler, e o snapshot é montado no
- * servidor; com isto a API recusa, ou remonta, o snapshot inventado por quem
- * só tem documentos.notas:escrever.
+ * mesmo id e as mesmas props (cardId, boardId e snapshot). Servia à escrita de
+ * notas da API v1, descontinuada em 14/10/2026; hoje só os testes a chamam.
  */
 export function newProjectCardIds(before: unknown, after: unknown): ProjectCardRef[] {
   const known = new Map<string, unknown>()

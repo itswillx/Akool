@@ -69,7 +69,7 @@ Mini-app de acompanhamento de estudos montado dentro da visão Documentos
     aparelho está errado, e só o servidor sabe), a chamada refaz uma vez
     sem ele e vale o dia de São Paulo do servidor. O erro de importação
     vira "o card N (título)"; o motivo, em pt-BR, vai só para o console.
-    P0002 nessas RPCs é o tópico excluído em outra aba ou pela API: ele sai
+    P0002 nessas RPCs é o tópico excluído em outra aba ou aparelho: ele sai
     da tela com cards e diário, e o aberto vira o aviso "excluído em outra
     aba". Tudo fica "removido" no `StudyWriteTracker`, como na exclusão
     desta aba (o card que some numa releitura também): o refetch em voo,

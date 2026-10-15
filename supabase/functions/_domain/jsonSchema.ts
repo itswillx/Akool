@@ -203,7 +203,7 @@ function discriminator(options: readonly JsonSchema[]): string | null {
 /**
  * Caracteres como o Postgres conta (char_length): pontos de código, não UTF-16;
  * um surrogate solto conta 1, como no spread. Para em `limit + 1`: um texto
- * enorme num campo curto não vira um array inteiro na memória da edge.
+ * enorme num campo curto não vira um array inteiro na memória.
  */
 function codePoints(value: string, limit: number): number {
   let n = 0

@@ -314,7 +314,7 @@ EXECUTE só para `authenticated`. As funções novas em `private` (`finance_mate
 
 **Estudos (API-021, 08/10/2026):**
 - `private.study_card_rules` é SECURITY DEFINER: chama as funções de forma e lê o tópico de qualquer dono, para a mensagem não revelar se ele existe;
-- `private.study_log_rules` também é SECURITY DEFINER, para que um token só com `estudos.diario` grave diário no próprio tópico sem ler `study_topics`. Prova no bloco 2 de `supabase/checks/api021-study.sql`, só no staging: uma RESTRICTIVE de SELECT em `study_topics` (criada e desfeita na transação) deixa o tópico invisível. O dono grava diário no próprio tópico, e o tópico alheio e o inexistente continuam com o mesmo P0002;
+- `private.study_log_rules` também é SECURITY DEFINER: quem grava diário no próprio tópico não precisa ler `study_topics`. Prova no bloco 2 de `supabase/checks/api021-study.sql`, só no staging: uma RESTRICTIVE de SELECT em `study_topics` (criada e desfeita na transação) deixa o tópico invisível. O dono grava diário no próprio tópico, e o tópico alheio e o inexistente continuam com o mesmo P0002;
 - `private.study_topic_rules` é INVOKER;
 - as funções de forma (`private.study_checkpoints_problem`, `study_resources_problem`, `study_quiz_problem`, `study_blocks_problem`, `study_json_index` e `study_without_progress`) são imutáveis e sem EXECUTE para clientes.
 

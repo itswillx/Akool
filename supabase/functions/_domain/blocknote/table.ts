@@ -12,7 +12,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** Passos da emulação da grade de ocupação (uma tabela adversária não trava a edge). */
+/** Passos da emulação da grade de ocupação (uma tabela adversária não trava a guarda do NoteEditor nem o offlineSync). */
 const GRID_BUDGET = 2_000_000
 
 /** Como o BlockNote mede a largura (getColspan): só a célula completa (props e content) conta o colspan. */

@@ -53,12 +53,11 @@ describe('staging-reset: functions', () => {
   it('verify_jwt vem do config.toml (padrão true)', () => {
     expect(verifyJwtFor('site-backup', toml)).toBe(false)
     expect(verifyJwtFor('admin-ops', toml)).toBe(true)
-    // Seção no meio do arquivo: o valor dela não vaza para a seguinte (o
-    // config.toml real só tem uma seção de function, no fim).
-    const two = '[functions.a]\nverify_jwt = false\n\n[functions.b]\nverify_jwt = true\n\n[functions.c]\n'
-    expect(verifyJwtFor('a', two)).toBe(false)
-    expect(verifyJwtFor('b', two)).toBe(true)
-    expect(verifyJwtFor('c', two)).toBe(true)
+    // Seção sem `verify_jwt` não herda o valor da seção seguinte, seja ela de
+    // function ou não (o config.toml real só tem uma seção de function, no
+    // fim). Sem o terminador da regex, a e c leriam o `false` de baixo.
+    const toml2 = '[functions.a]\n\n[functions.b]\nverify_jwt = false\n\n[functions.c]\n\n[analytics]\nverify_jwt = false\n'
+    expect(['a', 'b', 'c'].map(slug => verifyJwtFor(slug, toml2))).toEqual([true, false, true])
   })
 
   it('acha os imports relativos', () => {

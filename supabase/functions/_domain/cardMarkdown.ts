@@ -1,8 +1,8 @@
 // Serializa um card do kanban como Markdown, para colar em outra ferramenta
 // (chat de IA, issue, editor). Puro e sem React/Supabase, como cardLinks.ts, para
 // ser testável — os rótulos entram por `t` em vez de virem de um contexto.
-// API-027: mora em _domain (a API exporta o mesmo Markdown). O app passa o seu
-// `t`; a API passa o tPtBR de ./i18n.pt-BR.ts.
+// API-027: mora em _domain. O app passa o seu `t`; as chaves têm o mesmo texto
+// no tPtBR de ./i18n.pt-BR.ts.
 
 import { linkDisplay } from './cardLinks.ts'
 import type { DomainTFor } from './i18n.pt-BR.ts'

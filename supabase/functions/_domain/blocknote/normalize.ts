@@ -1,9 +1,10 @@
 // API-020: leva uma nota válida (forma parcial do BlockNote) até a forma
 // canônica: a que o editor devolve em editor.document. Assim a nota escrita
-// pela API não muda ao ser aberta no app (nada de versão nova nem conflito do
-// REL-009 só por abrir). O resultado é ponto fixo do BlockNote 0.50 (o
-// src/components/noteSchema.test.ts carrega cada saída no editor e compara) e
-// idempotente.
+// fora do editor não muda ao ser aberta no app (nada de versão nova nem
+// conflito do REL-009 só por abrir). Servia à escrita de notas da API v1,
+// descontinuada em 14/10/2026; hoje só os testes a chamam. O resultado é ponto
+// fixo do BlockNote 0.50 (o src/components/noteSchema.test.ts carrega cada
+// saída no editor e compara) e idempotente.
 //
 // O que muda (só forma, nunca conteúdo):
 // - ids preservados ou gerados (newId injetável); com renameDuplicateIds, o
@@ -16,7 +17,7 @@
 //   primeira linha e headerRows/headerCols no ponto fixo do editor;
 // - bloco sem conteúdo fica sem a chave content; children sempre lista.
 //
-// Os limites de contrato valem sobre a saída, que é o que a API grava: a forma
+// Os limites de contrato valem sobre a saída, que é a forma gravada: a forma
 // completa pode crescer muito (cada célula vira tableCell com props), então o
 // normalize mede o que devolve (2 MiB) e confere de novo as tabelas com a
 // largura completa. Assim, normalize ok ⇒ a saída passa na forma completa e

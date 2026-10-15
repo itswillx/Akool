@@ -3,9 +3,9 @@ import { PROJECT_PRIORITIES, type ProjectCardPriority } from './projectTypes.ts'
 
 // Pure aggregations for the Projects "Overview" dashboard. UI-agnostic: they
 // return counts keyed by id/priority/bucket; the view maps colors, labels and
-// i18n. API-027: moram em _domain (a API usa nas estatísticas do quadro), e
-// `today` é obrigatório: no servidor não há relógio do aparelho. O app passa
-// pelos wrappers de src/lib/projectStats.ts, que preenchem o dia de hoje.
+// i18n. API-027: moram em _domain, onde não há relógio, e `today` é
+// obrigatório. O app passa pelos wrappers de src/lib/projectStats.ts, que
+// preenchem o dia de hoje.
 
 /** O que as estatísticas leem de um card (ProjectCard de src/types satisfaz). */
 export interface StatsCard {
@@ -114,9 +114,9 @@ export function dueBuckets(cards: readonly StatsCard[], today: string): DueBucke
  * fuso de quem vê. O banco devolve o instante em UTC, e o dia UTC vira às 21h
  * em Brasília: o card criado no domingo à noite caía na semana seguinte, ou
  * sumia do gráfico se ela ainda não existia. O app passa o dia do aparelho
- * (localDateKey); a API, `(created_at at time zone $tz)::date` do SQL. O índice
- * da semana sai de diffDays (UTC), sem a hora a menos do início do horário de
- * verão, que jogava o card da segunda-feira na semana anterior.
+ * (localDateKey). O índice da semana sai de diffDays (UTC), sem a hora a menos
+ * do início do horário de verão, que jogava o card da segunda-feira na semana
+ * anterior.
  */
 export function createdPerWeek(
   cards: readonly StatsCard[],

@@ -6,9 +6,8 @@ import {
 import { todayStr } from './projectCardFilters'
 
 // Auto-scheduler for the "Gerar cronograma" action.
-// API-027: o algoritmo mora em supabase/functions/_domain/autoSchedule.ts (a API
-// gera o mesmo cronograma), onde `today` é obrigatório. Aqui o padrão é o dia de
-// hoje do aparelho (REL-007).
+// API-027: o algoritmo mora em supabase/functions/_domain/autoSchedule.ts, onde
+// `today` é obrigatório. Aqui o padrão é o dia de hoje do aparelho (REL-007).
 
 export { DEFAULT_ESTIMATED_DAYS, type AutoScheduleResult, type SchedulePatch, type ScheduleCard } from '../../supabase/functions/_domain/autoSchedule'
 

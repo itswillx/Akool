@@ -3,8 +3,7 @@ import type { StoreSaleStatus } from './storeTypes.ts'
 // Transições do pipeline de venda. Antes ficavam só no navegador
 // (src/modules/finance/store/saleTransitions.ts); desde o API-028 o gatilho
 // private.store_sale_rules recusa (P0001) qualquer par fora de
-// SALE_TRANSITIONS, e o app e a API leem a mesma tabela daqui. O par
-// "mesmo status" não é transição. fixtures/storeParity.json prende a lista
+// SALE_TRANSITIONS. O par "mesmo status" não é transição. fixtures/storeParity.json prende a lista
 // contra o gatilho (storeParity.test.ts e o harness do API-028).
 
 /** Passo para a frente. O cancelamento é oferecido à parte. */

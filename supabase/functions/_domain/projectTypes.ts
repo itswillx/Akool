@@ -4,9 +4,9 @@
 // continuam iguais.
 //
 // A linha de project_cards que vem do banco tem priority em texto e labels,
-// checklist e links em JSON. Quem chama o domínio (o handler da API) estreita
-// esses campos antes e recusa prioridade fora das quatro (isProjectPriority):
-// uma prioridade desconhecida ordenaria primeiro na agenda, sem aviso.
+// checklist e links em JSON. Quem chama o domínio estreita esses campos antes
+// (o app, pelos tipos de src/types/db.ts); prioridade fora das quatro
+// (isProjectPriority) ordenaria primeiro na agenda, sem aviso.
 
 export type ProjectCardPriority = 'low' | 'medium' | 'high' | 'urgent'
 

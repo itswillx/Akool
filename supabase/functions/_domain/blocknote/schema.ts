@@ -1,5 +1,5 @@
-// API-020: validador do conteúdo das notas (BlockNote 0.50, spec.ts). Puro: a
-// API (API-044 e API-023) e o app (guarda do NoteEditor) usam o mesmo arquivo.
+// API-020: validador do conteúdo das notas (BlockNote 0.50, spec.ts). Puro: o
+// app o usa na guarda do NoteEditor e no offlineSync.
 //
 // Cada problema sai com o JSON Pointer, a palavra-chave e a marca `fatal`:
 // - fatal: o que faz o BlockNoteEditor.create lançar, quebra o render no
@@ -7,14 +7,14 @@
 //   (id repetido: o updateBlock do segundo bloco grava no primeiro);
 // - contrato: o que o editor carrega, mas perde ou guarda errado (prop
 //   desconhecida, cor longa, link javascript:, tipos das props…), mais os
-//   limites da API (2 MiB, 5000 blocos, profundidade 10, células de tabela e
+//   limites de contrato (2 MiB, 5000 blocos, profundidade 10, células de tabela e
 //   nós em linha).
 // A guarda do NoteEditor usa só as fatais (fatalOnly): conteúdo gravado pode
 // ter desvios de contrato e continuar abrindo.
 //
 // O percurso usa pilha explícita e confere a profundidade antes de descer; em
 // props e estilos só entram valores simples; os bytes são medidos no fim (com
-// o valor já limitado), e um RangeError vira problema, nunca um 500.
+// o valor já limitado), e um RangeError vira problema, nunca uma exceção.
 //
 // As partes planas (props de cada tipo, props da célula, snapshot do card e
 // appState do diagrama) são JSON Schema do subconjunto do ../jsonSchema.ts, que
@@ -750,7 +750,7 @@ export function validateNoteContent(value: unknown, opts: ValidateOptions = {}):
   try {
     walker.run(value)
   } catch (err) {
-    // Nada aqui deveria lançar; se lançar (pilha, memória), a nota é recusada, nunca um 500.
+    // Nada aqui deveria lançar; se lançar (pilha, memória), a nota é recusada, nunca uma exceção.
     walker.out.add(true, [], 'internal', `Não foi possível conferir a nota (${err instanceof RangeError ? 'grande ou aninhada demais' : 'erro interno'})`)
   }
   let bytes: number | null = null
