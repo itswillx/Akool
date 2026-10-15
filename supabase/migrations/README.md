@@ -72,8 +72,10 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
      `20260928185440_rel008_backup_cron`, mas não servem para isso). O desenho depende do
      contador de janela fixa ser *auto-saturante*; o cabeçalho do arquivo
      explica em detalhe. Não "conserte" isso sem ler.
-  2. **`public.check_rate_limit` (usada pelas edge functions) não dá raise de
-     propósito** — devolve `jsonb` e o 429 é montado em TypeScript.
+  2. **`public.check_rate_limit` (feita para as edge functions) não dá raise de
+     propósito** — devolve `jsonb` e o 429 é montado em TypeScript. Desde a
+     saída da `cards-api` (14/10/2026) nenhuma edge a chama; ela fica como
+     primitiva de rate limit, só para `service_role`.
   3. **A limpeza é oportunística** (não há job do `pg_cron` para ela) dentro de
      `rate_limit_touch` (duas varreduras deliberadamente *disjuntas*, senão dão
      deadlock entre si).
@@ -84,6 +86,19 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
   é o que `src/lib/rateLimit.ts` lê. A resolução de IP funciona no ambiente do
   Supabase (`cf-connecting-ip`, com fallback para o **último** hop do
   `x-forwarded-for`; o primeiro hop é escrito pelo cliente e seria spoofável).
+
+- `20261015100000_remove_api_and_queue.sql` — tira do banco a API v1 (tokens,
+  escopos e as RPCs de token) e a fila de cards (tabela, gatilho e RPCs
+  `cq_*`), depois que o código saiu. Fica o `private.cq_board_role`, que o
+  gatilho de integridade de cards usa. Ordem: só depois do front sem a tela de
+  tokens e sem a fila publicado e da `cards-api` apagada; logo depois do apply,
+  republicar o `site-backup` (o `EXCLUDED_TABLES` sem `api_tokens` e
+  `project_card_queue`), senão o `assertNoTableDrift` derruba o backup. Os
+  drops travam `auth.users`, `project_boards` e `project_cards` até o commit
+  (centenas de ms); a migration põe `lock_timeout` de 5 s e, sem o lock,
+  aborta inteira. Aplicar com pouco tráfego e longe das 06:00 UTC
+  (`site-backup-auto`). Prova: `supabase/checks/remove-api.sql` (bloco 1; o
+  bloco 0 é o levantamento que roda antes do apply).
 
 ## Pendências conhecidas de versionamento
 

@@ -74,12 +74,8 @@ export const EXCLUDED_TABLES = [
   // The audit trail must survive a restore: it is what records that the
   // restore happened. Including it would let a restore erase its own evidence.
   "audit_log",
-  // Personal API tokens (hashes) for cards-api. Credentials, same reasoning as
-  // profile_secrets: users generate new ones after a restore.
-  "api_tokens",
-  // AI development queue (cards-api). Work-in-progress state tied to a live
-  // session; restoring an old queue would re-run finished work.
-  "project_card_queue",
+  // api_tokens and project_card_queue (API v1) were dropped by migration
+  // 20261015100000_remove_api_and_queue; deploy this file right after it.
   // Shared cache of public-API lookups of the former study-lookup edge function
   // (migration 20260830200710; the function left on 2026-10-01, SEC-015, and the
   // table goes with DEV-010). Regenerable, service_role only, expires.

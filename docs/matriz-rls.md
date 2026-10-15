@@ -146,8 +146,14 @@ Desde o API-028 (`20261012120000_api028_store_sales_server`), por cima das polic
 | `site_backups` / `site_backup_settings` | SELECT | admin apenas |
 | `site_backups` / `site_backup_settings` | INSERT/UPDATE/DELETE | **nenhuma policy** | só `service_role` (edge function `site-backup`) escreve |
 | `profile_secrets` | qualquer operação | **RLS habilitado, zero policies** | intencional: só `service_role` acessa (chaves de API de IA); ver advisory `rls_enabled_no_policy` — não é um gap, é o desenho |
-| `api_tokens` | SELECT | own (`api_tokens_select_own`), **grant por coluna** sem `user_id` e `token_hash` | **sem uso desde 14/10/2026:** a API v1 foi descontinuada e o app não lê nem grava mais a tabela. Ela e as RPCs de token (`create_api_token`, `update_api_token_scopes`, `revoke_api_token`, `revoke_all_my_api_tokens`, `delete_api_token`, `resolve_api_token`, `resolve_api_token_v2`) saem do banco numa migration própria, no PR seguinte ao que tirou o código. Até lá, a escrita continua só por essas RPCs SECURITY DEFINER |
-| `private.api_scope_catalog` | qualquer operação | **RLS habilitado, zero policies**, fora da Data API | catálogo de permissões da API v1 (API-001), lido só pelas funções SECURITY DEFINER de token; sai junto com `api_tokens` |
+
+A API v1 foi descontinuada em 14/10/2026. As tabelas `api_tokens` e
+`private.api_scope_catalog`, as 7 RPCs de token (`create_api_token`,
+`update_api_token_scopes`, `revoke_api_token`, `revoke_all_my_api_tokens`,
+`delete_api_token`, `resolve_api_token`, `resolve_api_token_v2`) e as funções
+`private.api_*` saíram do banco na migration
+`20261015100000_remove_api_and_queue` (prova:
+`supabase/checks/remove-api.sql`).
 
 ## Projects module
 
@@ -171,7 +177,7 @@ duas coisas mesmo sem usuário: põe o card sem `sort_order` no fim da coluna (a
 coluna não tem mais DEFAULT) e cuida do `updated_at`, que é a versão do
 conteúdo. Mudar o conteúdo grava `clock_timestamp()`, e a versão sempre avança
 (`greatest` com `old.updated_at` + 1 µs), mesmo duas vezes na mesma transação:
-o gatilho da fila `cq_on_card_change` (sai com a fila, ver abaixo) muda o card
+o gatilho da fila `cq_on_card_change` (que saiu com a fila, ver abaixo) mudava o card
 depois do RETURNING do app, e com `now()` a versão ficaria igual. Mover (`column_id`/`sort_order`) mantém
 a versão, e o valor mandado pelo cliente é ignorado (menos no INSERT sem
 usuário: o restore mantém o `updated_at` do backup). Sem usuário
@@ -204,13 +210,14 @@ esconde a linha). Depois, valida só o que mudou:
 
 As recusas das regras saem com `hint='akool'`, e o app mostra o motivo (a
 recusa genérica de quem não edita o quadro sai sem hint, de propósito, e o app
-diz que a pessoa não tem permissão). Quem grava sem
-usuário fica dentro das mesmas formas. A fila de desenvolvimento
-(`project_card_queue`, as RPCs `cq_*` e `private.cq_labels_match`) está sem uso
-desde 14/10/2026 e sai do banco na mesma migration dos tokens; o
-`private.cq_board_role` fica, porque este gatilho o usa. Prova:
-`supabase/checks/api013-project-cards.sql` (46 checagens no bloco 1; bloco 2,
-só no staging: o restore).
+diz que a pessoa não tem permissão). Sem usuário (restore, seed), as formas
+não são conferidas: valem só as CHECK da tabela (links, prioridade,
+`estimated_days`). A fila de desenvolvimento
+(`project_card_queue`, o gatilho `project_cards_queue_flow`, as RPCs `cq_*` e os
+helpers `private.cq_*`) saiu do banco junto com os tokens, na
+`20261015100000_remove_api_and_queue`; o `private.cq_board_role` fica, porque
+este gatilho o usa. Prova: `supabase/checks/api013-project-cards.sql` (43
+checagens no bloco 1; bloco 2, só no staging: o restore).
 
 Achado à parte (fora do escopo de RLS, registrado aqui por ter aparecido na
 mesma auditoria): `project_boards`/`project_columns`/`project_cards`/`project_shares`
@@ -280,23 +287,22 @@ Migration `20260928145254_sec012_grants_hardening.sql`. Verificação:
 `supabase/checks/sec012-grants.sql` (transação desfeita). Depois dela, o
 advisor passou a listar 34 funções `SECURITY DEFINER` para `authenticated` (eram 54)
 e só a `validate_invite_code` para `anon`. Com o API-001 (05/10/2026) eram 37; com o
-API-012 (07/10/2026) eram 39; com o API-016 (08/10/2026) são **40**. As 11 de tokens e
-da fila ficaram sem uso em 14/10/2026 e saem na migration da remoção da API v1; o
-número novo sai do advisor depois dela. As outras são intencionais:
+API-012 (07/10/2026) eram 39; com o API-016 (08/10/2026) eram 40. A
+`20261015100000_remove_api_and_queue` tirou as 11 de tokens e da fila: são **29**
+(conferido no advisor do staging). Todas são intencionais:
 
 | Grupo | Funções | Por que continuam com EXECUTE para `authenticated` |
 |---|---|---|
 | Helpers de RLS (11) | `page_is_readable`, `page_is_writable`, `current_user_can_share_page`, `user_can_access_board`, `is_admin`, `is_workspace_member`, `profile_is_related`, `loan_is_owner`, `loan_is_visible`, `loan_file_is_readable`, `finance_goal_owned` (API-012: a policy de share não pode ler `finance_goals` direto, que lê os shares → recursão 42P17) | a política roda como quem consulta: sem o EXECUTE, o RLS quebra. Tirá-las da API exige movê-las para o schema `private` e refazer as políticas (card à parte) |
 | RPCs do frontend (18) | convites (`generate_invite_code`, `validate_invite_code`, `admin_add_invite_slots`, `admin_revoke_invite_code`), workspaces (`create_workspace`, `invite_member`, `accept_/decline_workspace_invite`, `remove_workspace_member`, `leave_workspace`, `bootstrap_*_categories`), `create_project_board`, `search_users_for_share`, perfil (`get_my_profile`, `admin_list_profiles`), aporte de meta (`finance_goal_contribute`) e recorrentes (`finance_materialize_recurring`, API-016) | chamadas com o JWT do usuário; cada uma confere quem chama |
-| Sem uso, saem com a API v1 (11) | tokens (`create_api_token`, `revoke_api_token`, `update_api_token_scopes`, `revoke_all_my_api_tokens`, `delete_api_token`) e a fila (`cq_list`, `cq_enqueue`, `cq_move`, `cq_remove`, `cq_reprioritize`, `cq_validate`) | a tela de tokens e a fila saíram do app em 14/10/2026; o EXECUTE fica até a migration que apaga as funções |
 
 **Só `service_role`** (sem EXECUTE para `anon`/`authenticated`):
-- `cq_block`, `cq_boards`, `cq_card`, `cq_cards`, `cq_check`, `cq_complete`, `cq_next`, `cq_note`, `cq_release`, `cq_setup_flow`, `cq_start`: eram da function da fila, apagada com a API v1; saem com a fila;
 - `admin_revoke_user_sessions`: a `admin-ops`;
 - `loan_approve`, `loan_cancel_request`, `loan_confirm_payment`, `loan_link_borrower`, `loan_reject`, `loan_reject_payment`, `loan_report_payment`, `loan_request`: não há tela de empréstimos. Uma tela nova precisa devolver o grant na mesma migration;
 - `set_ai_credentials` (não há tela) e `check_auto_site_backup_due` (feita para o `pg_cron`, que roda como `postgres`);
-- já eram: `_notify`, `check_rate_limit`, `resolve_api_token`, `list_public_tables`, `restore_site_backup`, `study_lookup_cache_prune`;
-- `resolve_api_token_v2` (API-001). As duas `resolve_api_token*` ficaram sem uso com a API v1 e saem com os tokens.
+- já eram: `_notify`, `check_rate_limit`, `list_public_tables`, `restore_site_backup`, `study_lookup_cache_prune`.
+
+As `cq_*` só de `service_role` (eram da function da fila) e as duas `resolve_api_token*` saíram com a API v1, na `20261015100000_remove_api_and_queue`.
 
 **Privilégios de tabela** em `public`:
 - `anon` só tem SELECT (o RLS decide as linhas); nenhuma escrita, TRUNCATE, TRIGGER, REFERENCES ou MAINTAIN;
@@ -331,7 +337,7 @@ Nada disso muda a conta do advisor.
 
 A regra abaixo pede o grant "só se o frontend chamar com o JWT do usuário". Aqui ele veio antes da chamada porque o API-029 troca a tela de Estudos por essas RPCs. Não há grant para outro papel.
 
-Não entram na conta do advisor, que só lista `SECURITY DEFINER`: continuam 40.
+Não entram na conta do advisor, que só lista `SECURITY DEFINER`.
 
 Prova: `supabase/checks/api024-study-rpcs.sql`. No staging, em 11/10/2026, com as transações desfeitas e a versão da revisão (R1/R2, `p_today` e data-alvo infinitos): bloco 1 161/161 (pelo MCP, em duas metades: 107 + 54), subtransações 4/4 e bloco 2 8/8. O bloco 2 simula a RESTRICTIVE de SELECT em `study_topics` do API-022:
 - toggle, resposta, reset e operações de conteúdo por item continuam, porque só tocam `study_cards`;

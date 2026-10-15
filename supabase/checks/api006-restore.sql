@@ -87,11 +87,6 @@ begin
   r := pg_temp.try(jsonb_build_object('sub', u1, 'role', 'authenticated'), 'authenticated',
                    format($q$insert into public.finance_accounts (user_id, workspace_id, name, type) values (%L, %L, 'do membro', 'checking')$q$, u1, w));
   out := out || pg_temp.expect('membro insere no workspace', r, 'ok');
-  if exists (select 1 from pg_roles where rolname = 'akool_api') then
-    r := pg_temp.try(jsonb_build_object('sub', u2, 'role', 'authenticated', 'akool_api', jsonb_build_object('token_id', gen_random_uuid())), 'akool_api',
-                     format($q$insert into public.finance_accounts (user_id, workspace_id, name, type) values (%L, %L, 'api', 'checking')$q$, u2, w));
-    out := out || pg_temp.expect('sessão da API (akool_api) de fora não insere', r, 'erro 42501:%');
-  end if;
 
   select count(*) into n
     from pg_trigger t join pg_proc p on p.oid = t.tgfoid

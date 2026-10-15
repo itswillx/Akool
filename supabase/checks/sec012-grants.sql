@@ -10,11 +10,13 @@
 -- migration 20260928145254_sec012_grants_hardening.sql:
 --   - anon: só SELECT nas tabelas; authenticated sem TRUNCATE, TRIGGER,
 --     REFERENCES e MAINTAIN, e sem escrever no audit_log;
---   - 40 funções SECURITY DEFINER para authenticated (11 helpers de RLS + 29
+--   - 29 funções SECURITY DEFINER para authenticated (11 helpers de RLS + 18
 --     RPCs do frontend; eram 34 até o API-001, que somou update_api_token_scopes,
 --     revoke_all_my_api_tokens e delete_api_token, o API-012 somou
---     finance_goal_owned e finance_goal_contribute, e o API-016 somou
---     finance_materialize_recurring) e só a validate_invite_code para anon;
+--     finance_goal_owned e finance_goal_contribute, o API-016 somou
+--     finance_materialize_recurring, e a 20261015100000_remove_api_and_queue
+--     tirou as 5 de token e as 6 da fila: 40 → 29) e só a validate_invite_code
+--     para anon;
 --   - os ataques "bloqueado" e os fluxos legítimos "ok".
 do $check$
 declare
@@ -48,7 +50,7 @@ begin
   -- Funções SECURITY DEFINER expostas pela API.
   select count(*) into n from pg_proc
   where pronamespace = 'public'::regnamespace and prosecdef and has_function_privilege('authenticated', oid, 'execute');
-  out := out || format('funcoes SECURITY DEFINER para authenticated: %s (esperado 40)', n);
+  out := out || format('funcoes SECURITY DEFINER para authenticated: %s (esperado 29)', n);
   select string_agg(proname, ',') into msg from pg_proc
   where pronamespace = 'public'::regnamespace and prosecdef and has_function_privilege('anon', oid, 'execute');
   out := out || format('funcoes SECURITY DEFINER para anon: %s', msg);
@@ -63,13 +65,14 @@ begin
   exception when others then
     out := out || ('convite sem perfil: recusado (' || sqlerrm || ')');
   end;
+  -- Função só de service_role (a admin-ops): authenticated não executa.
   begin
     set local role authenticated;
-    perform public.cq_next(gen_random_uuid(), null);
+    perform public.admin_revoke_user_sessions(gen_random_uuid());
     reset role;
-    out := out || 'authenticated chama cq_next: PERMITIDO'::text;
+    out := out || 'authenticated chama admin_revoke_user_sessions: PERMITIDO'::text;
   exception when others then
-    out := out || ('authenticated chama cq_next: bloqueado (' || sqlerrm || ')');
+    out := out || ('authenticated chama admin_revoke_user_sessions: bloqueado (' || sqlerrm || ')');
   end;
   begin
     set local role authenticated;
