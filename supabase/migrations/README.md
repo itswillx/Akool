@@ -87,6 +87,29 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
   Supabase (`cf-connecting-ip`, com fallback para o **último** hop do
   `x-forwarded-for`; o primeiro hop é escrito pelo cliente e seria spoofável).
 
+- `20261015120000_workspace_exit.sql` — sair do workspace (`leave_workspace`)
+  ou ser removido (`remove_workspace_member`) leva as linhas da pessoa, a Loja
+  e os empréstimos inclusive; o que outras pessoas usam fica no W e passa para
+  a dona (os aportes de quem sai vão para uma cópia privada da meta, e as
+  linhas privadas dele nas categorias que ficam, para cópias pessoais); a
+  guarda ganha as saídas com o GUC `akool.ws_release` (parágrafo de exceção de
+  guarda, abaixo); convite só pelo `invite_member` (sem a policy
+  `wi_member_insert`); aporte só se altera numa meta visível. Ordem: depois da
+  `20261015100000_remove_api_and_queue` (o harness confere 29 DEFINER) e,
+  portanto, da `20261012120000_api028_store_sales_server`. O
+  `private.finance_workspace_reconcile()` roda no backfill (apaga W sem
+  membros, promove dona em W sem dona, leva as sobras de ex-membros) e no fim
+  de todo `restore_site_backup` (create or replace com o mesmo corpo da
+  `20260822215051_rel004` e a chave `workspace_reconcile` no resumo): o bloco 0
+  de `supabase/checks/workspace-exit.sql` conta os casos na produção antes do
+  apply. O front desta correção só vai para a main depois do apply. No
+  staging, a versão anterior foi aplicada com o nome
+  `api064_065_workspace_exit`; o ledger foi renomeado para `workspace_exit` em
+  15/10/2026 e as funções sincronizadas com o arquivo (md5 do `prosrc`, de
+  novo na correção da revisão, também em 15/10). Prova:
+  `supabase/checks/workspace-exit.sql` (bloco 1) e
+  `supabase/checks/api006-restore.sql` (bloco 2, o restore de um backup antigo).
+
 - `20261015100000_remove_api_and_queue.sql` — tira do banco a API v1 (tokens,
   escopos e as RPCs de token) e a fila de cards (tabela, gatilho e RPCs
   `cq_*`), depois que o código saiu. Fica o `private.cq_board_role`, que o
@@ -174,3 +197,22 @@ end if;
 - Só a validação pula. O que é padrão da linha vale também sem usuário: o card sem `sort_order` vai para o fim da coluna e o `updated_at` é a versão do conteúdo (API-013, `project_cards_integrity`); o `finance_recurring_day_moved` (API-016); a posição e a versão dos cards de Estudos (API-021, `study_cards_rules`). As CHECK valem sempre: um backup que as fere deixa de restaurar.
 - Seguem a regra, com o restore provado no staging: `api013-project-cards.sql`, `api016-recurring.sql`, `api021-study.sql` e `api028-store-sales.sql` (bloco 2 de cada um, em `supabase/checks/`).
 - O harness do card inclui um INSERT sem claims, imitando a restauração e o cron (`supabase/checks/api006-restore.sql` é o modelo).
+
+**Exceção de guarda só para uma função (saída do workspace, `20261015120000_workspace_exit`).** Quando uma função DEFINER precisa fazer algo que a guarda recusa para o cliente (o `remove_workspace_member` tira do workspace as linhas de quem foi removido e passa para a dona o que fica, com o `auth.uid()` dela), a exceção na guarda é a mais estreita possível e depende de um GUC transacional que só aquela função liga e desliga:
+
+```sql
+-- na função (INVOKER, chamada só de dentro da DEFINER):
+perform set_config('akool.ws_release', p_workspace::text, true);
+-- ... os UPDATEs ...
+perform set_config('akool.ws_release', '', true);
+
+-- na guarda: além do GUC, as condições de negócio (aqui, autor fora do
+-- workspace e quem grava membro dele; workspace → privado com o mesmo autor,
+-- ou a troca de autor para a dona em categorias, contas e metas)
+coalesce(current_setting('akool.ws_release', true), '') = old.workspace_id::text
+```
+
+- Nenhum cliente liga um GUC `akool.*` pelo PostgREST, então o RLS que deixa um membro atualizar a linha de outra pessoa (como `loan_is_owner` em pagamentos e garantias de empréstimo) não alcança a exceção.
+- Compare sempre com `coalesce(current_setting(..., true), '')`: numa sessão que nunca ligou o GUC, `current_setting` devolve NULL, e um NULL num `if not (... or ...)` desliga a recusa em vez de mantê-la.
+- A exceção que só acontece em cascata (o workspace antigo já não existe, no SET NULL de apagá-lo) dispensa o GUC.
+- O harness prova que a exceção não vale sem o GUC, com o GUC de outro workspace, numa sessão que nunca o ligou, para quem é de fora do W, para membro ativo, para outro destino, para troca de autor fora das três tabelas, para a troca de autor que também tira a linha do W e, na troca de autor (saída (c)), para quem não é a dona; a saída (b) vale para qualquer membro que grava (`supabase/checks/workspace-exit.sql`, seção 7).

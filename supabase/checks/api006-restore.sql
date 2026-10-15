@@ -13,6 +13,10 @@
 -- então só roda com o opt-in na mesma sessão:
 --   select set_config('akool.api006_full_restore', 'staging', false);
 -- Antes da migration, o bloco 2 mostra a falha; depois, a restauração conclui.
+-- Desde a saída do workspace (20261015120000_workspace_exit), o restore roda o
+-- private.finance_workspace_reconcile() no fim: um backup antigo com a linha
+-- de quem já não é membro no W volta com ela no privado do autor, e o resumo
+-- traz a chave workspace_reconcile.
 --
 -- Como rodar: MCP execute_sql ou SQL editor, como postgres.
 
@@ -106,6 +110,8 @@ do $bloco2$
 declare
   u uuid := gen_random_uuid();
   w uuid := gen_random_uuid();
+  ux uuid := gen_random_uuid();
+  tx uuid := gen_random_uuid();
   tag text := substr(md5(random()::text), 1, 6);
   payload jsonb;
   summary jsonb;
@@ -143,6 +149,32 @@ begin
                          summary ->> 'finance_accounts', n);
   exception when others then
     out := out || format('FALHA restauração com linha de workspace → erro %s: %s', sqlstate, sqlerrm);
+  end;
+
+  -- Backup antigo (anterior à workspace_exit): W com a dona e um lançamento de
+  -- X, que já não é membro, no W. O reconcile do fim do restore o leva para o
+  -- privado de X.
+  set local session_replication_role = replica;
+  insert into auth.users (id, email) values (ux, format('api006-x-%s@example.invalid', tag));
+  insert into public.profiles (id, email, display_name, role, is_active, invite_slots_remaining)
+  values (ux, format('api006-x-%s@example.invalid', tag), 'X', 'standard', true, 0);
+  insert into public.finance_transactions (id, user_id, workspace_id, type, amount, description, date)
+  values (tx, ux, w, 'expense', 10, 'X: sobra antiga', current_date);
+  set local session_replication_role = origin;
+  payload := jsonb_build_object(
+    'profiles', (select jsonb_agg(to_jsonb(t)) from public.profiles t where t.id in (u, ux)),
+    'finance_workspaces', (select jsonb_agg(to_jsonb(t)) from public.finance_workspaces t where t.id = w),
+    'finance_workspace_members', (select jsonb_agg(to_jsonb(t)) from public.finance_workspace_members t where t.workspace_id = w),
+    'finance_transactions', (select jsonb_agg(to_jsonb(t)) from public.finance_transactions t where t.id = tx)
+  );
+  begin
+    summary := public.restore_site_backup(payload);
+    select count(*) into n from public.finance_transactions where id = tx and workspace_id is null and user_id = ux;
+    out := out || format('%s restauração de backup antigo: o lançamento de X (fora do W) vai para o privado dele e o resumo traz o reconcile → lançamento privado: %s, pairs: %s',
+                         case when n = 1 and (summary -> 'workspace_reconcile' ->> 'pairs') = '1' then 'ok   ' else 'FALHA' end,
+                         n, summary -> 'workspace_reconcile' ->> 'pairs');
+  exception when others then
+    out := out || format('FALHA restauração de backup antigo → erro %s: %s', sqlstate, sqlerrm);
   end;
 
   raise exception using message = format(E'API-006 bloco 2: restauração no staging (tudo desfeito)\n%s', array_to_string(out, E'\n'));
