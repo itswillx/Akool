@@ -243,6 +243,9 @@ export function barsRange(bars: GanttBar[]): DateRange | null {
 }
 
 // ─── Header segments ───────────────────────────────────────────────────────────
+// Each segment is clipped to the range: it starts at the later of (period start,
+// rangeStart) and ends at the earlier of (period end, rangeEnd). GanttView uses
+// `days` as the header cell width.
 
 export interface Segment {
   offset: number // days from range start
@@ -258,7 +261,7 @@ export function monthSegments(rangeStart: string, rangeEnd: string): Segment[] {
   while (diffDays(cursor, rangeEnd) >= 0) {
     const segStart = diffDays(rangeStart, cursor) < 0 ? rangeStart : cursor
     const monthEnd = endOfMonth(cursor)
-    const segEnd = diffDays(monthEnd, rangeEnd) < 0 ? monthEnd : rangeEnd
+    const segEnd = diffDays(monthEnd, rangeEnd) < 0 ? rangeEnd : monthEnd
     out.push({ offset: diffDays(rangeStart, segStart), days: diffDays(segStart, segEnd) + 1, key: cursor, date: cursor })
     cursor = addDays(monthEnd, 1)
   }
@@ -272,7 +275,7 @@ export function yearSegments(rangeStart: string, rangeEnd: string): Segment[] {
   const endYear = Number(rangeEnd.slice(0, 4))
   while (year <= endYear) {
     const yStart = diffDays(rangeStart, `${year}-01-01`) < 0 ? rangeStart : `${year}-01-01`
-    const yEnd = diffDays(`${year}-12-31`, rangeEnd) < 0 ? `${year}-12-31` : rangeEnd
+    const yEnd = diffDays(`${year}-12-31`, rangeEnd) < 0 ? rangeEnd : `${year}-12-31`
     out.push({ offset: diffDays(rangeStart, yStart), days: diffDays(yStart, yEnd) + 1, key: String(year), date: yStart })
     year++
   }
@@ -286,7 +289,7 @@ export function weekSegments(rangeStart: string, rangeEnd: string): Segment[] {
   while (diffDays(cursor, rangeEnd) >= 0) {
     const segStart = diffDays(rangeStart, cursor) < 0 ? rangeStart : cursor
     const weekEnd = addDays(cursor, 6)
-    const segEnd = diffDays(weekEnd, rangeEnd) < 0 ? weekEnd : rangeEnd
+    const segEnd = diffDays(weekEnd, rangeEnd) < 0 ? rangeEnd : weekEnd
     out.push({ offset: diffDays(rangeStart, segStart), days: diffDays(segStart, segEnd) + 1, key: cursor, date: cursor })
     cursor = addDays(cursor, 7)
   }
