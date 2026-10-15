@@ -1,5 +1,5 @@
 // ARCH-001: saiu do FinancePanel.tsx sem mudança de lógica.
-// API-064/065: criar, sair e remover membro pela camada de dados
+// Saída do workspace: criar, sair e remover membro pela camada de dados
 // (src/lib/data/financeWorkspace.ts), com o erro traduzido; o Sair e o
 // Remover dizem o que vai com a pessoa e o que fica no workspace.
 import { Users } from 'lucide-react'
@@ -72,10 +72,13 @@ export function WorkspaceModal({
     setSending(false)
   }
 
+  // O convite pode ter sido apagado na saída de quem convidou (ou respondido em
+  // outra aba) depois que a lista carregou: o erro sai traduzido e a lista
+  // recarrega, para o convite sumir.
   const handleAccept = async (inviteId: string) => {
     setActing(true)
     const { error } = await supabase.rpc('accept_workspace_invite', { p_invite_id: inviteId })
-    if (error) showFeedback('error', error.message)
+    if (error) { showFeedback('error', errorText(error)); await onReload() }
     else { await onReload(); showFeedback('success', t('finance_workspace_invite_accepted_toast')) }
     setActing(false)
   }
@@ -83,7 +86,7 @@ export function WorkspaceModal({
   const handleDecline = async (inviteId: string) => {
     setActing(true)
     const { error } = await supabase.rpc('decline_workspace_invite', { p_invite_id: inviteId })
-    if (error) showFeedback('error', error.message)
+    if (error) { showFeedback('error', errorText(error)); await onReload() }
     else { await onReload(); showFeedback('success', t('finance_workspace_invite_declined_toast')) }
     setActing(false)
   }
@@ -105,6 +108,8 @@ export function WorkspaceModal({
   }
 
   const isOwner = workspace && members.some(m => m.user_id === user?.id && m.role === 'owner')
+  // Quem sai sozinho apaga o workspace: o aviso é outro.
+  const isLastMember = members.length <= 1
   const profileMap = new Map(partnerProfiles.map(p => [p.id, p]))
   const getMemberName = (m: FinanceWorkspaceMember) => {
     if (m.user_id === user?.id) return user?.email?.split('@')[0] ?? 'Você'
@@ -241,7 +246,7 @@ export function WorkspaceModal({
                 {confirmLeave ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <p style={{ margin: 0, fontSize: 13, color: '#dc2626' }}>{t('finance_workspace_leave_confirm')}</p>
-                    <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-muted)' }}>{t('finance_workspace_leave_detail')}</p>
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-muted)' }}>{t(isLastMember ? 'finance_workspace_leave_detail_last' : 'finance_workspace_leave_detail')}</p>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button disabled={acting} onClick={handleLeave}
                         style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: '#ef4444', color: '#fff', fontSize: 13, fontWeight: 600, cursor: acting ? 'not-allowed' : 'pointer', opacity: acting ? 0.6 : 1 }}>

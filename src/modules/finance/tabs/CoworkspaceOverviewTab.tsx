@@ -55,7 +55,7 @@ export default function CoworkspaceOverviewTab({
   const catMap = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories])
   const memberMap = useMemo(() => new Map(members.map(m => [m.user_id, m])), [members])
 
-  // Every member shows up, even with zero spending. Since API-064/065 a row of
+  // Every member shows up, even with zero spending. Since workspace_exit a row of
   // someone who already left can stay in the workspace: the income or expense
   // they recorded on a sale or purchase of someone who stays (it follows the
   // sale, like the item), and leftovers a restore brings back. Those authors

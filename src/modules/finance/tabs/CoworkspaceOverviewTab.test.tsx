@@ -5,7 +5,7 @@ import { getT } from '../../../i18n/translations'
 import { formatBRL } from '../../../lib/money'
 import type { FinanceTransaction, FinanceWorkspace, FinanceWorkspaceMember } from '../../../types'
 
-// API-064/065: depois que alguém sai, a receita ou despesa que essa pessoa
+// Saída do workspace: depois que alguém sai, a receita ou despesa que essa pessoa
 // lançou na venda ou compra de quem fica continua no workspace (segue a venda).
 // A visão do coworkspace mostra o autor como "ex-membro" (antes, "?") e soma o
 // gasto dele numa barra própria, para as barras fecharem com o total do mês.

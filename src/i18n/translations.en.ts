@@ -1435,10 +1435,11 @@ const en: Record<TranslationKey, string> = {
   finance_workspace_invite_decline: 'Decline',
   finance_workspace_leave: 'Leave workspace',
   finance_workspace_leave_confirm: 'Are you sure you want to leave the workspace?',
-  finance_workspace_leave_detail: 'Your accounts, transactions, budgets, goals, recurring items and Store (products, purchases, sales, customers and suppliers) become yours only again. The categories, the accounts other people use and the income and expenses you recorded on sales and purchases of those who stay remain in the workspace.',
+  finance_workspace_leave_detail: 'Your accounts, transactions, budgets, goals, recurring items and the categories nobody else uses (including the ones created with the workspace) become yours only again. What other people also use (categories, accounts and goals with their contributions) stays in the workspace and goes to its owner; if you are the owner, to the oldest member. Your contributions to those goals move to a copy that is yours only, and the categories that stay and that your entries use get a copy in your list. The invites you sent that are still pending are cancelled.',
+  finance_workspace_leave_detail_last: 'You are the last person in the workspace: it will be deleted, and everything in it becomes yours only again (what belongs to people who already left goes back to them).',
   finance_workspace_remove: 'Remove',
   finance_workspace_remove_confirm: 'Remove {name} from workspace?',
-  finance_workspace_remove_detail: "This person's accounts, transactions, budgets, goals, recurring items and Store become theirs only again. The categories, the accounts other people use and the income and expenses they recorded on sales and purchases of those who stay remain in the workspace.",
+  finance_workspace_remove_detail: "This person's accounts, transactions, budgets, goals, recurring items and the categories nobody else uses become theirs only again. What other people also use (categories, accounts and goals with their contributions) stays in the workspace and becomes yours; their contributions to those goals move to a copy that is theirs only, and the categories that stay and that their entries use get a copy in their list. The invites they sent that are still pending are cancelled.",
   finance_workspace_former_member: 'former member',
   finance_workspace_owner: 'Owner',
   finance_workspace_member: 'Member',
@@ -1457,6 +1458,7 @@ const en: Record<TranslationKey, string> = {
   finance_workspace_error_denied: 'You do not have permission for this action.',
   finance_workspace_error_loans: 'There are loan payments from people who already left this workspace, and they still prevent it from being deleted.',
   finance_workspace_error_generic: 'Could not complete. Try again.',
+  finance_workspace_error_invite_gone: 'This invite was cancelled or already answered.',
 
   // Notifications
   notif_title: 'Notifications',

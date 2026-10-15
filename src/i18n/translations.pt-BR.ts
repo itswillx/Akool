@@ -1436,10 +1436,11 @@ export const ptBR = {
   finance_workspace_invite_decline: 'Recusar',
   finance_workspace_leave: 'Sair do workspace',
   finance_workspace_leave_confirm: 'Tem certeza que deseja sair do workspace?',
-  finance_workspace_leave_detail: 'Suas contas, lançamentos, orçamentos, metas, recorrentes e a Loja (produtos, compras, vendas, clientes e fornecedores) voltam a ser só seus. Ficam no workspace as categorias, as contas que outras pessoas usam e as receitas e despesas que você lançou em vendas e compras de quem continua.',
+  finance_workspace_leave_detail: 'Suas contas, lançamentos, orçamentos, metas, recorrentes e as categorias que ninguém mais usa (inclusive as criadas com o workspace) voltam a ser só seus. O que outras pessoas também usam (categorias, contas e metas com aportes delas) fica no workspace e passa para o dono dele; se o dono é você, para o membro mais antigo. Seus aportes nessas metas vão para uma cópia só sua, e as categorias que ficam e que seus lançamentos usam ganham uma cópia na sua lista. Os convites que você enviou e ainda estão pendentes são cancelados.',
+  finance_workspace_leave_detail_last: 'Você é a última pessoa do workspace: ele será apagado, e tudo o que está nele volta a ser só seu (o que é de quem já saiu volta para essas pessoas).',
   finance_workspace_remove: 'Remover',
   finance_workspace_remove_confirm: 'Remover {name} do workspace?',
-  finance_workspace_remove_detail: 'As contas, lançamentos, orçamentos, metas, recorrentes e a Loja dessa pessoa voltam a ser só dela. Ficam no workspace as categorias, as contas que outras pessoas usam e as receitas e despesas que ela lançou em vendas e compras de quem continua.',
+  finance_workspace_remove_detail: 'As contas, lançamentos, orçamentos, metas, recorrentes e as categorias que ninguém mais usa voltam a ser só dessa pessoa. O que outras pessoas também usam (categorias, contas e metas com aportes delas) fica no workspace e passa para você; os aportes dela nessas metas vão para uma cópia só dela, e as categorias que ficam e que os lançamentos dela usam ganham uma cópia na lista dela. Os convites que ela enviou e ainda estão pendentes são cancelados.',
   finance_workspace_former_member: 'ex-membro',
   finance_workspace_owner: 'Dono',
   finance_workspace_member: 'Membro',
@@ -1458,6 +1459,7 @@ export const ptBR = {
   finance_workspace_error_denied: 'Sem permissão para esta ação.',
   finance_workspace_error_loans: 'Há pagamentos de empréstimo de quem já saiu deste workspace, e eles ainda impedem que ele seja apagado.',
   finance_workspace_error_generic: 'Não foi possível concluir. Tente de novo.',
+  finance_workspace_error_invite_gone: 'Este convite foi cancelado ou já foi respondido.',
 
   // Notifications
   notif_title: 'Notificações',

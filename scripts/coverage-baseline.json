@@ -4,11 +4,11 @@
   "src/contexts": 70.49,
   "src/hooks": 99.27,
   "src/i18n": 94.64,
-  "src/lib": 93.89,
+  "src/lib": 93.93,
   "src/modules/audit": 0,
   "src/modules/backup": 5.52,
   "src/modules/docsnetwork": 0,
-  "src/modules/finance": 41.58,
+  "src/modules/finance": 47.08,
   "src/modules/projects": 59.84,
   "src/modules/study": 78.37,
   "src/pages": 98.86,
@@ -17,5 +17,5 @@
   "supabase/functions/_shared": 98.73,
   "supabase/functions/admin-ops": 12.62,
   "supabase/functions/site-backup": 5.22,
-  "total": 70.37
+  "total": 71.1
 }

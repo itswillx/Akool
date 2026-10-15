@@ -36,11 +36,11 @@
 --   * o item segue a venda: a dona removida do workspace
 --     (remove_workspace_member) ou o dono que sai (leave_workspace) vê e soma
 --     os itens dos outros na receita; o item não sai do workspace da venda.
---     Desde o API-064/065 (20261014120000_api064_065_workspace_exit), a venda
+--     Desde a saída do workspace (20261015120000_workspace_exit), a venda
 --     vai com quem sai para o privado, a receita que um membro lançou na
 --     venda de quem fica continua no W (a dona altera a data e cancela sem
 --     42501) e remover quem tem linha financeira no W passa; o harness
---     próprio desses cards é o supabase/checks/api064-workspace-exit.sql;
+--     próprio dela é o supabase/checks/workspace-exit.sql;
 --   * cascatas de SET NULL sobre uma venda antiga fora da regra (conta,
 --     cliente, transação, produto, workspace, nas duas ordens entre venda e
 --     item, o workspace apagado como no leave_workspace da última pessoa) e o
@@ -932,9 +932,9 @@ begin
 
   -- 8b. Quem sai do workspace (W3: D dona, E, F e H membros), só pelo app.
   -- Removida (remove_workspace_member): E, dona da venda, continua vendo o
-  -- item que F pôs nela, e a receita soma os dois. Desde o API-064, a venda
-  -- de E vai com ela para o privado; o item de F fica no W3 e segue a venda
-  -- (F deixa de ver a venda).
+  -- item que F pôs nela, e a receita soma os dois. Desde a saída do
+  -- workspace (workspace_exit), a venda de E vai com ela para o privado; o
+  -- item de F fica no W3 e segue a venda (F deixa de ver a venda).
   r := pg_temp.as_user(ue, format($q$select public.store_sale_create(%L::jsonb)::text$q$, jsonb_build_object('account_id', acc_e, 'workspace_id', ws3,
          'items', jsonb_build_array(jsonb_build_object('product_id', p_w3, 'unit_price', 10000)))));
   s_e := (pg_temp.res(r) -> 'sale' ->> 'id')::uuid;
@@ -968,8 +968,8 @@ begin
                                '10000 true 1');
   -- Saída (leave_workspace): F lança a receita da venda de D no W3 e a do
   -- próprio negócio, com um item de D, e sai. A receita de F na venda de D
-  -- fica no W3, seguindo a venda (API-064, decisão 4): D muda a data e
-  -- cancela sem depender de F.
+  -- fica no W3, seguindo a venda, como o item: D muda a data e cancela sem
+  -- depender de F.
   r := pg_temp.as_user(ud, format($q$select public.store_sale_create(%L::jsonb)::text$q$, jsonb_build_object('account_id', acc_w3, 'workspace_id', ws3,
          'items', jsonb_build_array(jsonb_build_object('product_id', p_w3, 'unit_price', 15000)))));
   s_d := (pg_temp.res(r) -> 'sale' ->> 'id')::uuid;
@@ -1003,8 +1003,8 @@ begin
   out := out || pg_temp.expect('D cancela: a receita de F, no W3, é apagada (sem 42501)',
                                r || ' ' || (select count(*) from public.finance_transactions where id = (w ->> 'id')::uuid), 'ok cancelled 0');
   -- Remoção (remove_workspace_member) de quem lançou a receita da venda da
-  -- dona: antes do API-065 dava 42501 ("Somente o autor pode realocar o
-  -- lancamento"). Agora H sai e a receita fica no W3.
+  -- dona: antes da workspace_exit dava 42501 ("Somente o autor pode
+  -- realocar o lancamento"). Agora H sai e a receita fica no W3.
   r := pg_temp.as_user(ud, format($q$select public.store_sale_create(%L::jsonb)::text$q$, jsonb_build_object('account_id', acc_w3, 'workspace_id', ws3,
          'items', jsonb_build_array(jsonb_build_object('product_id', p_w3, 'unit_price', 12000)))));
   s_d2 := (pg_temp.res(r) -> 'sale' ->> 'id')::uuid;
@@ -1127,7 +1127,7 @@ begin
   r := pg_temp.as_user(a, format($q$with d as (delete from public.finance_store_products where id = %L returning 1) select count(*)::text from d$q$, p_leg));
   out := out || pg_temp.expect('apagar o produto do item legado', r, 'ok 1');
   -- O workspace só é apagado pelo leave_workspace da última pessoa (DEFINER,
-  -- com o auth.uid() dela; o API-064 tirou a policy de DELETE): o mesmo
+  -- com o auth.uid() dela; a workspace_exit tirou a policy de DELETE): o mesmo
   -- DELETE como postgres, com os claims de A.
   r := pg_temp.try(jsonb_build_object('sub', a, 'role', 'authenticated'),
                    format($q$with d as (delete from public.finance_workspaces where id = %L returning 1) select count(*)::text from d$q$, ws2));
@@ -1148,7 +1148,7 @@ begin
                                                   (select workspace_id is null from public.finance_store_sale_items where id = i_ws5b),
                                                   (select workspace_id = ws from public.finance_store_sales where id = s_ws5b)),
                                'ok 1 t t t t');
-  -- B sai do W (leave_workspace, API-064): primeiro as vendas de quem sai,
+  -- B sai do W (leave_workspace): primeiro as vendas de quem sai,
   -- depois só os itens dele nelas (o item de quem sai na venda de outra
   -- pessoa fica, e o ws_guard recusa realocar o item de outra pessoa na venda
   -- dele). Antes, A (membro do W) põe um item na venda de B pelo app: ele

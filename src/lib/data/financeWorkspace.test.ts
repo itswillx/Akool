@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getT } from '../../i18n/translations'
 
-// API-064/065: criar, sair e remover membro do workspace pelas RPCs. Os
+// Saída do workspace: criar, sair e remover membro pelas RPCs. Os
 // parâmetros que o banco espera, o erro repassado sem dado e a tradução das
 // mensagens fixas das RPCs (P0001 em inglês) e da guarda (42501).
 
@@ -65,7 +65,13 @@ describe('workspaceErrorKey', () => {
     for (const [message, key] of cases) expect(workspaceErrorKey({ code: 'P0001', message })).toBe(key)
   })
 
-  it('42501: o pagamento de empréstimo de quem saiu (API-067) e o resto como sem permissão', () => {
+  it('convite apagado na saída de quem convidou, ou já respondido: aceitar e recusar mostram o mesmo aviso', () => {
+    expect(workspaceErrorKey({ code: 'P0001', message: 'Invite not found' })).toBe('finance_workspace_error_invite_gone')
+    expect(workspaceErrorKey({ code: 'P0001', message: 'Invite is no longer pending' })).toBe('finance_workspace_error_invite_gone')
+    expect(workspaceErrorText({ code: 'P0001', message: 'Invite not found' }, getT('pt-BR'))).toBe(getT('pt-BR')('finance_workspace_error_invite_gone'))
+  })
+
+  it('42501: o pagamento de empréstimo de quem saiu (resíduo conhecido) e o resto como sem permissão', () => {
     expect(workspaceErrorKey({ code: '42501', message: 'Devedor so pode anexar comprovante e nota ao proprio reporte' })).toBe('finance_workspace_error_loans')
     expect(workspaceErrorKey({ code: '42501', message: 'Somente o autor pode realocar o lancamento' })).toBe('finance_workspace_error_denied')
   })

@@ -1,14 +1,16 @@
 import { supabase } from '../supabase'
 import type { TranslationKey } from '../../i18n/translations'
 
-// API-064/065: criar o workspace, sair dele e remover membro pelas RPCs
-// SECURITY DEFINER create_workspace, leave_workspace e remove_workspace_member
-// (migration api064_065_workspace_exit). Sair ou ser removido leva junto as
-// linhas da pessoa (Loja, fornecedores, lançamentos, orçamentos, metas,
-// recorrentes e as contas que ninguém mais usa); ficam no workspace as
-// categorias, as contas usadas por outras pessoas e a receita ou despesa
-// ligada a venda ou compra de quem continua. Quem chama lê `{ data, error }`,
-// como nas outras funções de src/lib/data.
+// Criar o workspace, sair dele e remover membro pelas RPCs SECURITY DEFINER
+// create_workspace, leave_workspace e remove_workspace_member (migration
+// workspace_exit). Sair ou ser removido leva junto as linhas da pessoa (Loja,
+// fornecedores, empréstimos, lançamentos, orçamentos, recorrentes, as metas sem
+// aporte de outra pessoa e as categorias e contas que ninguém mais usa). O que
+// outras pessoas também usam (categorias, contas, metas com aporte delas) fica
+// no workspace e passa para o dono; os aportes de quem sai vão para uma cópia
+// privada da meta, e as linhas privadas dele nas categorias que ficam, para
+// cópias pessoais. Quem chama lê `{ data, error }`, como nas outras funções de
+// src/lib/data.
 
 /** Cria o workspace de quem chama (com as categorias padrão); devolve o id. */
 export async function createWorkspace(name: string) {
@@ -32,8 +34,10 @@ export async function removeWorkspaceMember(userId: string) {
 
 type WorkspaceError = { code?: string | null; message?: string | null } | null | undefined
 
-// As RPCs de workspace levantam P0001 com mensagens fixas em inglês (o API-056
-// as expõe na API como estão); a guarda de workspace, 42501.
+// As RPCs de workspace levantam P0001 com mensagens fixas em inglês; a guarda
+// de workspace, 42501. O convite que a saída de quem convidou apagou (ou que
+// outra aba já respondeu) chega ao aceitar e ao recusar como "not found" ou
+// "no longer pending".
 const MESSAGE_KEYS: Record<string, TranslationKey> = {
   'Not authenticated': 'finance_workspace_error_session',
   'Not in a workspace': 'finance_workspace_error_not_in',
@@ -41,6 +45,8 @@ const MESSAGE_KEYS: Record<string, TranslationKey> = {
   'Cannot remove yourself': 'finance_workspace_error_self',
   'User is not a member of this workspace': 'finance_workspace_error_not_member',
   'User already belongs to a workspace': 'finance_workspace_error_already',
+  'Invite not found': 'finance_workspace_error_invite_gone',
+  'Invite is no longer pending': 'finance_workspace_error_invite_gone',
 }
 
 /**
@@ -55,7 +61,8 @@ export function workspaceErrorKey(error: WorkspaceError): TranslationKey | null 
   const known = MESSAGE_KEYS[message]
   if (known) return known
   if (code === '42501') {
-    // O pagamento de empréstimo de quem já saiu ainda segura o workspace (API-067).
+    // Um pagamento no workspace de um empréstimo que já saiu dele ainda segura
+    // a saída da última pessoa (resíduo conhecido dos empréstimos).
     return message.startsWith('Devedor so pode') ? 'finance_workspace_error_loans' : 'finance_workspace_error_denied'
   }
   return null

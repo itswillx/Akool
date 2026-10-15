@@ -64,11 +64,11 @@ linha a linha na migration `20260925191300`). O trigger
 | Tabela | SELECT extra | INSERT | UPDATE extra | DELETE extra | Trigger de integridade |
 |---|---|---|---|---|---|
 | `finance_accounts` | workspace | own | — | — | `trg_finance_accounts_ws_guard` |
-| `finance_categories` | workspace | own | workspace | workspace | `trg_finance_categories_ws_guard`; `finance_categories_ws_exit` (BEFORE UPDATE OF `workspace_id`, `private.finance_category_ws_exit`, DEFINER, API-064): na ida de um workspace para o privado, se o autor já tem a pessoal com o mesmo nome e tipo, renomeia para "Nome (nome do W)", ou "Nome (workspace)" quando o W já sumiu, com número até ficar único (a UNIQUE NULLS NOT DISTINCT dava 23505). Padrão da linha: vale também sem usuário (cascata de apagar o W, exclusão de conta, restore) |
+| `finance_categories` | workspace | own | workspace | workspace | `trg_finance_categories_ws_guard`; `finance_categories_ws_exit` (BEFORE UPDATE OF `workspace_id`, `private.finance_category_ws_exit`, DEFINER, saída do workspace): na ida de um workspace para o privado, se o autor já tem a pessoal com o mesmo nome e tipo, renomeia para "Nome (nome do W)", ou "Nome (workspace)" quando o W já sumiu, com número até ficar único (a UNIQUE NULLS NOT DISTINCT dava 23505; a regra do nome fica em `private.finance_category_free_name`, que a cópia pessoal da saída também usa). Padrão da linha: vale também sem usuário (cascata de apagar o W, exclusão de conta, restore) |
 | `finance_budgets` | workspace, `shared_with_user_id` | own | workspace | workspace | `trg_finance_budgets_ws_guard` |
 | `finance_goals` | workspace, via `finance_goal_shares` emitido pelo dono da meta (API-012) | own | — | — | `trg_finance_goals_ws_guard` |
 | `finance_goal_shares` | invitee (`shared_with_user_id`) | own, e só de meta própria (`finance_goal_owned`, API-012); **sem UPDATE** (sem policy nem grant: outro alvo é outro share) | — | — | nenhum (goal sharing é pessoa-a-pessoa, sem workspace) |
-| `finance_goal_contributions` | quem vê a meta vê os aportes: dono da meta, invitee com share válido e membros do workspace (API-012) | own; invitee e membro do workspace também podem INSERT; UPDATE só em `amount`, `note` e `date` (grant por coluna: `goal_id` e `user_id` travados, API-012). Aporte pelo app: `finance_goal_contribute` | — | — | nenhum |
+| `finance_goal_contributions` | quem vê a meta vê os aportes: dono da meta, invitee com share válido e membros do workspace (API-012) | own; invitee e membro do workspace também podem INSERT; UPDATE só em `amount`, `note` e `date` (grant por coluna: `goal_id` e `user_id` travados, API-012). UPDATE e DELETE: o autor, com a meta ainda visível para ele (a mesma regra do INSERT; saída do workspace: quem saiu já não mexe no aporte que deixou numa meta do W). Aporte pelo app: `finance_goal_contribute` | — | — | nenhum |
 | `finance_recurring` | workspace | own | — | — | `trg_finance_recurring_ws_guard`; `finance_recurring_day_moved` (AFTER UPDATE OF `day_of_month`, API-016): move para o dia novo os pendentes sem transação do mês atual de São Paulo em diante, um por vez, e o que colidiria fica. Vale também sem usuário (é padrão da linha, não validação) |
 | `finance_recurring_entries` | via `finance_recurring.workspace_id` (subquery) | own. INSERT, ou troca de `recurring_id`/`user_id`, só em recorrente da própria pessoa: o gatilho fecha a pré-ocupação do mês por outro membro (API-016). UPDATE só em `status`, `amount` e `transaction_id` (grant por coluna: `recurring_id`, `user_id` e `due_date` travados). Passar para `paid` exige `transaction_id` da própria pessoa. Pelo app, pagar e pular vão por `finance_mark_entry_paid` e `finance_skip_entry` (INVOKER), e os lançamentos do mês e do seguinte nascem no servidor (`finance_materialize_recurring` e o cron `finance-recurring-materialize`) | — | — | `finance_recurring_entries_guard` (BEFORE INSERT/UPDATE, `private.finance_recurring_entry_guard`; pula sem usuário: restore e cron) |
 | `finance_transactions` | workspace, `shared_with_user_id` | own | workspace | workspace | `trg_finance_transactions_ws_guard` |
@@ -81,22 +81,31 @@ workspace do qual o usuário é membro — sem isso um usuário poderia gravar
 (restauração pelo service_role, `pg_cron`, migrations); sessão do app
 continua conferida, e um JWT de cliente sem `sub` também.
 
-Desde o API-064/065 (`20261014120000_api064_065_workspace_exit`), o UPDATE
+Desde a saída do workspace (`20261015120000_workspace_exit`), o UPDATE
 compara o autor com `is distinct from` (um JWT de cliente sem `sub` cai na
-guarda, não só no RLS) e tem duas saídas estreitas, só para a linha que vai de
-um workspace para o privado com o mesmo autor:
-- **(a)** o workspace antigo já não existe: o SET NULL de apagá-lo, também
-  sobre a sobra de quem saiu antes (a receita ou o item de ex-membro na venda de
-  quem ficou). Sem GUC;
-- **(b)** o GUC transacional `akool.ws_release` vale o workspace antigo, o autor
-  já não é membro dele e quem grava é a dona (filiação com `role = 'owner'`).
-  Só `private.finance_workspace_release` liga o GUC (e desliga ao terminar):
-  é o caminho do `remove_workspace_member`, que apaga a filiação antes. Nenhum
-  cliente liga um GUC `akool.*` pelo PostgREST; o GUC existe porque o RLS de
-  `finance_loan_payments` e `finance_loan_collaterals` (`loan_is_owner`) deixa
-  o membro atualizar a linha de outra pessoa. Nas outras tabelas o WITH CHECK
-  do UPDATE já barraria a dona (prova no harness `api064-workspace-exit.sql`,
-  seção 7).
+guarda, não só no RLS) e tem três saídas estreitas, todas na linha de quem já
+não é membro do workspace:
+- **(a)** workspace → privado, mesmo autor, e o workspace antigo já não existe:
+  o SET NULL de apagá-lo, também sobre a sobra de quem saiu antes (a receita ou
+  o item de ex-membro na venda de quem ficou). Sem GUC;
+- **(b)** workspace → privado, mesmo autor, com o GUC transacional
+  `akool.ws_release` igual ao workspace antigo, o autor fora dele e quem grava
+  membro dele: a dona no `remove_workspace_member` (que apaga a filiação
+  antes) e quem sai, no `leave_workspace`, ao levar para o privado a receita
+  desvinculada de um ex-membro (saída em cadeia) e, se é a última pessoa, os
+  empréstimos que ex-membros deixaram no W;
+- **(c)** a troca de autor que passa para a dona o que fica no W: só em
+  `finance_categories`, `finance_accounts` e `finance_goals`, com o mesmo GUC,
+  o workspace sem mudar, e o novo autor sendo quem grava e dona do W (o remove).
+
+Só `private.finance_workspace_release` liga o GUC (e desliga ao terminar).
+Nenhum cliente liga um GUC `akool.*` pelo PostgREST; o GUC existe porque o RLS
+de `finance_loan_payments` e `finance_loan_collaterals` (`loan_is_owner`) e o de
+categorias do W deixam o membro atualizar a linha de outra pessoa. Numa sessão
+que nunca ligou o GUC, `current_setting` devolve NULL: a guarda compara com
+`coalesce(..., '')`, e o NULL não desliga a recusa. Nas outras tabelas o WITH
+CHECK do UPDATE já barraria a dona (prova no harness `workspace-exit.sql`,
+seção 7).
 
 A guarda continua `search_path=public`, sem EXECUTE para clientes, nos mesmos
 16 gatilhos (o `create or replace` mantém o OID).
@@ -107,40 +116,101 @@ A guarda continua `search_path=public`, sem EXECUTE para clientes, nos mesmos
 |---|---|---|---|
 | `finance_workspaces` | SELECT | owner ou membro (`is_workspace_member`) | |
 | `finance_workspaces` | INSERT/UPDATE | owner | uma policy por comando desde o PERF-002; todas as policies desta seção são `TO authenticated` |
-| `finance_workspaces` | DELETE | **nenhuma policy** (o API-064 tirou a `finance_workspaces_delete`, sem REVOKE de tabela) | o W só é apagado pelo `leave_workspace` da última pessoa (DEFINER), depois de tirar as linhas dela; o DELETE direto afeta 0 linhas |
+| `finance_workspaces` | DELETE | **nenhuma policy** (a `workspace_exit` tirou a `finance_workspaces_delete`, sem REVOKE de tabela) | o W só é apagado pelo `leave_workspace` da última pessoa (DEFINER), depois de tirar as linhas dela, ou pelo `private.finance_workspace_reconcile()` quando já não tem membros; o DELETE direto afeta 0 linhas |
 | `finance_workspace_members` | SELECT | qualquer membro do workspace | |
 | `finance_workspace_members` | INSERT | ninguém direto: só pelas RPCs `create_workspace` e `accept_workspace_invite` (o SEC-013 removeu a policy `wm_owner_insert`) | |
-| `finance_workspace_members` | DELETE | **nenhuma policy** (o API-064 tirou a `wm_owner_delete`, sem REVOKE de tabela) | a filiação só sai pelas RPCs `leave_workspace` e `remove_workspace_member` (DEFINER), que levam junto as linhas de quem sai; antes, o DELETE direto deixava tudo no W |
+| `finance_workspace_members` | DELETE | **nenhuma policy** (a `workspace_exit` tirou a `wm_owner_delete`, sem REVOKE de tabela) | a filiação só sai pelas RPCs `leave_workspace` e `remove_workspace_member` (DEFINER), que levam junto as linhas de quem sai; antes, o DELETE direto deixava tudo no W |
 | `finance_workspace_members` | UPDATE | **nenhuma policy** | troca de `role` (member→owner) só acontece dentro das funções `create_workspace`/`leave_workspace` (SECURITY DEFINER), nunca via UPDATE direto do cliente — achado documentado, não é bug |
 | `finance_workspace_invites` | SELECT | membro do workspace, ou convidado (por `invited_user_id` ou `auth.email()`) | usa `auth.email()` embutido — corrige bug histórico de policy antiga que fazia join direto em `auth.users` sem permissão |
-| `finance_workspace_invites` | INSERT | membro do workspace | |
+| `finance_workspace_invites` | INSERT | **nenhuma policy** (a `workspace_exit` tirou a `wi_member_insert`, sem REVOKE de tabela) | só pelo `invite_member` (DEFINER, `invited_by` = quem chama, limite do SEC-016). Com a policy, qualquer membro gravava convite direto em nome de outra pessoa (a dona, por exemplo), e a saída de quem gravou não o apagava. Um convite assim gravado antes da migration não se distingue de um feito pelo RPC |
 | `finance_workspace_invites` | UPDATE | convidado (aceitar/recusar) | **sem `WITH CHECK`** — quais campos podem mudar é controlado pelo trigger `finance_guard_invite_update` (já versionado), não pela policy |
-| `finance_workspace_invites` | DELETE | **nenhuma policy** | delete efetivo só via `ON DELETE CASCADE` de `finance_workspaces` |
+| `finance_workspace_invites` | DELETE | **nenhuma policy** | delete efetivo via `ON DELETE CASCADE` de `finance_workspaces` e dentro das DEFINER: `leave_workspace` e `remove_workspace_member` apagam os convites pendentes de quem sai, e o reconcile, os de quem já não é membro |
 
-**Sair e ser removido (API-064/065).** `leave_workspace` e
+**Sair e ser removido (saída do workspace).** `leave_workspace` e
 `remove_workspace_member` (DEFINER, `search_path` vazio, só `authenticated`)
 começam com `SELECT ... FOR UPDATE` na filiação de quem chama, o que serializa
 sair × remover. O remove apaga a filiação primeiro ("User is not a member of
 this workspace" quando já não há), e o leave a apaga depois; a última pessoa
-apaga o W. Nos dois, `private.finance_workspace_release(pessoa, W)` (INVOKER,
-sem EXECUTE para clientes) tira do W o que a pessoa criou (`user_id`):
+apaga o W. Nos dois, os convites pendentes que a pessoa mandou são apagados, e
+`private.finance_workspace_release(pessoa, W)` (INVOKER, sem EXECUTE para
+clientes; trava o W com `pg_advisory_xact_lock`) tira do W o que a pessoa criou
+(`user_id`):
 - as vendas dela, desvinculando a receita de outra pessoa (que fica no W como
-  lançamento comum), e os itens dela nessas vendas; o item de outra pessoa na
-  venda dela fica com o W antigo e segue a venda;
+  lançamento comum, ou vai para o privado do autor se ele já não é membro), e
+  os itens dela nessas vendas; o item de outra pessoa na venda dela fica com o
+  W antigo e segue a venda;
 - os produtos e depois as compras dela (desvinculando a despesa de outra
-  pessoa), os clientes e os fornecedores;
+  pessoa, com a mesma regra), os clientes e os fornecedores;
 - as transações, menos a receita ou despesa ligada a venda ou compra de outra
-  pessoa que continua membro (mesmo privada): ela fica no W, seguindo a venda;
-- orçamentos, metas e recorrentes, e as contas que nenhuma linha de outra
-  pessoa usa (as usadas ficam no W, para o saldo dos outros não mudar);
-- as categorias do W não saem (o histórico dos outros não perde categoria);
-- `shared_with_user_id` = a pessoa, nas linhas de outras pessoas que ficam no W,
-  vira nulo quando as duas não têm outro vínculo (a regra do
-  `profile_is_related`, em `private.finance_people_related`).
+  pessoa que continua membro (mesmo privada): ela fica no W, seguindo a venda.
+  A receita ou despesa de um ex-membro que a saída desvincula vai para o
+  privado dele, a não ser que outra venda ou compra de quem continua membro a
+  use (o `transaction_id` da compra não tem regra no banco);
+- orçamentos e recorrentes; as metas sem aporte de outra pessoa (na meta que
+  fica, os aportes de quem sai vão para uma cópia privada dela, sem conta, e no
+  W ficam só os dos outros);
+- os empréstimos sem pagamento nem garantia de outra pessoa, com os pagamentos
+  e as garantias (os pagamentos antes do empréstimo: o `trg_loan_payment_guard`
+  só deixa mexer no pagamento com o empréstimo no W), e os devedores que nenhum
+  empréstimo que fica usa;
+- as categorias do W que só ela usa (nenhuma transação, orçamento ou
+  recorrente de outra pessoa, nem a transação dela que ficou no W, aponta para
+  elas), renomeadas na colisão pelo gatilho;
+- as contas que nenhuma linha de outra pessoa nem a transação, a meta ou o
+  empréstimo dela que ficou no W usa.
 
-Empréstimos não saem (API-067). `private.finance_workspace_reconcile()` aplica o
-mesmo release às sobras de quem já não é membro (backfill da migration e depois
-de um restore antigo).
+As categorias que ficam no W e que as linhas privadas da pessoa usam
+(lançamentos, orçamentos, recorrentes) ganham uma cópia pessoal dela
+(`private.finance_category_split`, com o nome livre da regra do gatilho), e
+essas linhas passam para a cópia: quem apaga a categoria do W (qualquer
+membro, ou a exclusão da conta da dona) já não leva em cascata os orçamentos
+privados de quem saiu, e o materialize não cria orçamento dele em categoria de
+W. O que fica no W porque outras pessoas usam (categorias, contas e metas com
+aporte alheio) **passa para a dona** (num W com duas donas, a que remove; no
+leave da dona, para o sucessor, já promovido), e o share que quem saiu fez da
+meta que passa é apagado: quem saiu já não altera nem apaga essas linhas, e a
+exclusão da conta dele não as leva, nem, em cascata, os orçamentos dos
+membros. Na saída da última pessoa, nada muda de autor; os empréstimos de
+ex-membros que ficaram no W vão para o privado dos autores, e as linhas
+privadas dos outros nas categorias do W ganham as cópias pessoais. Por fim,
+`shared_with_user_id` entre a pessoa e cada outra, nas linhas do W e nas
+privadas, nos dois sentidos, vira nulo quando as duas não têm outro vínculo (a
+regra do `profile_is_related`, em `private.finance_people_related`).
+
+`private.finance_workspace_reconcile()` (sem usuário; roda no backfill da
+migration e no fim de todo `restore_site_backup`, na mesma transação, com as
+contagens na chave `workspace_reconcile` do resumo) apaga o W sem membros,
+promove o membro mais antigo no W sem dona, aplica o mesmo release às sobras de
+quem já não é membro (empréstimos inclusive), ao ex-membro com linha privada
+numa categoria do W e aos pares com linha privada compartilhada sem vínculo,
+apaga os convites pendentes de quem já não é membro e desvincula a receita ou
+despesa fora do escopo do dono da venda ou compra. Uma linha que outra sessão
+insere no W entre o release e o commit fica no W até o próximo reconcile.
+
+**Riscos registrados (cabeçalho da migration).**
+- **Empréstimos.** O empréstimo de quem sai com pagamento ou garantia de
+  outra pessoa fica no W, com o autor e o devedor (não há tela de empréstimos;
+  as tabelas e as guardas continuam no banco), e quem saiu ainda o altera pelo
+  PostgREST. O que deixa essas linhas no W é o release não as levar, não a
+  guarda: com o GUC, a saída (b) e o `loan_is_owner` deixam qualquer membro
+  tirar o pagamento do W enquanto o empréstimo está nele. Na saída da última
+  pessoa tudo vai para o privado dos autores; só um pagamento no W de um
+  empréstimo que já está fora dele ainda trava a saída (42501; o app mostra
+  `finance_workspace_error_loans`).
+- **Contas.** A conta de quem sai que outra pessoa usou uma vez (ou que a
+  receita ou a meta dele que fica no W usa) passa inteira para a dona, com o
+  saldo inicial dele: some da lista dele, o saldo no W fica o saldo inicial
+  mais só as linhas que ficam, e a dona pode apagá-la, deixando em NULL o
+  `account_id` dos lançamentos e recorrentes privados dele. Dar a conta
+  original a quem sai e ao W uma cópia muda a decisão aprovada e espera o OK do
+  usuário. O harness prende o comportamento atual como resíduo.
+- **Exclusão de conta de quem ainda é membro** (admin-ops `delete_user`, DELETE
+  em `auth.users`): não passa pela saída. A da dona apaga o W
+  (`finance_workspaces.owner_id` ON DELETE CASCADE) e, com as categorias dela,
+  os orçamentos dos membros; a de um membro leva a categoria e a conta dele que
+  os outros usam. "A exclusão da conta dele não as leva" vale só para quem já
+  saiu. Fechar isso (gatilho em `auth.users` ou RPC do admin-ops antes do
+  `deleteUser`) espera o OK do usuário.
 
 ## Finance — loja (store) e fornecedores
 
@@ -163,7 +233,7 @@ O item segue a venda (API-028). Em `finance_store_sale_items`:
 
 O termo "membro do workspace do item" saiu das três. Isso fecha dois buracos:
 - **Itens invisíveis numa venda visível.** O item que B pôs na venda da A ficava invisível para a A depois que ela saía do workspace ou era removida. Agora quem vê a venda vê todos os itens, e o líquido das RPCs, que são INVOKER, não muda conforme quem chama.
-- **Itens de outra pessoa quando a venda sai do workspace.** Isso acontece com o UPDATE de `workspace_id` do dono, que o ws_guard deixa, ou quando o dono sai do workspace ou é removido (API-064, abaixo). O item de outra pessoa fica com o workspace antigo e some para os membros que já não veem a venda: eles não o leem, não mudam o preço (que entraria na receita do dono) e não o apagam.
+- **Itens de outra pessoa quando a venda sai do workspace.** Isso acontece com o UPDATE de `workspace_id` do dono, que o ws_guard deixa, ou quando o dono sai do workspace ou é removido (saída do workspace, abaixo). O item de outra pessoa fica com o workspace antigo e some para os membros que já não veem a venda: eles não o leem, não mudam o preço (que entraria na receita do dono) e não o apagam.
 
 O autor do item que perdeu acesso à venda ainda o lê, mas não o altera nem o apaga (pela RPC, P0002). No app nada some de uma venda da tela: o `financeStoreCalc` já ignorava item cuja venda não está visível. Quem é de fora e quem é de outro workspace continuam sem ver os itens (harness, seções 8b e 10).
 
@@ -181,8 +251,8 @@ Desde o API-028 (`20261012120000_api028_store_sales_server`), por cima das polic
 - **Item** (`finance_store_sale_items_rules` → `private.store_sale_item_rules`, DEFINER): não muda de venda; não sai do workspace da venda (UPDATE de `workspace_id` para outro que não o da venda: 22023; o SET NULL de apagar o workspace passa, na ordem que for entre venda e item); venda e produto visíveis (P0002) e travados (FOR NO KEY UPDATE); no INSERT herda o workspace da venda quando quem grava é membro (senão fica privado); item único com 1 unidade; produto arquivado fora de venda nova; estoque **global** (comprado sem cotação menos os itens de vendas não canceladas, de qualquer dono, também os que quem grava não vê); nome em branco vem do produto. O item segue a venda: SELECT pelo dono do item ou pela venda visível; UPDATE e DELETE só pela venda visível (parágrafo acima da lista).
 - Os dois gatilhos pulam sem usuário (restore, cron, SQL pelo MCP) e validam só o que mudou: as cascatas de SET NULL (apagar conta, cliente, transação, produto ou workspace) passam mesmo sobre venda antiga fora da regra.
 - **Pelo app**, as vendas vão pelas RPCs SECURITY INVOKER `store_sale_create`, `store_sale_set_status`, `store_sale_update`, `store_sale_items_add`, `store_sale_items_update`, `store_sale_items_remove`, `store_sale_generate_income` e `store_sale_delete` (EXECUTE só de `authenticated`), cada uma numa transação com a receita vinculada. A receita nasce em nome de quem chama, no workspace da venda se ele é membro; a receita de outra pessoa (invisível para quem chama) só barra a chamada que muda o que ela leva (líquido, data ou conta) ou que a apaga (cancelar, reabrir, excluir). Nesses casos dá 42501, e a mensagem diz que quem a lançou a altera ou apaga em Transações. Editar uma nota, ou gravar um item sem mudar o valor, passa com `transaction` nulo. Voltar de enviada para vendida com outra data leva a data da receita junto (`transaction_changed` true). `store_product_figures(uuid[])` (INVOKER) devolve comprado, vendido, reservado, disponível e custo médio sobre as linhas visíveis.
-- Compras e produtos continuam gravados direto pelo app (API-037).
-- **Saída do workspace (API-064/065).** Quem sai ou é removido leva as linhas da Loja e os fornecedores que criou (seção de workspace acima): produtos, compras, vendas, os itens dele nessas vendas, clientes e fornecedores. A receita ou despesa que ele lançou na venda ou compra de quem fica continua no W, seguindo a venda; a de quem fica na venda ou compra dele é desvinculada. Os gatilhos do API-028 aceitam esse UPDATE (só `workspace_id` e `transaction_id` → nulo). Efeito conhecido: a compra de quem fica de um produto de quem saiu perde o produto na tela, e mudar a quantidade do item com esse produto dá P0002.
+- Compras e produtos não têm regra no banco além das policies (a tela da Loja saiu do front no #43; as tabelas e as RPCs de venda continuam). O `transaction_id` da compra também não tem regra.
+- **Saída do workspace (`workspace_exit`).** Quem sai ou é removido leva as linhas da Loja e os fornecedores que criou (seção de workspace acima): produtos, compras, vendas, os itens dele nessas vendas, clientes e fornecedores. A receita ou despesa que ele lançou na venda ou compra de quem fica continua no W, seguindo a venda; a de outra pessoa na venda ou compra dele é desvinculada (e vai para o privado do autor se ele também já saiu, a não ser que outra venda ou compra de quem fica a use). Os gatilhos do API-028 aceitam esse UPDATE (só `workspace_id` e `transaction_id` → nulo). Resíduos conhecidos: a compra de quem fica de um produto de quem saiu fica apontando para um produto que ela não vê, e mudar a quantidade do item com esse produto dá P0002; essa compra some em cascata quando o produto é apagado (por quem saiu, que continua autor dele, ou por qualquer membro) ou quando a conta de quem saiu é excluída, e nessa exclusão a venda de quem fica perde o item e a receita de quem saiu. A correção real (FK SET NULL ou RESTRICT em `purchases.product_id`, ou a exclusão de produto pelo servidor) fica fora da saída do workspace.
 
 ## Notas rápidas, estudos, backups
 
