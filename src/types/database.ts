@@ -21,48 +21,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      api_tokens: {
-        Row: {
-          created_at: string
-          expires_at: string
-          id: string
-          last_client: string | null
-          last_used_at: string | null
-          name: string
-          prefix: string
-          revoked_at: string | null
-          scopes: Json
-          token_hash: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          expires_at?: string
-          id?: string
-          last_client?: string | null
-          last_used_at?: string | null
-          name?: string
-          prefix: string
-          revoked_at?: string | null
-          scopes?: Json
-          token_hash: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          expires_at?: string
-          id?: string
-          last_client?: string | null
-          last_used_at?: string | null
-          name?: string
-          prefix?: string
-          revoked_at?: string | null
-          scopes?: Json
-          token_hash?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       audit_log: {
         Row: {
           action: string
@@ -1847,66 +1805,6 @@ export type Database = {
         }
         Relationships: []
       }
-      project_card_queue: {
-        Row: {
-          board_id: string
-          card_id: string
-          created_at: string
-          finished_at: string | null
-          id: string
-          note: string | null
-          phase: string | null
-          position: number
-          requested_by: string | null
-          source: string
-          started_at: string | null
-          status: string
-        }
-        Insert: {
-          board_id: string
-          card_id: string
-          created_at?: string
-          finished_at?: string | null
-          id?: string
-          note?: string | null
-          phase?: string | null
-          position?: number
-          requested_by?: string | null
-          source?: string
-          started_at?: string | null
-          status?: string
-        }
-        Update: {
-          board_id?: string
-          card_id?: string
-          created_at?: string
-          finished_at?: string | null
-          id?: string
-          note?: string | null
-          phase?: string | null
-          position?: number
-          requested_by?: string | null
-          source?: string
-          started_at?: string | null
-          status?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_card_queue_board_id_fkey"
-            columns: ["board_id"]
-            isOneToOne: false
-            referencedRelation: "project_boards"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_card_queue_card_id_fkey"
-            columns: ["card_id"]
-            isOneToOne: false
-            referencedRelation: "project_cards"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       project_cards: {
         Row: {
           assignee_user_id: string | null
@@ -2520,121 +2418,6 @@ export type Database = {
         }
         Returns: Json
       }
-      cq_block: {
-        Args: {
-          p_actor?: string
-          p_board: string
-          p_card: string
-          p_note: string
-          p_user_items?: string[]
-          p_user_refs?: string[]
-        }
-        Returns: Json
-      }
-      cq_boards: { Args: { p_actor?: string }; Returns: Json }
-      cq_card: {
-        Args: { p_actor?: string; p_board: string; p_card: string }
-        Returns: Json
-      }
-      cq_cards: {
-        Args: {
-          p_actor?: string
-          p_board: string
-          p_columns?: string[]
-          p_completed?: boolean
-          p_labels?: string[]
-          p_priorities?: string[]
-        }
-        Returns: Json
-      }
-      cq_check: {
-        Args: {
-          p_actor?: string
-          p_board: string
-          p_card: string
-          p_done?: boolean
-          p_items: string[]
-        }
-        Returns: Json
-      }
-      cq_complete: {
-        Args: {
-          p_actor?: string
-          p_board: string
-          p_card: string
-          p_note?: string
-        }
-        Returns: Json
-      }
-      cq_enqueue: {
-        Args: {
-          p_actor?: string
-          p_board: string
-          p_cards?: string[]
-          p_columns?: string[]
-          p_labels?: string[]
-          p_priorities?: string[]
-        }
-        Returns: Json
-      }
-      cq_list: {
-        Args: { p_actor?: string; p_board: string; p_statuses?: string[] }
-        Returns: Json
-      }
-      cq_move: {
-        Args: { p_actor?: string; p_position: number; p_queue_id: string }
-        Returns: undefined
-      }
-      cq_next: { Args: { p_actor?: string; p_board: string }; Returns: Json }
-      cq_note: {
-        Args: {
-          p_actor?: string
-          p_board: string
-          p_card: string
-          p_phase: string
-          p_text?: string
-        }
-        Returns: Json
-      }
-      cq_release: {
-        Args: {
-          p_actor?: string
-          p_board: string
-          p_card: string
-          p_note?: string
-        }
-        Returns: Json
-      }
-      cq_remove: {
-        Args: { p_actor?: string; p_queue_id: string }
-        Returns: undefined
-      }
-      cq_reprioritize: {
-        Args: { p_actor?: string; p_board: string }
-        Returns: Json
-      }
-      cq_setup_flow: {
-        Args: { p_actor?: string; p_board: string }
-        Returns: Json
-      }
-      cq_start: {
-        Args: { p_actor?: string; p_board: string; p_count?: number }
-        Returns: Json
-      }
-      cq_validate: {
-        Args: {
-          p_actor?: string
-          p_approve: boolean
-          p_board: string
-          p_card: string
-          p_note?: string
-        }
-        Returns: Json
-      }
-      create_api_token: {
-        Args: { p_expires_in_days?: number; p_name?: string; p_scopes?: Json }
-        Returns: Json
-      }
       create_project_board: {
         Args: {
           p_color?: string
@@ -2653,7 +2436,6 @@ export type Database = {
         Args: { p_invite_id: string }
         Returns: undefined
       }
-      delete_api_token: { Args: { p_id: string }; Returns: undefined }
       finance_goal_contribute: {
         Args: {
           p_amount_cents: number
@@ -2777,14 +2559,7 @@ export type Database = {
         Args: { p_board: string; p_columns: Json }
         Returns: number
       }
-      resolve_api_token: { Args: { p_hash: string }; Returns: string }
-      resolve_api_token_v2: {
-        Args: { p_client?: string; p_hash: string }
-        Returns: Json
-      }
       restore_site_backup: { Args: { p_tables: Json }; Returns: Json }
-      revoke_all_my_api_tokens: { Args: never; Returns: number }
-      revoke_api_token: { Args: { p_id: string }; Returns: undefined }
       schedule_project_cards: {
         Args: { p_board: string; p_patches: Json }
         Returns: number
@@ -3107,10 +2882,6 @@ export type Database = {
         }
       }
       try_cast_uuid: { Args: { p_text: string }; Returns: string }
-      update_api_token_scopes: {
-        Args: { p_id: string; p_scopes: Json }
-        Returns: Json
-      }
       user_can_access_board: {
         Args: { p_board_id: string; p_min_role?: string }
         Returns: boolean

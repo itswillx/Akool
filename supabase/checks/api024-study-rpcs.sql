@@ -17,7 +17,7 @@
 -- p_today a mais de 1 dia de São Paulo dá
 -- 22023, e ±infinity também (no p_today e na data-alvo, nunca o 22008 da
 -- subtração); e a estrutura (11 RPCs INVOKER, search_path vazio, EXECUTE só para
--- authenticated, akool_api por herança quando o papel existir).
+-- authenticated).
 --
 -- Subtransações (staging e produção): um append de 70 cards como
 -- authenticated, sem nenhum EXCEPTION em volta, abre uma subtransação só
@@ -804,16 +804,6 @@ begin
                                'study_checkpoint_remove:study_cards, study_checkpoint_toggle:study_cards, study_import_topic:jsonb, '
                                'study_quiz_answer:study_cards, study_quiz_reset:study_cards, study_reschedule:setof study_cards, '
                                'study_resource_add:study_cards, study_resource_remove:study_cards');
-  -- akool_api (API-004) herda de authenticated (§1.2): quando o papel existir,
-  -- as 11 têm de valer para ele sem grant direto.
-  if exists (select 1 from pg_roles where rolname = 'akool_api') then
-    select count(*)::text into r from pg_proc p
-     where p.pronamespace = 'public'::regnamespace and p.proname like 'study\_%' and p.proname <> 'study_lookup_cache_prune'
-       and has_function_privilege('akool_api', p.oid, 'EXECUTE');
-    out := out || pg_temp.expect('akool_api executa as 11 por herança', r, '11');
-  else
-    out := out || pg_temp.expect('akool_api ainda não existe (API-004): caso pulado', 'sem o papel', 'sem o papel');
-  end if;
   select format('%s %s',
                 (select count(*) from pg_trigger where tgrelid = 'public.study_cards'::regclass and not tgisinternal and tgname ilike '%quiz%'),
                 (select count(*) from pg_proc where pronamespace = 'private'::regnamespace and proname ilike '%quiz%' and prorettype = 'trigger'::regtype))

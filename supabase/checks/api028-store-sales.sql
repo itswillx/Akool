@@ -47,7 +47,8 @@
 --   * compatibilidade com o front antigo, repetindo as gravações dele;
 --   * estrutura: 9 funções INVOKER em public, 5 em private sem EXECUTE para
 --     clientes, gatilhos, CHECKs, as 3 policies de item que seguem a venda,
---     as 40 DEFINER do sec012 inalteradas.
+--     as 29 DEFINER do sec012 inalteradas (eram 40 até a remoção da API v1,
+--     20261015100000_remove_api_and_queue).
 --
 -- Bloco 2 (SÓ STAGING): o restore de verdade (ele apaga as tabelas antes de
 -- inserir) com linhas da Loja, uma venda antiga fora da regra inclusive. Só
@@ -1266,14 +1267,7 @@ begin
   out := out || pg_temp.expect('policies de item: o item segue a venda (SELECT: o dono do item ou a venda visível; UPDATE, com o WITH CHECK, e DELETE: só a venda visível; nenhuma pelo workspace do item); INSERT só em nome próprio',
                                r, '3 1 1 1 0 0');
   select count(*)::text into r from pg_proc where pronamespace = 'public'::regnamespace and prosecdef and has_function_privilege('authenticated', oid, 'execute');
-  out := out || pg_temp.expect('as funções DEFINER de public para authenticated continuam 40 (sec012)', r, '40');
-  if exists (select 1 from pg_roles where rolname = 'akool_api') then
-    select count(*)::text into r from pg_proc p
-     where p.pronamespace = 'public'::regnamespace and p.proname like 'store\_%' and has_function_privilege('akool_api', p.oid, 'EXECUTE');
-    out := out || pg_temp.expect('akool_api executa as 9 por herança', r, '9');
-  else
-    out := out || pg_temp.expect('akool_api ainda não existe (API-004): caso pulado', 'sem o papel', 'sem o papel');
-  end if;
+  out := out || pg_temp.expect('as funções DEFINER de public para authenticated continuam 29 (sec012, depois da remoção da API v1)', r, '29');
 
   raise exception using message = format(E'API-028 bloco 1: vendas da Loja (tudo desfeito)\n%s\n%s/%s ok', array_to_string(out, E'\n'),
                                          (select count(*) from unnest(out) l where l like 'ok%'), cardinality(out));
