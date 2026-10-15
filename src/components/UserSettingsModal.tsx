@@ -1,10 +1,9 @@
 import { lazy, Suspense, useRef, useState } from 'react'
-import { Bell, Database, Gift, KeyRound, Lock, LogOut, ScrollText, ShieldCheck, User, Users, X } from 'lucide-react'
+import { Bell, Database, Gift, Lock, LogOut, ScrollText, ShieldCheck, User, Users, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { useDialog } from '@/shared/hooks/useDialog'
-import ApiTokensSection from './ApiTokensSection'
 import MfaSection from './MfaSection'
 import ProfileTab from './settings/ProfileTab'
 import PasswordTab from './settings/PasswordTab'
@@ -26,7 +25,7 @@ const UserManagementPanel = lazy(() => import('./UserManagementPanel'))
 const BackupPanel = lazy(() => import('../modules/backup'))
 const AuditLogPanel = lazy(() => import('../modules/audit'))
 
-export type SettingsTab = 'profile' | 'password' | 'security' | 'notifications' | 'invites' | 'api' | 'users' | 'backup' | 'audit'
+export type SettingsTab = 'profile' | 'password' | 'security' | 'notifications' | 'invites' | 'users' | 'backup' | 'audit'
 type Tab = SettingsTab
 
 interface Props {
@@ -84,7 +83,6 @@ export default function UserSettingsModal({ open, onClose, initialTab }: Props) 
             <TabBtn active={tab === 'security'} onClick={() => setTab('security')} icon={<ShieldCheck size={13} />} label={t('settings_tab_security')} />
             <TabBtn active={tab === 'notifications'} onClick={() => setTab('notifications')} icon={<Bell size={13} />} label={t('settings_tab_notifications')} />
             <TabBtn active={tab === 'invites'} onClick={() => setTab('invites')} icon={<Gift size={13} />} label={t('settings_tab_invites')} />
-            <TabBtn active={tab === 'api'} onClick={() => setTab('api')} icon={<KeyRound size={13} />} label={t('settings_tab_api')} />
             {isAdmin && <TabBtn active={tab === 'users'} onClick={() => setTab('users')} icon={<Users size={13} />} label={t('sidebar_users')} />}
             {isAdmin && <TabBtn active={tab === 'backup'} onClick={() => setTab('backup')} icon={<Database size={13} />} label={t('sidebar_backup')} />}
             {isAdmin && <TabBtn active={tab === 'audit'} onClick={() => setTab('audit')} icon={<ScrollText size={13} />} label={t('sidebar_audit')} />}
@@ -102,7 +100,6 @@ export default function UserSettingsModal({ open, onClose, initialTab }: Props) 
           {tab === 'audit' && <Suspense fallback={<PanelFallback />}><AuditLogPanel /></Suspense>}
           {!adminPanel && (
             <div style={{ maxWidth: SETTINGS_FORM_MAX_WIDTH, margin: '0 auto' }}>
-              {tab === 'api' && <ApiTokensSection onOpenSecurity={() => setTab('security')} />}
               {tab === 'security' && <MfaSection />}
               {tab === 'profile' && <ProfileTab />}
               {tab === 'password' && <PasswordTab />}

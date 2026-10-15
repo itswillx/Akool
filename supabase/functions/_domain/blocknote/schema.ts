@@ -17,11 +17,11 @@
 // o valor já limitado), e um RangeError vira problema, nunca um 500.
 //
 // As partes planas (props de cada tipo, props da célula, snapshot do card e
-// appState do diagrama) são JSON Schema do subconjunto do _api/schema.ts, que
+// appState do diagrama) são JSON Schema do subconjunto do ../jsonSchema.ts, que
 // conta caracteres por code point (como o Postgres) e confere datas por
-// Date.UTC. _api/schema.ts é folha (não importa nada); ele nunca importa _domain.
+// Date.UTC. jsonSchema.ts é folha (não importa nada).
 
-import { compileSchema, jsonPointer, MAX_ISSUES, type JsonSchema, type SchemaIssue } from '../../_api/schema.ts'
+import { compileSchema, jsonPointer, MAX_ISSUES, type JsonSchema, type SchemaIssue } from '../jsonSchema.ts'
 import { diagramIssues } from './diagram.ts'
 import { snapshotIssues } from './projectCard.ts'
 import { tableGridProblem, tableWidth, widthSpan } from './table.ts'
@@ -53,12 +53,6 @@ export interface ValidateOptions {
   maxIssues?: number
   /** Tamanho já medido (corpo cru do gateway); sem ele, mede o JSON compacto. */
   bytes?: number
-  /**
-   * Sem o teto de células da nota inteira (Σ células²), só o de cada tabela.
-   * Para a fase 1 do markdownToNote: lá só entram os blocos novos, e a nota
-   * final passa depois pelo noteLimitIssues contra o custo da nota atual.
-   */
-  skipNoteCellCost?: boolean
 }
 
 export interface NoteStats {
@@ -223,13 +217,11 @@ class Walker {
   /** Σ células² das tabelas já vistas (o custo quadrático do create). */
   tableCost = 0
   tableCostReported = false
-  readonly skipNoteCellCost: boolean
 
   constructor(opts: ValidateOptions) {
     this.form = opts.form ?? 'partial'
     this.stored = opts.stored ?? false
     this.fatalOnly = opts.fatalOnly ?? false
-    this.skipNoteCellCost = opts.skipNoteCellCost ?? false
     this.limits = { ...LIMITS, ...opts.limits }
     this.out = new Collector(Math.max(1, opts.maxIssues ?? MAX_ISSUES), this.fatalOnly)
     this.reserved = new Set(opts.reservedIds ?? [])
@@ -629,12 +621,12 @@ class Walker {
     this.columnWidths(content, typedRows, at)
   }
 
-  /** Contrato: o create é quadrático por tabela; teto por tabela e por nota (Σ células², sem skipNoteCellCost). */
+  /** Contrato: o create é quadrático por tabela; teto por tabela e por nota (Σ células²). */
   tableCells(cells: number, at: Segments): void {
     const over = cells > TABLE_LIMITS.contractCells
     if (over) this.out.add(false, at, 'maxCells', `A tabela passa de ${TABLE_LIMITS.contractCells} células (o editor fica lento)`)
     this.tableCost += cells * cells
-    if (!over && !this.skipNoteCellCost && !this.tableCostReported && this.tableCost > TABLE_LIMITS.noteCellCost) {
+    if (!over && !this.tableCostReported && this.tableCost > TABLE_LIMITS.noteCellCost) {
       this.tableCostReported = true
       this.out.add(false, at, 'maxCells', `As tabelas da nota passam do teto de células da nota inteira (soma de células² acima de ${TABLE_LIMITS.noteCellCost}; o editor fica lento)`)
     }
@@ -751,7 +743,7 @@ function measure(value: unknown, known: number | undefined): number | 'error' {
 
 /**
  * Confere uma nota inteira. `ok` só sem nenhum problema; os fatais vêm
- * primeiro e, no máximo, `maxIssues` (20, como o _api/schema.ts).
+ * primeiro e, no máximo, `maxIssues` (20, como o jsonSchema.ts).
  */
 export function validateNoteContent(value: unknown, opts: ValidateOptions = {}): NoteValidation {
   const walker = new Walker(opts)
@@ -776,94 +768,6 @@ export function validateNoteContent(value: unknown, opts: ValidateOptions = {}):
 }
 
 /**
- * Limites de contrato da nota inteira, sem as regras de cada bloco: ids
- * únicos (fatal), blocos, profundidade e bytes do JSON compacto. É a
- * conferência da nota juntada (o anexar do API-044 e a regravação em
- * Markdown, API-023), cujos blocos herdados vêm do banco e podem ter desvio de
- * contrato: junto com validateNoteContent({ stored: true, fatalOnly: true }),
- * que pega o que é fatal (o fatalOnly pula os limites).
- *
- * O teto de células da nota inteira (Σ células², TABLE_LIMITS.noteCellCost)
- * vale contra a `baseline` (a nota atual, ou o custo dela já calculado): o
- * problema só sai quando a nota juntada passa do teto e custa mais que a base.
- * Assim a nota antiga já acima do teto pode ser regravada sem somar tabela.
- */
-export function noteLimitIssues(value: unknown, opts: { limits?: Partial<Limits>; maxIssues?: number; baseline?: unknown } = {}): BlockIssue[] {
-  const limits = { ...LIMITS, ...opts.limits }
-  const out = new Collector(Math.max(1, opts.maxIssues ?? MAX_ISSUES), false)
-  if (!Array.isArray(value)) {
-    out.add(true, [], 'type', 'A nota deve ser uma lista de blocos')
-    return out.result()
-  }
-  const ids = new Map<string, string>()
-  const stack: Frame[] = []
-  for (let i = value.length - 1; i >= 0; i--) stack.push({ block: value[i], path: [i], depth: 1 })
-  let blocks = 0
-  let depthReported = false
-  // O custo das tabelas acumulado e a tabela em que ele passa do teto e da base.
-  const ceiling = Math.max(TABLE_LIMITS.noteCellCost, typeof opts.baseline === 'number' ? opts.baseline : noteTableCost(opts.baseline))
-  let cost = 0
-  let crossing: Segments | null = null
-  while (stack.length > 0) {
-    const frame = stack.pop() as Frame
-    if (++blocks > limits.maxBlocks) {
-      out.add(false, [], 'maxBlocks', `A nota passa de ${limits.maxBlocks} blocos`)
-      break
-    }
-    if (!isPlainObject(frame.block)) continue
-    const cells = tableCellCount(frame.block)
-    cost += cells * cells
-    if (crossing === null && cost > ceiling) crossing = [...frame.path, 'content']
-    const { id, children } = frame.block
-    if (typeof id === 'string' && id !== '') {
-      const first = ids.get(id)
-      if (first !== undefined) out.add(true, [...frame.path, 'id'], 'duplicateId', `Id repetido no documento (o primeiro está em ${first})`)
-      else ids.set(id, jsonPointer(frame.path))
-    }
-    if (!Array.isArray(children) || children.length === 0) continue
-    const depth = frame.depth + 1
-    if (depth > limits.maxDepth && !depthReported) {
-      depthReported = true
-      out.add(false, [...frame.path, 'children'], 'maxDepth', `A nota passa de ${limits.maxDepth} níveis de blocos aninhados`)
-    }
-    if (depth > HARD_MAX_DEPTH) continue
-    for (let i = children.length - 1; i >= 0; i--) stack.push({ block: children[i], path: [...frame.path, 'children', i], depth })
-  }
-  if (crossing) out.add(false, crossing, 'maxCells', `As tabelas da nota passam do teto de células da nota inteira (soma de células² acima de ${TABLE_LIMITS.noteCellCost}; o editor fica lento)`)
-  const size = measure(value, undefined)
-  if (size === 'error') out.add(false, [], 'maxBytes', 'Conteúdo grande ou aninhado demais para medir')
-  else if (size > limits.maxBytes) out.add(false, [], 'maxBytes', `A nota passa de ${limits.maxBytes} bytes`)
-  return out.result()
-}
-
-/** Células da tabela como o Walker.tableCells conta (linhas × largura); 0 quando não é tabela ou as linhas não têm cells (aí é fatal). */
-function tableCellCount(block: Json): number {
-  if (block.type !== 'table' || !isPlainObject(block.content)) return 0
-  const rows = block.content.rows
-  if (!Array.isArray(rows) || !rows.every(row => isPlainObject(row) && Array.isArray(row.cells))) return 0
-  return rows.length * tableWidth(rows as { cells: unknown[] }[], false)
-}
-
-/**
- * Custo das tabelas da nota inteira no create do editor: Σ células², a conta
- * do Walker.tableCells (o teto é TABLE_LIMITS.noteCellCost). É a base do
- * noteLimitIssues; nota que não é lista custa 0.
- */
-export function noteTableCost(value: unknown): number {
-  if (!Array.isArray(value)) return 0
-  let cost = 0
-  const stack: { block: unknown; depth: number }[] = value.map(block => ({ block, depth: 1 }))
-  while (stack.length > 0) {
-    const { block, depth } = stack.pop() as { block: unknown; depth: number }
-    if (!isPlainObject(block)) continue
-    const cells = tableCellCount(block)
-    cost += cells * cells
-    if (Array.isArray(block.children) && depth < HARD_MAX_DEPTH) for (const child of block.children) stack.push({ block: child, depth: depth + 1 })
-  }
-  return cost
-}
-
-/**
  * Guarda do NoteEditor: o primeiro problema fatal do conteúdo (gravado,
  * rascunho offline ou remoto), ou null se o editor pode abri-lo.
  */
@@ -873,9 +777,8 @@ export function findFatalNoteIssue(value: unknown): BlockIssue | null {
 }
 
 /**
- * Para o corpo do erro da API (`validationFailed` do _api/errors.ts): o mesmo
- * formato do SchemaIssue, sem o campo `fatal` (que não é documentado), com os
- * fatais primeiro.
+ * Os problemas no formato do SchemaIssue (o do jsonSchema.ts), sem o campo
+ * `fatal`, com os fatais primeiro.
  */
 export function toSchemaIssues(issues: readonly BlockIssue[]): SchemaIssue[] {
   return [...issues.filter(i => i.fatal), ...issues.filter(i => !i.fatal)].map(({ path, keyword, message }) => ({ path, keyword, message }))

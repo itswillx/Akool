@@ -8,13 +8,13 @@ ChevronLeft, ChevronRight,
 Image,
 Link2
 } from 'lucide-react'
-import { memo, useContext } from 'react'
+import { memo } from 'react'
 import { UserAvatar } from '@/shared/ui/UserAvatar'
 import { useLanguage } from '../../../i18n/LanguageContext'
 import { cardKeyDown } from '../../../lib/dndAccessibility'
 import type { ProjectCard } from '../../../types'
-import { QueueBadgeContext, todayStr } from '../projectsShared'
-import { PriorityBadge, QueueBadgePill } from '../ui'
+import { todayStr } from '../projectsShared'
+import { PriorityBadge } from '../ui'
 
 // ─── Card presentational ────────────────────────────────────────────────────
 
@@ -30,7 +30,6 @@ export const CardView = memo(function CardView({ card, priorityLabel, dragging }
   const checklistDone = checklist.filter(i => i.completed).length
   const checklistTotal = checklist.length
   const attachmentCount = card.attachments?.length ?? 0
-  const queueBadge = useContext(QueueBadgeContext).get(card.id)
   return (
     <div
       style={{
@@ -41,7 +40,6 @@ export const CardView = memo(function CardView({ card, priorityLabel, dragging }
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: 'var(--color-text)', lineHeight: 1.35, textDecoration: card.completed ? 'line-through' : 'none', wordBreak: 'break-word' }}>{card.title || t('projects_new_card')}</span>
-        {queueBadge && <QueueBadgePill badge={queueBadge} />}
       </div>
       {(card.labels?.length ?? 0) > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>

@@ -52,8 +52,13 @@ describe('staging-reset: functions', () => {
 
   it('verify_jwt vem do config.toml (padrão true)', () => {
     expect(verifyJwtFor('site-backup', toml)).toBe(false)
-    expect(verifyJwtFor('cards-api', toml)).toBe(false)
     expect(verifyJwtFor('admin-ops', toml)).toBe(true)
+    // Seção no meio do arquivo: o valor dela não vaza para a seguinte (o
+    // config.toml real só tem uma seção de function, no fim).
+    const two = '[functions.a]\nverify_jwt = false\n\n[functions.b]\nverify_jwt = true\n\n[functions.c]\n'
+    expect(verifyJwtFor('a', two)).toBe(false)
+    expect(verifyJwtFor('b', two)).toBe(true)
+    expect(verifyJwtFor('c', two)).toBe(true)
   })
 
   it('acha os imports relativos', () => {

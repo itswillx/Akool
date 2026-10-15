@@ -59,7 +59,7 @@ describe('camada de dados (ARCH-003)', () => {
     const current = currentCounts()
     for (const file of [
       'src/contexts/PagesContext.tsx', 'src/modules/projects/ProjectsPanel.tsx',
-      'src/modules/projects/QueueModal.tsx', 'src/modules/projects/boardLoader.ts',
+      'src/modules/projects/boardLoader.ts',
       // API-029: Estudos passa pela src/lib/data/study.ts.
       'src/modules/study/useStudyTopics.ts',
     ]) {

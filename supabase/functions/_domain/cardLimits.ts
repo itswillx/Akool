@@ -1,6 +1,6 @@
-// API-013: os limites do gatilho project_cards_integrity (e do cq_block), num
-// lugar só. O modal e a importação os seguem para o servidor não recusar no
-// meio de uma edição. Os de rótulo ficam em ./cardLabels.
+// API-013: os limites do gatilho project_cards_integrity, num lugar só. O
+// modal e a importação os seguem para o servidor não recusar no meio de uma
+// edição. Os de rótulo ficam em ./cardLabels.
 // API-027: moram em _domain (o app reexporta por src/lib/cardLimits.ts), e
 // cardLimits.test.ts confere os números com a migration do API-013.
 

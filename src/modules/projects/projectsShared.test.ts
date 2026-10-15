@@ -1,33 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { CollisionDetection } from '@dnd-kit/core'
-import { collisionDetection, queueBadgeLabel, todayStr } from './projectsShared'
+import { collisionDetection, todayStr } from './projectsShared'
 
-// Helpers puros do módulo de projetos: data local, selo da fila e a colisão
-// do arrasto (colunas só colidem com colunas).
+// Helpers puros do módulo de projetos: data local e a colisão do arrasto
+// (colunas só colidem com colunas).
 
 describe('todayStr', () => {
   it('é a data local no formato YYYY-MM-DD', () => {
     const d = new Date()
     const expected = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     expect(todayStr()).toBe(expected)
-  })
-})
-
-describe('queueBadgeLabel', () => {
-  const t = (k: string) => k
-
-  it('na fila mostra a posição', () => {
-    expect(queueBadgeLabel(t, { kind: 'queued', rank: 3 })).toBe('projects_queue_badge_queued'.replace('{rank}', '3'))
-  })
-
-  it('validar e aguardando têm rótulo próprio', () => {
-    expect(queueBadgeLabel(t, { kind: 'review' })).toBe('projects_queue_badge_review')
-    expect(queueBadgeLabel(t, { kind: 'waiting' })).toBe('projects_queue_badge_waiting')
-  })
-
-  it('em andamento mostra a fase, ou o genérico sem fase', () => {
-    expect(queueBadgeLabel(t, { kind: 'working', phase: 'plano' })).toBe('projects_queue_phase_plano')
-    expect(queueBadgeLabel(t, { kind: 'working', phase: null })).toBe('projects_queue_badge_working')
   })
 })
 

@@ -78,16 +78,10 @@ enable_confirmations = false
 [analytics]
 enabled = false
 
-# site-backup (e cards-api, abaixo) roda com verify_jwt = false: o disparo automatico se
+# site-backup roda com verify_jwt = false: o disparo automatico se
 # autentica pelo header `x-cron-secret`, sem JWT nenhum (ver verifyAdmin em
 # functions/site-backup/index.ts). O default do CLI e `true`, entao sem esta
 # secao um `functions deploy site-backup` sem `--no-verify-jwt` liga a verificacao
 # no remoto e mata o backup automatico em silencio.
 [functions.site-backup]
-verify_jwt = false
-
-# cards-api se autentica por token pessoal (`Bearer akool_pat_…`, hash em
-# public.api_tokens), não por JWT do Supabase. Com verify_jwt = true o gateway
-# recusaria o token antes de chegar na function.
-[functions.cards-api]
 verify_jwt = false

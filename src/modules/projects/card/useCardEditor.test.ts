@@ -214,7 +214,7 @@ describe('sessão e fechamento', () => {
     expect(result.current.form).toMatchObject({ title: 'meu', description: 'dela' })
   })
 
-  it('Aprovar espera a gravação em voo (H10)', async () => {
+  it('Salvar espera a gravação em voo (H10)', async () => {
     const first = deferred<CardSave>()
     const { io } = fakeIO([first])
     const { result } = mount(io)

@@ -5,9 +5,8 @@
 // não deixa o @blocknote/core entrar em _domain; a paridade da versão
 // instalada fica em blocknote.test.ts (package-lock.json).
 //
-// Subir o BlockNote (o ^0.50.0 aceita 0.50.x) exige atualizar este arquivo e
-// republicar a function api: o app e a API precisam aceitar a mesma coisa
-// (docs/api-arquitetura.md §3).
+// Subir o BlockNote (o ^0.50.0 aceita 0.50.x) exige atualizar este arquivo: o
+// editor e o validador precisam aceitar a mesma coisa.
 
 export const BLOCKNOTE_VERSION = '0.50.0'
 

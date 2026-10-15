@@ -1,6 +1,6 @@
 import type { Database as GeneratedDatabase } from './database'
 import type {
-  ApiScopes, AppNotification, FinanceAccountType, FinanceAttachment, FinanceGoalStatus,
+  AppNotification, FinanceAccountType, FinanceAttachment, FinanceGoalStatus,
   FinanceRecurringEntryStatus, FinanceStoreChannel, FinanceStoreCondition,
   FinanceStoreProductKind, FinanceStorePurchaseStatus, FinanceStoreSaleStatus,
   FinanceTxType, PageShareRole, PageType, ProjectCardAttachment,
@@ -48,7 +48,6 @@ type PatchTable<T extends GeneratedTables[keyof GeneratedTables], P, Filled exte
 }
 
 type TableOverrides = Overrides<{
-  api_tokens: { scopes: ApiScopes }
   audit_log: { details: Record<string, unknown> }
   drawing_contents: {
     elements: unknown[] | null
@@ -83,11 +82,6 @@ type TableOverrides = Overrides<{
     role: 'admin' | 'standard'
     theme: 'light' | 'dark'
     finance_dashboard_view: 'simple' | 'detailed'
-  }
-  project_card_queue: {
-    phase: 'avaliacao' | 'plano' | 'aprovado' | 'desenvolvimento' | null
-    source: 'app' | 'api'
-    status: 'queued' | 'in_progress' | 'review' | 'done' | 'blocked' | 'cancelled'
   }
   project_cards: {
     priority: ProjectCardPriority
@@ -127,8 +121,6 @@ type PatchedTables = {
 
 /** Argumentos jsonb das RPCs com a forma que o app manda. */
 type FunctionArgOverrides = {
-  create_api_token: { p_scopes?: ApiScopes }
-  update_api_token_scopes: { p_scopes: ApiScopes }
   reorder_project_cards: { p_moves: { id: string; column_id: string; sort_order: number }[] }
   reorder_project_columns: { p_columns: { id: string; sort_order: number }[] }
   schedule_project_cards: {

@@ -47,10 +47,11 @@ Substitua `https://SUA-URL-COOLIFY` pela URL final (domínio) do recurso no Cool
 
 ### 3.1 Edge Functions → Secrets
 
-Functions ativas no projeto, todas com fonte em `supabase/functions/`: `admin-ops`,
-`cards-api` e `site-backup`. As de IA (`ai-chat`, `analyze-transaction-photo`,
+Functions ativas no projeto, todas com fonte em `supabase/functions/`: `admin-ops`
+e `site-backup`. As de IA (`ai-chat`, `analyze-transaction-photo`,
 `categorize-transactions` e `study-lookup`) saíram em 01/10/2026 (SEC-015): nenhuma
-tela as chamava, e a chave de IA guardada em `profile_secrets` foi apagada.
+tela as chamava, e a chave de IA guardada em `profile_secrets` foi apagada. A
+function da fila de desenvolvimento (API v1) saiu em 14/10/2026.
 
 > `google-calendar` foi **aposentada em 2026-08-12 (SEC-009)**. A tabela
 > `user_google_tokens` que ela lia/gravava nunca chegou a ser provisionada no

@@ -5,7 +5,7 @@ import { ProjectCardBlock } from './blocks/ProjectCardBlock'
 // API-020: o schema das notas, fora do NoteEditor para o teste de
 // compatibilidade (noteSchema.test.ts) comparar com o spec do validador
 // (supabase/functions/_domain/blocknote/spec.ts) e carregar as fixtures no
-// editor de verdade. Mudar um bloco aqui exige mudar o spec e republicar a api.
+// editor de verdade. Mudar um bloco aqui exige mudar o spec.
 export const noteSchema = BlockNoteSchema.create({
   blockSpecs: { ...defaultBlockSpecs, diagram: DiagramBlock(), projectCard: ProjectCardBlock() },
 })

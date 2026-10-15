@@ -1,17 +1,10 @@
 // ARCH-002: saiu do ProjectsPanel.tsx sem mudança de lógica.
-import {
-Bot,
-CheckCheck,
-ListOrdered,
-UserRound,
-X
-} from 'lucide-react'
+import { X } from 'lucide-react'
 import { Backdrop } from '@/shared/ui/Backdrop'
 import { useDialog } from '@/shared/hooks/useDialog'
 import { useLanguage } from '../../i18n/LanguageContext'
-import { type QueueBadge } from '../../lib/cardQueue'
 import type { ProjectCardPriority } from '../../types'
-import { PRIORITY_COLORS, queueBadgeLabel } from './projectsShared'
+import { PRIORITY_COLORS } from './projectsShared'
 
 // ─── Modal wrapper ────────────────────────────────────────────────────────────
 
@@ -106,21 +99,6 @@ export function PriorityBadge({ priority, label }: { priority: ProjectCardPriori
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, color: c, backgroundColor: `${c}1f`, padding: '2px 7px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
       {label}
-    </span>
-  )
-}
-
-export function QueueBadgePill({ badge }: { badge: QueueBadge }) {
-  const { t } = useLanguage()
-  const c = badge.kind === 'queued' ? 'var(--color-accent)'
-    : badge.kind === 'review' ? '#0891b2'
-    : badge.kind === 'waiting' ? '#dc2626'
-    : badge.phase === 'plano' || badge.phase === 'aprovado' ? '#8b5cf6' : '#f59e0b'
-  const Icon = badge.kind === 'queued' ? ListOrdered : badge.kind === 'review' ? CheckCheck : badge.kind === 'waiting' ? UserRound : Bot
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: c, backgroundColor: `${c}1f`, padding: '2px 6px', borderRadius: 999, whiteSpace: 'nowrap', flexShrink: 0 }}>
-      <Icon size={10} />
-      {queueBadgeLabel(t, badge)}
     </span>
   )
 }

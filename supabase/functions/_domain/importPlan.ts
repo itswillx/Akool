@@ -188,7 +188,7 @@ export interface ExistingCard {
 /**
  * O card do quadro de cada ID externo ("ID —" ou "ID -" no começo do título,
  * como titleMatchesExternalId): o 1º da lista, que o caller manda do mais
- * antigo para o mais novo (oldestFirst), como o cq_resolve_card.
+ * antigo para o mais novo (oldestFirst).
  */
 function boardCardsByExternalId(existing: readonly ExistingCard[]): Map<string, ExistingCard> {
   const byId = new Map<string, ExistingCard>()

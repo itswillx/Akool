@@ -185,7 +185,7 @@ describe('index.html (UX-014)', () => {
  * os arquivos novos ainda fora do índice do git.
  */
 export function guardedSourceFiles(): string[] {
-  return execSync('git ls-files --cached --others --exclude-standard src supabase/functions/_domain supabase/functions/_api', { cwd: ROOT, encoding: 'utf8' })
+  return execSync('git ls-files --cached --others --exclude-standard src supabase/functions/_domain', { cwd: ROOT, encoding: 'utf8' })
     .split('\n')
     .filter(f => /\.(ts|tsx)$/.test(f) && !/\.(test|bench)\.|\/test\//.test(f) && existsSync(join(ROOT, f)))
 }
@@ -193,8 +193,8 @@ export function guardedSourceFiles(): string[] {
 describe('arquivos das travas de código (API-027)', () => {
   it('varrem o app e os módulos puros das functions, sem os testes', () => {
     const files = guardedSourceFiles()
-    expect(files).toEqual(expect.arrayContaining(['src/lib/localDate.ts', 'supabase/functions/_domain/isoDate.ts', 'supabase/functions/_api/schema.ts']))
-    expect(files.filter(f => f.includes('.test.') || !/^(src|supabase\/functions\/_domain|supabase\/functions\/_api)\//.test(f))).toEqual([])
+    expect(files).toEqual(expect.arrayContaining(['src/lib/localDate.ts', 'supabase/functions/_domain/isoDate.ts', 'supabase/functions/_domain/jsonSchema.ts']))
+    expect(files.filter(f => f.includes('.test.') || !/^(src|supabase\/functions\/_domain)\//.test(f))).toEqual([])
   })
 })
 
@@ -202,7 +202,7 @@ describe('arquivos das travas de código (API-027)', () => {
 // local (localDateKey), nunca da data UTC (que vira amanhã às 21h em
 // Brasília); e toda data formatada leva o locale do perfil (localeOf(lang)),
 // nunca o do navegador. Os dois resíduos voltaram depois dos cards; esta trava
-// impede o terceiro. Em _domain e _api não há relógio (o "hoje" vem de quem
+// impede o terceiro. Em _domain não há relógio (o "hoje" vem de quem
 // chama), e o eslint barra o resto.
 describe('datas: relógio local e locale do perfil (REL-007, UX-011)', () => {
   const files = guardedSourceFiles().filter(f => f !== 'src/lib/localDate.ts')

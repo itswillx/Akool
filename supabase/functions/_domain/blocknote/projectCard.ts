@@ -12,7 +12,7 @@
 //   quebra o render (cai na cor padrão). No modo gravado, chave a mais é tolerada: uma versão
 //   nova do app pode gravar um campo que a function ainda não conhece.
 
-import { compileSchema, jsonPointer, type JsonSchema, type SchemaIssue } from '../../_api/schema.ts'
+import { compileSchema, jsonPointer, type JsonSchema, type SchemaIssue } from '../jsonSchema.ts'
 import { CARD_LABEL_MAX_LENGTH, CARD_LABELS_MAX } from '../cardLabels.ts'
 import { CHECKLIST_MAX_ITEMS, CHECKLIST_MAX_TEXT } from '../cardLimits.ts'
 import type { ProjectCardPriority } from '../projectTypes.ts'
@@ -187,8 +187,8 @@ function sameCardProps(a: unknown, b: unknown): boolean {
  * API-044: os blocos projectCard de `after` que não estavam em `before` com o
  * mesmo id e as mesmas props (cardId, boardId e snapshot). Inserir card de
  * projeto pela API exige também projetos.cards:ler, e o snapshot é montado no
- * servidor (docs/api-arquitetura.md); com isto a API recusa, ou remonta, o
- * snapshot inventado por quem só tem documentos.notas:escrever.
+ * servidor; com isto a API recusa, ou remonta, o snapshot inventado por quem
+ * só tem documentos.notas:escrever.
  */
 export function newProjectCardIds(before: unknown, after: unknown): ProjectCardRef[] {
   const known = new Map<string, unknown>()

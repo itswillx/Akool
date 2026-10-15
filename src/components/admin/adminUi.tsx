@@ -78,14 +78,14 @@ export function CopyCodeButton({ copied, onCopy, compact }: { copied: boolean; o
   const color = copied ? 'var(--color-success)' : 'var(--color-text-muted)'
   if (compact) {
     return (
-      <button type="button" onClick={onCopy} title={t('settings_api_copy')} aria-label={t('settings_api_copy')} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color }}>
+      <button type="button" onClick={onCopy} title={t('settings_invites_copy')} aria-label={t('settings_invites_copy')} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color }}>
         {copied ? <CheckCheck size={12} /> : <Copy size={12} />}
       </button>
     )
   }
   return (
     <button type="button" onClick={onCopy} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', fontSize: 12, color }}>
-      {copied ? <><CheckCheck size={12} /> {t('settings_api_copied')}</> : <><Copy size={12} /> {t('settings_api_copy')}</>}
+      {copied ? <><CheckCheck size={12} /> {t('settings_invites_copied')}</> : <><Copy size={12} /> {t('settings_invites_copy')}</>}
     </button>
   )
 }

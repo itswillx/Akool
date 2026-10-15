@@ -136,14 +136,14 @@ consta como aplicado. Um push tentaria reaplicar tudo — na melhor hipótese fa
 2. Aplique no remoto via MCP `apply_migration` com o mesmo `nome_em_snake_case`.
 3. Commite o arquivo. (O ledger remoto ganhará um timestamp próprio — esperado.)
 
-**Mensagens de erro que chegam à API (API-005).** A API (`supabase/functions/_api/errors.ts`) só repassa o texto de um `raise` quando ele é do app: código `P0001` (o padrão de `raise exception` sem `errcode`) ou qualquer código com `hint = 'akool'`. O resto vira uma mensagem genérica com o código estável, para não vazar detalhe de RLS, constraint ou tabela. Função nova que valida entrada e tem uma mensagem útil para quem chama usa o código certo e marca:
+**Mensagens de erro das funções (API-005).** O texto de um `raise` é do app quando o código é `P0001` (o padrão de `raise exception` sem `errcode`) ou quando a exceção marca `hint = 'akool'`. O app decide pelo código e, quando o código também sai do próprio Postgres (ex.: `23505`), pelo `hint` (`studyErrorKind` em `src/lib/data/study.ts`). Função nova que valida entrada e tem uma mensagem útil para quem chama usa o código certo e marca:
 
 ```sql
 raise exception 'Validade deve ser de 7, 30, 90 ou 365 dias'
   using errcode = '22023', hint = 'akool';
 ```
 
-O texto vai como está (em pt-BR) para o app, para o MCP e para o REST; nada de dado de outra pessoa nem nome de tabela na mensagem.
+O texto vai como está (em pt-BR) para o app; nada de dado de outra pessoa nem nome de tabela na mensagem.
 
 **Gatilhos que dependem do usuário (API-006).** Restauração de backup (service_role), jobs do `pg_cron` e migrations rodam sem usuário: `auth.uid()` é nulo e `auth.role()` é `service_role` ou nulo. Um gatilho que confere filiação ou dono pelo usuário recusaria tudo nesses contextos (foi o caso da `finance_guard_workspace` até a `20261005150000_api006_guards_without_user`: nenhum backup com linha de workspace restaurava). Regra para gatilho novo ou alterado:
 
@@ -154,6 +154,8 @@ if auth.uid() is null and coalesce(auth.role(), '') not in ('authenticated', 'an
 end if;
 ```
 
-- Nunca pule para sessão do app ou da API (`authenticated`, `akool_api`): elas sempre têm `sub`, e um JWT de cliente sem `sub` continua conferido.
+- Nunca pule para sessão do app (`authenticated`): ela sempre tem `sub`, e um JWT de cliente sem `sub` continua conferido.
 - No UPDATE, valide só as colunas que mudaram (`new.x is distinct from old.x`).
+- Só a validação pula. O que é padrão da linha vale também sem usuário: o card sem `sort_order` vai para o fim da coluna e o `updated_at` é a versão do conteúdo (API-013, `project_cards_integrity`); o `finance_recurring_day_moved` (API-016); a posição e a versão dos cards de Estudos (API-021, `study_cards_rules`). As CHECK valem sempre: um backup que as fere deixa de restaurar.
+- Seguem a regra, com o restore provado no staging: `api013-project-cards.sql`, `api016-recurring.sql`, `api021-study.sql` e `api028-store-sales.sql` (bloco 2 de cada um, em `supabase/checks/`).
 - O harness do card inclui um INSERT sem claims, imitando a restauração e o cron (`supabase/checks/api006-restore.sql` é o modelo).

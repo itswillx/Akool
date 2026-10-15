@@ -1,9 +1,8 @@
-// API-005: validador do subconjunto de JSON Schema das ações da API
-// (docs/api-arquitetura.md §4). Puro e sem dependência: o Vitest, o gateway
-// (API-010) e o gerador do OpenAPI (API-017) usam o mesmo arquivo.
+// API-005: validador de um subconjunto de JSON Schema. Puro e sem dependência
+// (não importa nada): o validador de notas (blocknote/schema.ts, diagram.ts e
+// projectCard.ts) compila as partes planas com ele, no app e no Vitest.
 //
-// Sem coerção e sem default: converter texto de query string em número é do
-// http.ts (API-010), e o handler recebe exatamente o que foi validado.
+// Sem coerção e sem default: quem chama recebe exatamente o que foi validado.
 
 export type JsonType = 'object' | 'array' | 'string' | 'integer' | 'number' | 'boolean' | 'null'
 export type JsonFormat = 'date' | 'month' | 'date-time' | 'uuid' | 'email'
@@ -26,7 +25,7 @@ export interface JsonSchema {
   minItems?: number
   maxItems?: number
   oneOf?: readonly JsonSchema[]
-  // Só documentação (OpenAPI e MCP): não validam nada.
+  // Só documentação: não validam nada.
   title?: string
   description?: string
   default?: unknown

@@ -89,7 +89,7 @@ export function filterProjectCards(
     }
     if (filters.priorities.length > 0 && !filters.priorities.includes(card.priority)) return false
     if (!matchesDuePreset(card, filters.duePreset, today)) return false
-    // API-013: rótulo sem diferença de caixa, como cq_cards e cq_enqueue.
+    // API-013: rótulo sem diferença de caixa, como no gatilho do servidor.
     if (filters.labels.length > 0 && !filters.labels.some(l => hasCardLabel(card.labels, l))) return false
     if (filters.assigneeId === 'unassigned') {
       if (card.assignee_user_id) return false

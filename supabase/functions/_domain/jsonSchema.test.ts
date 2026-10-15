@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compileSchema, jsonPointer, matchesFormat, MAX_ISSUES, schemaProblems, validate, type JsonSchema } from './schema.ts'
+import { compileSchema, jsonPointer, matchesFormat, MAX_ISSUES, schemaProblems, validate, type JsonSchema } from './jsonSchema.ts'
 
 const issuesOf = (schema: JsonSchema, value: unknown) => {
   const result = validate(schema, value)
@@ -78,6 +78,9 @@ describe('validate: tipos', () => {
     [{ type: 'object' }, null, false],
     [{ type: 'array' }, [], true],
     [{ type: ['string', 'null'] }, null, true],
+    // Fora do JSON (undefined, função): nenhum tipo serve.
+    [{ type: 'null' }, undefined, false],
+    [{ type: 'object' }, () => ({}), false],
   ] as const)('%j com %j → %s', (schema, value, ok) => {
     expect(validate(schema as JsonSchema, value).ok).toBe(ok)
   })

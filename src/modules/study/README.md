@@ -137,8 +137,8 @@ em `supabase/checks/api021-study.sql`.
 - **Dono:** card e diário só em tópico do mesmo dono, conferido no INSERT e
   quando `topic_id`/`user_id` muda. Tópico alheio ou inexistente dá P0002
   "Tópico não encontrado". Os dois gatilhos são SECURITY DEFINER e leem o
-  tópico por cima do RLS: um token só com `estudos.diario` (API-022) grava
-  diário no próprio tópico sem ler `study_topics`.
+  tópico por cima do RLS: quem grava diário no próprio tópico não precisa
+  ler `study_topics`.
 - **Datas e versão são do servidor:** `started_at`/`completed_at` derivam do
   status (gatilho `study_topics_rules`); `updated_at` do card é a versão do
   conteúdo (mudar só a ordem mantém). Desde o API-029 o app não manda
@@ -163,9 +163,8 @@ em `supabase/checks/api021-study.sql`.
 - **Teto por importação** (API-029): o `fitImportCards` do parser corta em
   100 cards e 4 MiB, medidos no texto do jsonb do payload inteiro (tópico
   incluído), do fim para o começo, e diz no `dropped` o que ficou de fora;
-  sem nenhum card que caiba, o botão de importar desliga. É pura, para o
-  porte da API (API-034) reaproveitar. O hook mede de novo com o tópico do
-  formulário antes de enviar.
+  sem nenhum card que caiba, o botão de importar desliga. É pura; o hook
+  mede de novo com o tópico do formulário antes de enviar.
 - **CHECK** (valem também no restore): `resources` só com URL http(s) e as
   quatro colunas sempre lista.
 - Linha antiga fora da forma não derruba a carga: `normalizeStudyCard` tira o que

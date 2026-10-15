@@ -36,7 +36,7 @@ Três cores de "ação" diferentes, de propósito:
 
 ## Paletas de dados (ficam hex)
 
-Cores que a pessoa escolhe e que vão para o banco não são tokens: cor de quadro (`BOARD_COLORS`), de categoria (`CATEGORY_COLORS`), de conta e meta (`ACCOUNT_COLORS`, `GOAL_COLORS`), de avatar (`AVATAR_COLORS`), as prioridades (`src/lib/priorities.ts`) e os status da fila (`QueueModal`). O PDF (`financePdf.ts`) também usa hex: o jsPDF e o canvas não leem CSS. Esses arquivos estão liberados no `eslint.config.js`.
+Cores que a pessoa escolhe e que vão para o banco não são tokens: cor de quadro (`BOARD_COLORS`), de categoria (`CATEGORY_COLORS`), de conta e meta (`ACCOUNT_COLORS`, `GOAL_COLORS`), de avatar (`AVATAR_COLORS`) e as prioridades (`src/lib/priorities.ts`). O PDF (`financePdf.ts`) também usa hex: o jsPDF e o canvas não leem CSS. Esses arquivos estão liberados no `eslint.config.js`.
 
 ## Espaçamento
 

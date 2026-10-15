@@ -66,12 +66,6 @@ export interface NormalizeOptions {
   /** Modo gravado (tolera chave a mais no snapshot do card). */
   stored?: boolean
   limits?: Partial<Limits>
-  /**
-   * Sem o teto de células da nota inteira (Σ células²) no validador e na forma
-   * completa, só o de cada tabela: a fase 1 do markdownToNote (a nota final
-   * passa depois pelo noteLimitIssues contra o custo da nota atual).
-   */
-  skipNoteCellCost?: boolean
 }
 
 export type NoteNormalization = { ok: true; blocks: NoteBlock[] } | { ok: false; issues: BlockIssue[] }
@@ -311,14 +305,12 @@ class Normalizer {
   /** O primeiro limite de contrato que só a forma completa estoura. */
   contract: BlockIssue | null = null
   tableCost = 0
-  readonly skipNoteCellCost: boolean
 
   constructor(opts: NormalizeOptions, maxBytes: number) {
     this.seen = new Set(opts.reservedIds ?? [])
     this.newId = opts.newId ?? (() => defaultNewId())
     this.rename = opts.renameDuplicateIds ?? false
     this.meter = new Meter(maxBytes)
-    this.skipNoteCellCost = opts.skipNoteCellCost ?? false
   }
 
   /**
@@ -331,7 +323,7 @@ class Normalizer {
     this.tableCost += cells * cells
     if (this.contract) return
     if (over) this.contract = { path, keyword: 'maxCells', message: `A tabela passa de ${TABLE_LIMITS.contractCells} células na forma completa (o editor fica lento)`, fatal: false }
-    else if (!this.skipNoteCellCost && this.tableCost > TABLE_LIMITS.noteCellCost) {
+    else if (this.tableCost > TABLE_LIMITS.noteCellCost) {
       this.contract = { path, keyword: 'maxCells', message: `As tabelas da nota passam do teto de células da nota inteira na forma completa (soma de células² acima de ${TABLE_LIMITS.noteCellCost})`, fatal: false }
     }
   }
@@ -397,7 +389,6 @@ export function normalizeNoteContent(value: unknown, opts: NormalizeOptions = {}
     limits: opts.limits,
     duplicateIds: rename ? 'ignore' : 'reject',
     reservedIds: rename ? undefined : opts.reservedIds,
-    skipNoteCellCost: opts.skipNoteCellCost,
   })
   if (!check.ok) return { ok: false, issues: check.issues }
   const { maxBytes } = { ...LIMITS, ...opts.limits }

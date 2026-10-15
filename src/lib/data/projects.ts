@@ -5,10 +5,10 @@ import type { ProjectCard, ProjectShareRole } from '../../types'
 import type { TableInsert, TableRow } from '../../types/db'
 
 // ARCH-003: consultas de Projetos num lugar só (antes espalhadas no
-// ProjectsPanel e no QueueModal). Cada função devolve a mesma consulta de
-// antes: quem chama continua lendo `{ data, error }` e usando
-// requireRows/runGuarded. A carga do quadro fica em
-// src/modules/projects/boardLoader.ts, que recebe o cliente para ser testada.
+// ProjectsPanel). Cada função devolve a mesma consulta de antes: quem chama
+// continua lendo `{ data, error }` e usando requireRows/runGuarded. A carga do
+// quadro fica em src/modules/projects/boardLoader.ts, que recebe o cliente
+// para ser testada.
 
 // ── Quadros ──────────────────────────────────────────────────────────────────
 
@@ -195,44 +195,4 @@ export function removeBoardShare(shareId: string) {
 
 export function searchUsersForShare(term: string) {
   return supabase.rpc('search_users_for_share', { p_term: term })
-}
-
-// ── Fila de desenvolvimento (RPCs cq_*) ──────────────────────────────────────
-
-export function listQueue(boardId: string) {
-  return supabase.rpc('cq_list', { p_board: boardId })
-}
-
-type QueueFilter = string[] | null
-
-/**
- * Filtro ausente ou `null` = sem filtro. Os parâmetros têm `DEFAULT NULL` na
- * função, então omitir e mandar null dão no mesmo; o tipo gerado só aceita a
- * omissão.
- */
-export function enqueueCards(boardId: string, filters: { cards?: QueueFilter; columns?: QueueFilter; priorities?: QueueFilter; labels?: QueueFilter }) {
-  return supabase.rpc('cq_enqueue', {
-    p_board: boardId,
-    ...(filters.cards != null ? { p_cards: filters.cards } : {}),
-    ...(filters.columns != null ? { p_columns: filters.columns } : {}),
-    ...(filters.priorities != null ? { p_priorities: filters.priorities } : {}),
-    ...(filters.labels != null ? { p_labels: filters.labels } : {}),
-  })
-}
-
-export function moveQueueItem(queueId: string, position: number) {
-  return supabase.rpc('cq_move', { p_queue_id: queueId, p_position: position })
-}
-
-export function removeQueueItem(queueId: string) {
-  return supabase.rpc('cq_remove', { p_queue_id: queueId })
-}
-
-export function reprioritizeQueue(boardId: string) {
-  return supabase.rpc('cq_reprioritize', { p_board: boardId })
-}
-
-export function validateQueueCard(boardId: string, cardId: string, approve: boolean, note: string | null) {
-  // p_note tem DEFAULT NULL: sem nota, o parâmetro não vai.
-  return supabase.rpc('cq_validate', { p_board: boardId, p_card: cardId, p_approve: approve, p_note: note ?? undefined })
 }

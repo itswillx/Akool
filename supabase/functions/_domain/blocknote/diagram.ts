@@ -9,7 +9,7 @@
 // iframe carregaria conteúdo de terceiros ao abrir a nota). Quando o
 // excalidraw.ts existir, este arquivo delega a ele: um validador de Excalidraw só.
 
-import { compileSchema, type JsonSchema, type SchemaIssue } from '../../_api/schema.ts'
+import { compileSchema, type JsonSchema, type SchemaIssue } from '../jsonSchema.ts'
 
 /** Os tipos de elemento das ferramentas do DiagramCanvas (tools.image desligado). */
 export const DIAGRAM_ELEMENT_TYPES = ['rectangle', 'ellipse', 'diamond', 'arrow', 'line', 'freedraw', 'text', 'frame'] as const

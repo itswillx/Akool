@@ -1,1 +1,0 @@
-cartas &spades; e &hearts;

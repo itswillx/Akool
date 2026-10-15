@@ -21,8 +21,6 @@ export interface ProjectChecklistItem {
   id: string
   text: string
   completed: boolean
-  /** Item que só o usuário pode fazer (fila: card "Aguardando você"). */
-  owner?: 'user'
 }
 
 export interface ProjectCardLinkItem {

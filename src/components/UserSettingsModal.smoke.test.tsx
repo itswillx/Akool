@@ -31,10 +31,6 @@ vi.mock('../lib/data/invites', async importOriginal => ({
   ...(await importOriginal<typeof import('../lib/data/invites')>()),
   ...invites,
 }))
-// API-009: a aba API recebe o atalho para Segurança (erro de segundo fator).
-vi.mock('./ApiTokensSection', () => ({
-  default: ({ onOpenSecurity }: { onOpenSecurity?: () => void }) => <button type="button" onClick={onOpenSecurity}>api-open-security</button>,
-}))
 vi.mock('./MfaSection', () => ({ default: () => <div>mfa-section</div> }))
 vi.mock('./AvatarCropModal', () => ({ default: () => null }))
 vi.mock('./UserManagementPanel', () => ({ default: () => <div>users-panel</div> }))
@@ -103,14 +99,7 @@ describe('UserSettingsModal (montagem completa)', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('API-009: o atalho da aba API leva à aba Segurança', () => {
-    render(<UserSettingsModal open initialTab="api" onClose={() => {}} />)
-    expect(screen.queryByText('mfa-section')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'api-open-security' }))
-    expect(screen.getByText('mfa-section')).toBeTruthy()
-  })
-
-  it('conta comum: as 6 abas com o mesmo tamanho (640 px)', () => {
+  it('conta comum: as 5 abas com o mesmo tamanho (640 px)', () => {
     render(<UserSettingsModal open onClose={() => {}} />)
     const dialog = screen.getByRole('dialog')
     const first = dialog.getAttribute('style')
@@ -122,7 +111,7 @@ describe('UserSettingsModal (montagem completa)', () => {
     expect(screen.queryByRole('button', { name: 'sidebar_backup' })).toBeNull()
   })
 
-  it('admin: as 9 abas com o mesmo tamanho (980 px), painéis de admin incluídos', async () => {
+  it('admin: as 8 abas com o mesmo tamanho (980 px), painéis de admin incluídos', async () => {
     auth.isAdmin = true
     render(<UserSettingsModal open onClose={() => {}} />)
     const dialog = screen.getByRole('dialog')
@@ -140,5 +129,5 @@ describe('UserSettingsModal (montagem completa)', () => {
   })
 })
 
-const ACCOUNT_TABS = ['settings_tab_password', 'settings_tab_security', 'settings_tab_notifications', 'settings_tab_invites', 'settings_tab_api', 'settings_tab_profile']
+const ACCOUNT_TABS = ['settings_tab_password', 'settings_tab_security', 'settings_tab_notifications', 'settings_tab_invites', 'settings_tab_profile']
 const ADMIN_TABS = [['sidebar_users', 'users-panel'], ['sidebar_backup', 'backup-panel'], ['sidebar_audit', 'audit-panel']] as const

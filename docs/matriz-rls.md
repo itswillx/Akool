@@ -78,7 +78,7 @@ valida no INSERT/UPDATE que `workspace_id`, quando preenchido, corresponde a um
 workspace do qual o usuário é membro — sem isso um usuário poderia gravar
 `workspace_id` de um workspace alheio direto pelo client. Desde o API-006
 (`20261005150000_api006_guards_without_user`) ela pula o contexto sem usuário
-(restauração pelo service_role, `pg_cron`, migrations); sessão do app ou da API
+(restauração pelo service_role, `pg_cron`, migrations); sessão do app
 continua conferida, e um JWT de cliente sem `sub` também.
 
 ## Finance — workspace / family sharing
@@ -146,8 +146,8 @@ Desde o API-028 (`20261012120000_api028_store_sales_server`), por cima das polic
 | `site_backups` / `site_backup_settings` | SELECT | admin apenas |
 | `site_backups` / `site_backup_settings` | INSERT/UPDATE/DELETE | **nenhuma policy** | só `service_role` (edge function `site-backup`) escreve |
 | `profile_secrets` | qualquer operação | **RLS habilitado, zero policies** | intencional: só `service_role` acessa (chaves de API de IA); ver advisory `rls_enabled_no_policy` — não é um gap, é o desenho |
-| `api_tokens` | SELECT | own (`api_tokens_select_own`), **grant por coluna** sem `user_id` e `token_hash` | escrita só pelas RPCs SECURITY DEFINER (`create_api_token`, `update_api_token_scopes`, `revoke_api_token`, `revoke_all_my_api_tokens`, `delete_api_token`), que recusam chamada feita com claims de token da API (API-001). `scopes` e `last_client` entraram com `grant select (coluna)`; nunca REVOKE de tabela |
-| `private.api_scope_catalog` | qualquer operação | **RLS habilitado, zero policies**, fora da Data API | catálogo de permissões da API (API-001), lido só pelas funções SECURITY DEFINER; mesmo desenho do `private.rate_limits` |
+| `api_tokens` | SELECT | own (`api_tokens_select_own`), **grant por coluna** sem `user_id` e `token_hash` | **sem uso desde 14/10/2026:** a API v1 foi descontinuada e o app não lê nem grava mais a tabela. Ela e as RPCs de token (`create_api_token`, `update_api_token_scopes`, `revoke_api_token`, `revoke_all_my_api_tokens`, `delete_api_token`, `resolve_api_token`, `resolve_api_token_v2`) saem do banco numa migration própria, no PR seguinte ao que tirou o código. Até lá, a escrita continua só por essas RPCs SECURITY DEFINER |
+| `private.api_scope_catalog` | qualquer operação | **RLS habilitado, zero policies**, fora da Data API | catálogo de permissões da API v1 (API-001), lido só pelas funções SECURITY DEFINER de token; sai junto com `api_tokens` |
 
 ## Projects module
 
@@ -171,12 +171,12 @@ duas coisas mesmo sem usuário: põe o card sem `sort_order` no fim da coluna (a
 coluna não tem mais DEFAULT) e cuida do `updated_at`, que é a versão do
 conteúdo. Mudar o conteúdo grava `clock_timestamp()`, e a versão sempre avança
 (`greatest` com `old.updated_at` + 1 µs), mesmo duas vezes na mesma transação:
-o gatilho da fila `cq_on_card_change` muda o card depois do RETURNING do app, e
-com `now()` a versão ficaria igual. Mover (`column_id`/`sort_order`) mantém
+o gatilho da fila `cq_on_card_change` (sai com a fila, ver abaixo) muda o card
+depois do RETURNING do app, e com `now()` a versão ficaria igual. Mover (`column_id`/`sort_order`) mantém
 a versão, e o valor mandado pelo cliente é ignorado (menos no INSERT sem
 usuário: o restore mantém o `updated_at` do backup). Sem usuário
-(restore, `cards-api`, seed: regra do §1.5 do `api-arquitetura.md`), o resto
-pula. Com usuário, no INSERT, quem não edita o quadro recebe só a recusa
+(restore, seed: a regra de "Gatilhos que dependem do usuário" em
+`supabase/migrations/README.md`), o resto pula. Com usuário, no INSERT, quem não edita o quadro recebe só a recusa
 genérica `42501` "Sem permissão para editar este quadro", antes de qualquer
 regra: o gatilho roda antes do WITH CHECK do RLS, e as mensagens abaixo
 contariam quem é membro e que cards e colunas existem (no UPDATE, o USING já
@@ -205,11 +205,10 @@ esconde a linha). Depois, valida só o que mudou:
 As recusas das regras saem com `hint='akool'`, e o app mostra o motivo (a
 recusa genérica de quem não edita o quadro sai sem hint, de propósito, e o app
 diz que a pessoa não tem permissão). Quem grava sem
-usuário fica dentro das mesmas formas: `cq_block` recusa item "Você" acima de
-2000 caracteres ou checklist acima de 500 itens, e `cq_setup_flow` não repete
-rótulo ignorando a caixa nem passa de 50 caracteres/30 rótulos. `cq_cards` e
-`cq_enqueue` comparam rótulo sem caixa (`private.cq_labels_match`, que devolve
-false quando os rótulos não são lista). Prova:
+usuário fica dentro das mesmas formas. A fila de desenvolvimento
+(`project_card_queue`, as RPCs `cq_*` e `private.cq_labels_match`) está sem uso
+desde 14/10/2026 e sai do banco na mesma migration dos tokens; o
+`private.cq_board_role` fica, porque este gatilho o usa. Prova:
 `supabase/checks/api013-project-cards.sql` (46 checagens no bloco 1; bloco 2,
 só no staging: o restore).
 
@@ -260,7 +259,7 @@ Todas revisadas pelo advisor do Supabase como "callable by authenticated/anon"
 |---|---|
 | `is_admin()` | evita recursão de RLS (`profiles` policy chamando função que lê `profiles`) — corrigido em `sec_fix_is_admin_recursion.sql` |
 | `page_is_readable`/`page_is_writable`/`current_user_can_share_page` | precisam ler `pages`/`page_shares` **sem** aplicar a RLS dessas mesmas tabelas (senão a policy de `pages` dependeria de si mesma). Desde o SEC-002 só honram share emitido pelo dono da página ou por um co_owner que o próprio dono nomeou |
-| `user_can_access_board` | mesmo racional para `project_boards`/`project_shares`; desde o SEC-002 só honra share emitido pelo dono do board (`private.cq_board_role`, da fila de desenvolvimento, segue a mesma regra) |
+| `user_can_access_board` | mesmo racional para `project_boards`/`project_shares`; desde o SEC-002 só honra share emitido pelo dono do board (`private.cq_board_role`, que o gatilho de cards do API-013 usa, segue a mesma regra) |
 | `is_workspace_member` | mesmo racional para `finance_workspace_members` |
 | `profile_is_related` | permite que a policy de `profiles` saiba "esse usuário aparece nos meus compartilhamentos" sem expor a tabela inteira |
 | `search_users_for_share` | busca limitada (mín. 3 caracteres, limit 6) para o modal de compartilhamento, sem listar todos os perfis |
@@ -281,20 +280,23 @@ Migration `20260928145254_sec012_grants_hardening.sql`. Verificação:
 `supabase/checks/sec012-grants.sql` (transação desfeita). Depois dela, o
 advisor passou a listar 34 funções `SECURITY DEFINER` para `authenticated` (eram 54)
 e só a `validate_invite_code` para `anon`. Com o API-001 (05/10/2026) eram 37; com o
-API-012 (07/10/2026) eram 39; com o API-016 (08/10/2026) são **40**, todas intencionais:
+API-012 (07/10/2026) eram 39; com o API-016 (08/10/2026) são **40**. As 11 de tokens e
+da fila ficaram sem uso em 14/10/2026 e saem na migration da remoção da API v1; o
+número novo sai do advisor depois dela. As outras são intencionais:
 
 | Grupo | Funções | Por que continuam com EXECUTE para `authenticated` |
 |---|---|---|
 | Helpers de RLS (11) | `page_is_readable`, `page_is_writable`, `current_user_can_share_page`, `user_can_access_board`, `is_admin`, `is_workspace_member`, `profile_is_related`, `loan_is_owner`, `loan_is_visible`, `loan_file_is_readable`, `finance_goal_owned` (API-012: a policy de share não pode ler `finance_goals` direto, que lê os shares → recursão 42P17) | a política roda como quem consulta: sem o EXECUTE, o RLS quebra. Tirá-las da API exige movê-las para o schema `private` e refazer as políticas (card à parte) |
-| RPCs do frontend (29) | convites (`generate_invite_code`, `validate_invite_code`, `admin_add_invite_slots`, `admin_revoke_invite_code`), workspaces (`create_workspace`, `invite_member`, `accept_/decline_workspace_invite`, `remove_workspace_member`, `leave_workspace`, `bootstrap_*_categories`), `create_project_board`, `search_users_for_share`, perfil (`get_my_profile`, `admin_list_profiles`), tokens (`create_api_token`, `revoke_api_token`, `update_api_token_scopes`, `revoke_all_my_api_tokens`, `delete_api_token`), aporte de meta (`finance_goal_contribute`), recorrentes (`finance_materialize_recurring`, API-016) e a fila no `QueueModal` (`cq_list`, `cq_enqueue`, `cq_move`, `cq_remove`, `cq_reprioritize`, `cq_validate`) | chamadas com o JWT do usuário; cada uma confere quem chama. As de token recusam claims de token da API (API-001) |
+| RPCs do frontend (18) | convites (`generate_invite_code`, `validate_invite_code`, `admin_add_invite_slots`, `admin_revoke_invite_code`), workspaces (`create_workspace`, `invite_member`, `accept_/decline_workspace_invite`, `remove_workspace_member`, `leave_workspace`, `bootstrap_*_categories`), `create_project_board`, `search_users_for_share`, perfil (`get_my_profile`, `admin_list_profiles`), aporte de meta (`finance_goal_contribute`) e recorrentes (`finance_materialize_recurring`, API-016) | chamadas com o JWT do usuário; cada uma confere quem chama |
+| Sem uso, saem com a API v1 (11) | tokens (`create_api_token`, `revoke_api_token`, `update_api_token_scopes`, `revoke_all_my_api_tokens`, `delete_api_token`) e a fila (`cq_list`, `cq_enqueue`, `cq_move`, `cq_remove`, `cq_reprioritize`, `cq_validate`) | a tela de tokens e a fila saíram do app em 14/10/2026; o EXECUTE fica até a migration que apaga as funções |
 
 **Só `service_role`** (sem EXECUTE para `anon`/`authenticated`):
-- `cq_block`, `cq_boards`, `cq_card`, `cq_cards`, `cq_check`, `cq_complete`, `cq_next`, `cq_note`, `cq_release`, `cq_setup_flow`, `cq_start`: só a `cards-api` usa;
+- `cq_block`, `cq_boards`, `cq_card`, `cq_cards`, `cq_check`, `cq_complete`, `cq_next`, `cq_note`, `cq_release`, `cq_setup_flow`, `cq_start`: eram da function da fila, apagada com a API v1; saem com a fila;
 - `admin_revoke_user_sessions`: a `admin-ops`;
 - `loan_approve`, `loan_cancel_request`, `loan_confirm_payment`, `loan_link_borrower`, `loan_reject`, `loan_reject_payment`, `loan_report_payment`, `loan_request`: não há tela de empréstimos. Uma tela nova precisa devolver o grant na mesma migration;
 - `set_ai_credentials` (não há tela) e `check_auto_site_backup_due` (feita para o `pg_cron`, que roda como `postgres`);
 - já eram: `_notify`, `check_rate_limit`, `resolve_api_token`, `list_public_tables`, `restore_site_backup`, `study_lookup_cache_prune`;
-- `resolve_api_token_v2` (API-001): a `cards-api` resolve o token com escopos efetivos. A v1 fica até o API-061.
+- `resolve_api_token_v2` (API-001). As duas `resolve_api_token*` ficaram sem uso com a API v1 e saem com os tokens.
 
 **Privilégios de tabela** em `public`:
 - `anon` só tem SELECT (o RLS decide as linhas); nenhuma escrita, TRUNCATE, TRIGGER, REFERENCES ou MAINTAIN;
@@ -308,7 +310,7 @@ API-012 (07/10/2026) eram 39; com o API-016 (08/10/2026) são **40**, todas inte
 - marca o lançamento como pago;
 - encerra o parcelado quando pagas + puladas ≥ parcelas.
 
-EXECUTE só para `authenticated`. As funções novas em `private` (`finance_materialize_core`, `finance_materialize_all`, `finance_recurring_due_date` e `finance_clamp_today`) não têm EXECUTE para `anon`/`authenticated`. Os gatilhos `finance_recurring_entry_guard` e `finance_recurring_day_moved` também não têm, mas são SECURITY DEFINER e disparam nas gravações de `authenticated`: entram no inventário do API-007 (§2.4 de `docs/api-arquitetura.md`).
+EXECUTE só para `authenticated`. As funções novas em `private` (`finance_materialize_core`, `finance_materialize_all`, `finance_recurring_due_date` e `finance_clamp_today`) não têm EXECUTE para `anon`/`authenticated`. Os gatilhos `finance_recurring_entry_guard` e `finance_recurring_day_moved` também não têm, mas são SECURITY DEFINER e disparam nas gravações de `authenticated`.
 
 **Estudos (API-021, 08/10/2026):**
 - `private.study_card_rules` é SECURITY DEFINER: chama as funções de forma e lê o tópico de qualquer dono, para a mensagem não revelar se ele existe;
@@ -327,11 +329,7 @@ Nada disso muda a conta do advisor.
 - A trava do quiz (segunda resposta diferente, P0001) existe só na `study_quiz_answer`, sem gatilho.
 - EXECUTE só para `authenticated`, revogado de PUBLIC e `anon`.
 
-A regra abaixo pede o grant "só se o frontend chamar com o JWT do usuário". Aqui ele vem antes da chamada por dois motivos:
-- o API-029 troca a tela de Estudos por essas RPCs;
-- o `akool_api` herda o EXECUTE de `authenticated` pela §1.2 de `docs/api-arquitetura.md` (`inherit true`). No plano B, a transação da API já roda como `authenticated`.
-
-Não há grant direto para o `akool_api`, porque o papel ainda não existe (API-004). O harness tem o caso condicional.
+A regra abaixo pede o grant "só se o frontend chamar com o JWT do usuário". Aqui ele veio antes da chamada porque o API-029 troca a tela de Estudos por essas RPCs. Não há grant para outro papel.
 
 Não entram na conta do advisor, que só lista `SECURITY DEFINER`: continuam 40.
 

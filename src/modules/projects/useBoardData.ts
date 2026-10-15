@@ -12,7 +12,6 @@ import {
     byOrder,
     type CardPlacement
 } from '../../lib/boardMoves'
-import { queueBadges, type CardQueueRow } from '../../lib/cardQueue'
 import {
     listOwnBoards, listSharedBoards
 } from '../../lib/data/projects'
@@ -35,7 +34,7 @@ import { type ViewMode } from './ProjectsNav'
 import type { Member } from './projectsShared'
 import { ACTIVE_BOARD_KEY, OPEN_CARD_KEY, VALID_VIEWS, VIEW_KEY } from './projectsShared'
 
-// Estado do quadro: listas, carga, realtime, fila, filtros e derivados.
+// Estado do quadro: listas, carga, realtime, filtros e derivados.
 export function useBoardData() {
   const { user } = useAuth()
   const { t } = useLanguage()
@@ -84,10 +83,6 @@ export function useBoardData() {
   const [columnModal, setColumnModal] = useState<{ open: boolean; column?: ProjectColumn | null }>({ open: false })
   const [shareOpen, setShareOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
-  const [queueOpen, setQueueOpen] = useState(false)
-  const [queueRows, setQueueRows] = useState<CardQueueRow[]>([])
-  const [queueRefreshKey, setQueueRefreshKey] = useState(0)
-  const queueReloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // REL-010: card na mão ou ordem do drop ainda gravando; a recarga do realtime espera.
   const boardBusyRef = useRef(false)
   const boardReloadRef = useRef<DeferredReload | null>(null)
@@ -179,7 +174,6 @@ export function useBoardData() {
       apply: (_id, data) => {
         setBoardError(false)
         setColumns(data.columns)
-        setQueueRows(data.queueRows)
         setCards(data.cards)
         setMembers(data.members)
       },
@@ -191,7 +185,7 @@ export function useBoardData() {
           notifyRef.current.showToast('error', notifyRef.current.t('projects_board_load_error'), { dedupeKey: 'board-load-error' })
           return
         }
-        setColumns([]); setCards([]); setQueueRows([]); setMembers([])
+        setColumns([]); setCards([]); setMembers([])
         setBoardError(true)
       },
       setLoading: loading => {
@@ -204,34 +198,8 @@ export function useBoardData() {
 
   useEffect(() => {
     if (activeBoardId && boards.length) loadBoardData(activeBoardId)
-    else { setColumns([]); setCards([]); setQueueRows([]) }
+    else { setColumns([]); setCards([]) }
   }, [activeBoardId, boards.length, loadBoardData])
-
-  // Fila de desenvolvimento: quando a IA (cards-api) inicia ou conclui um card,
-  // o quadro recarrega sozinho. Um enqueue gera um evento por card, então os
-  // eventos são agrupados numa recarga só.
-  useEffect(() => {
-    if (!activeBoardId) return
-    const boardId = activeBoardId
-    const channel = supabase
-      .channel(`project-queue:${boardId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'project_card_queue', filter: `board_id=eq.${boardId}` },
-        () => {
-          if (queueReloadTimerRef.current) clearTimeout(queueReloadTimerRef.current)
-          queueReloadTimerRef.current = setTimeout(() => {
-            void loadBoardData(boardId, { silent: true })
-            setQueueRefreshKey(k => k + 1)
-          }, 400)
-        },
-      )
-      .subscribe()
-    return () => {
-      if (queueReloadTimerRef.current) clearTimeout(queueReloadTimerRef.current)
-      supabase.removeChannel(channel)
-    }
-  }, [activeBoardId, loadBoardData])
 
   // REL-010: o que outras pessoas mudam no quadro (cards e colunas) chega pelo
   // realtime e vira uma recarga silenciosa agrupada. Com um card na mão, ou a
@@ -263,8 +231,6 @@ export function useBoardData() {
       void supabase.removeChannel(channel)
     }
   }, [activeBoardId, loadBoardData])
-
-  const queueBadgeMap = useMemo(() => queueBadges(queueRows), [queueRows])
 
   useEffect(() => {
     if (modalRestoredRef.current || boardLoading || !activeBoardId || cardModal.open) return
@@ -313,5 +279,5 @@ export function useBoardData() {
     return map
   }, [columns, filteredCards])
 
-  return { boards, setBoards, activeBoardId, setActiveBoardId, columns, setColumns, cards, setCards, members, setMembers, view, setView, loading, setLoading, boardLoading, setBoardLoading, activeDragId, setActiveDragId, persistError, setPersistError, cardFilters, setCardFilters, boardError, setBoardError, boardsError, setBoardsError, boardsRef, cardModalOpenRef, modalRestoredRef, dragSourceColumnRef, dragSnapshotRef, userId, activeBoardIdRef, boardRequestRef, notifyRef, boardModal, setBoardModal, boardSelectorOpen, setBoardSelectorOpen, cardModal, setCardModal, columnModal, setColumnModal, shareOpen, setShareOpen, importOpen, setImportOpen, queueOpen, setQueueOpen, queueRows, setQueueRows, queueRefreshKey, setQueueRefreshKey, queueReloadTimerRef, boardBusyRef, boardReloadRef, deleteConfirm, setDeleteConfirm, activeBoard, canEdit, isOwner, sensors, pLabel, loadBoards, loadBoardData, queueBadgeMap, filteredCards, availableLabels, filtersActive, cardsByColumn }
+  return { boards, setBoards, activeBoardId, setActiveBoardId, columns, setColumns, cards, setCards, members, setMembers, view, setView, loading, setLoading, boardLoading, setBoardLoading, activeDragId, setActiveDragId, persistError, setPersistError, cardFilters, setCardFilters, boardError, setBoardError, boardsError, setBoardsError, boardsRef, cardModalOpenRef, modalRestoredRef, dragSourceColumnRef, dragSnapshotRef, userId, activeBoardIdRef, boardRequestRef, notifyRef, boardModal, setBoardModal, boardSelectorOpen, setBoardSelectorOpen, cardModal, setCardModal, columnModal, setColumnModal, shareOpen, setShareOpen, importOpen, setImportOpen, boardBusyRef, boardReloadRef, deleteConfirm, setDeleteConfirm, activeBoard, canEdit, isOwner, sensors, pLabel, loadBoards, loadBoardData, filteredCards, availableLabels, filtersActive, cardsByColumn }
 }

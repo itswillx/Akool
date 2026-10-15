@@ -46,7 +46,8 @@ function digest(result: ParseResult) {
 
 describe('parseBacklogMarkdown: golden dos backlogs de docs/imports', () => {
   it('cada backlog sai igual ao golden', async () => {
-    const files = readdirSync(IMPORTS).filter(f => f.endsWith('.md')).sort()
+    // O README.md é a especificação do formato, não um backlog.
+    const files = readdirSync(IMPORTS).filter(f => f.endsWith('.md') && f !== 'README.md').sort()
     const golden: Record<string, ReturnType<typeof digest>> = {}
     let cards = 0
     for (const file of files) {
@@ -57,8 +58,8 @@ describe('parseBacklogMarkdown: golden dos backlogs de docs/imports', () => {
       golden[file] = digest(result)
       cards += result.cards.length
     }
-    expect(files.length).toBeGreaterThanOrEqual(17)
-    expect(cards).toBeGreaterThan(400)
+    expect(files.length).toBeGreaterThanOrEqual(16)
+    expect(cards).toBeGreaterThan(350)
     await expect(`${JSON.stringify({ files: files.length, cards, backlogs: golden }, null, 2)}\n`)
       .toMatchFileSnapshot('./fixtures/backlogs.golden.json')
   })
@@ -75,7 +76,7 @@ describe('parseBacklogMarkdown', () => {
   })
 
   it('o mesmo arquivo com o mesmo newId dá o mesmo resultado', () => {
-    const source = readFileSync(join(IMPORTS, 'backlog-api-v1.md'), 'utf8')
+    const source = readFileSync(join(IMPORTS, 'backlog-auditoria-2026-09.md'), 'utf8')
     const run = () => { let n = 0; return parseBacklogMarkdown(source, { newId: () => `s${n++}` }) }
     expect(run()).toEqual(run())
   })
@@ -302,9 +303,8 @@ describe('leitura linear × as regex de antes (diferencial)', () => {
   })
 })
 
-// O parser roda a cada tecla na tela de importação e na edge (API-055). A
-// garantia contra o quadrático é a razão de escala t(n)/t(n/4), medida em
-// pares como na bateria do API-023 (blocknote/markdown.test.ts): o pequeno e
+// O parser roda a cada tecla na tela de importação. A garantia contra o
+// quadrático é a razão de escala t(n)/t(n/4), medida em pares: o pequeno e
 // logo depois o grande, até 6 pares, com a decisão do 3º par em diante. Antes
 // do API-033, com 64 KiB numa linha: a tabela sem `|` no fim levava 20 s, o
 // Contexto com espaços 8,2 s e o `-` com espaços 1,3 s. Hoje, a 512 KiB, cada

@@ -13,21 +13,8 @@ Era um painel irmão de Documentos (`activePanel: 'projects'` + modo
   o card PERF-005, fora do escopo da migração de navegação.
 - `ProjectsNav.tsx` — a faixa lateral (desktop) / chips de visualização (mobile),
   no padrão do `modules/study/StudyNav.tsx`.
-- `CardFilterBar.tsx`, `GanttView.tsx`, `ImportCardsModal.tsx`, `QueueModal.tsx`
-  — usados só pelo painel. `ModalShell.tsx` é a casca comum dos modais do módulo.
-
-## Fila de desenvolvimento (IA)
-
-- Tabela `project_card_queue` + RPCs `cq_*`
-  (`supabase/migrations/20260925123814_project_card_queue_api.sql`). Toda escrita
-  passa pelas RPCs; o app só lê a tabela (selos no kanban + realtime).
-- O app monta a fila no `QueueModal` (colunas, urgência, cards) e pelo botão
-  "Adicionar à fila" do card. A IA consome pela edge `cards-api`, autenticada
-  por token pessoal (Configurações → API), via `npm run cards` / skill `/fila`.
-- `cq_next` move o card para a coluna "Fazendo" e `cq_complete` para
-  "Concluído", achadas pelo nome; sem essas colunas o card fica onde está.
-- Espelho da ordenação para a prévia do modal: `src/lib/cardQueue.ts`
-  (`previewQueueOrder`). Mudou a ordem no SQL, mude lá também.
+- `CardFilterBar.tsx`, `GanttView.tsx`, `ImportCardsModal.tsx` — usados só pelo
+  painel. `ModalShell.tsx` é a casca comum dos modais do módulo.
 
 ## Edição do card (API-013)
 
@@ -56,8 +43,8 @@ Era um painel irmão de Documentos (`activePanel: 'projects'` + modo
 - Perdeu a permissão de editar o quadro no meio: o editor para de gravar e
   avisa.
 - Rótulo não diferencia caixa (`_domain/cardLabels.ts`, reexportado por
-  `lib/cardLabels.ts`: filtro, modal e importação), como no `cq_cards` e no
-  `cq_enqueue`.
+  `lib/cardLabels.ts`: filtro, modal e importação), como no gatilho
+  `project_cards_integrity`.
 
 ## Regras puras em `_domain` (API-027)
 
@@ -65,9 +52,9 @@ A agenda, as estatísticas, o parser de backlog, o plano da importação, o
 Markdown do card e os limites do API-013 moram em `supabase/functions/_domain/`
 (`autoSchedule`, `projectStats`, `backlogMarkdownParser`, `importPlan`,
 `cardMarkdown`, `cardLimits`, `cardLabels`, `cardLinks`, `isoDate`, `text` e
-`projectTypes`), para a API dar o mesmo resultado que a tela. Os arquivos de
-`src/lib` com o mesmo nome reexportam; o módulo continua importando de
-`src/lib`.
+`projectTypes`): puras, sem relógio, DOM nem o i18n do app, e as mesmas na tela
+e na CLI `import:cards`. Os arquivos de `src/lib` com o mesmo nome reexportam;
+o módulo continua importando de `src/lib`.
 
 - **Sem relógio em `_domain`:** `today` é obrigatório lá. Os padrões ficam nos
   wrappers de `src/lib` (`autoSchedule`, `projectStats`, `projectCardFilters`),
@@ -75,11 +62,11 @@ Markdown do card e os limites do API-013 moram em `supabase/functions/_domain/`
   (`dayOf`): o app passa o dia local do `created_at` (`createdDayLocal`), e o
   servidor vai passar o dia no fuso da pessoa, calculado no SQL.
 - **Textos:** o Markdown do card, os avisos da importação e o que a impede
-  (`importIssueText`) recebem um `t`. O app passa o seu; a API e a CLI passam
-  o `tPtBR` de `_domain/i18n.pt-BR.ts`, que tem os mesmos textos
+  (`importIssueText`) recebem um `t`. O app passa o seu; a CLI `import:cards`
+  passa o `tPtBR` de `_domain/i18n.pt-BR.ts`, que tem os mesmos textos
   (`src/lib/projectDomain.test.ts` confere).
 - **Imports:** `_domain` só importa caminhos relativos `.ts` dentro de
-  `supabase/functions` (`_api/importBoundary.test.ts`), e o eslint barra
+  `supabase/functions` (`_domain/importBoundary.test.ts`), e o eslint barra
   relógio, hora local, `localStorage` e DOM lá.
 
 ## Regras

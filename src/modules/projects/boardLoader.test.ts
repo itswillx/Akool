@@ -152,21 +152,19 @@ function fakeClient(results: Record<string, Result>) {
   return { client: client as unknown as SupabaseClient, inArgs }
 }
 
-const TABLES = ['project_columns', 'project_cards', 'project_card_queue', 'project_shares', 'profiles']
+const TABLES = ['project_columns', 'project_cards', 'project_shares', 'profiles']
 
 describe('fetchBoardData', () => {
-  it('junta as 5 consultas e normaliza os cards', async () => {
+  it('junta as 4 consultas e normaliza os cards', async () => {
     const { client, inArgs } = fakeClient({
       project_columns: { data: [{ id: 'col-1' }] },
       project_cards: { data: [{ id: 'card-1', labels: null, checklist: null, links: null, attachments: null, assignee: [{ email: 'a@x.dev' }] }] },
-      project_card_queue: { data: [{ id: 'q-1' }] },
       project_shares: { data: [{ shared_with_user_id: 'u-2' }] },
       profiles: { data: [{ id: 'u-1' }, { id: 'u-2' }] },
     })
     const data = await fetchBoardData(client, 'board-1', ['u-1', null, undefined, 'u-1'])
     expect(data.columns).toEqual([{ id: 'col-1' }])
     expect(data.cards).toEqual([{ id: 'card-1', labels: [], checklist: [], links: [], attachments: [], assignee_profile: { email: 'a@x.dev' } }])
-    expect(data.queueRows).toEqual([{ id: 'q-1' }])
     expect(data.members).toEqual([{ id: 'u-1' }, { id: 'u-2' }])
     expect(inArgs.profiles).toEqual(['u-1', 'u-2'])
   })
